@@ -89,7 +89,7 @@ Pe un server Linux (Ubuntu/Debian recomandat), ca root, cu porturile 80, 443 și
 
 ```bash
 git clone https://github.com/gavrilencu/PortDock.git portdock && cd portdock
-sudo bash install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000
+sudo bash install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000 (alt port: PORTDOCK_PORT=9000)
 ```
 
 Deschide URL-ul, creează contul de owner. Serverul local e adăugat automat; apasă **Servers → localhost → Run setup** ca să pornești Traefik.
