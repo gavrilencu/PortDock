@@ -407,7 +407,7 @@ export function LicenseSettings() {
               <tr key={f}>
                 <td className="text-muted">{feature_names[f]}</td>
                 {plans.map((p) => (
-                  <td key={p.id}>{p.features.includes(f) ? <Check className="size-4 text-success" /> : <span className="text-faint">—</span>}</td>
+                  <td key={p.id}>{(p.features ?? []).includes(f) ? <Check className="size-4 text-success" /> : <span className="text-faint">—</span>}</td>
                 ))}
               </tr>
             ))}

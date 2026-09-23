@@ -53,7 +53,7 @@ type Plan struct {
 }
 
 var Plans = map[string]Plan{
-	"community": {ID: "community", Name: "Community", MaxServers: 2, MaxUsers: 5},
+	"community": {ID: "community", Name: "Community", MaxServers: 2, MaxUsers: 5, Features: []string{}},
 	"pro": {ID: "pro", Name: "Pro", MaxServers: 10, MaxUsers: 25,
 		Features: []string{FeatureMultiServer, FeatureRegistries, FeatureProjectRoles, FeatureAuditExport}},
 	"enterprise": {ID: "enterprise", Name: "Enterprise",
