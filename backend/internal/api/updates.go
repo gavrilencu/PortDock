@@ -20,7 +20,7 @@ import (
 // DefaultUpdateRepo is the GitHub repository (owner/name) this build was released
 // from. Release builds set it with -ldflags, so every installation finds its
 // updates without configuration; Settings → Updates can override it (forks, mirrors).
-var DefaultUpdateRepo = ""
+var DefaultUpdateRepo = "gavrilencu/PortDock"
 
 type updateCache struct {
 	mu        sync.Mutex
