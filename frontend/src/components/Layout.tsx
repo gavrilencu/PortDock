@@ -378,18 +378,6 @@ export function AppLayout() {
             <main className="min-h-0 flex-1 overflow-y-auto">
               <HeaderSlotProvider value={slot}>
                 <div className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
-                  {data.license?.message && (data.user.role === "owner" || data.user.role === "admin") && (
-                    <Link
-                      to="/settings?tab=license"
-                      className={cn(
-                        "mb-5 flex items-center gap-2 rounded-lg border px-4 py-2.5 text-[13px]",
-                        data.license.expired ? "border-danger/30 bg-danger-soft text-danger" : data.license.in_grace ? "border-warning/40 bg-warning-soft text-warning" : "border-border bg-surface-2/60 text-muted",
-                      )}
-                    >
-                      <span className="flex-1">{data.license.message}</span>
-                      <span className="font-medium underline underline-offset-2">{t("Manage license")}</span>
-                    </Link>
-                  )}
                   <Outlet />
                 </div>
               </HeaderSlotProvider>

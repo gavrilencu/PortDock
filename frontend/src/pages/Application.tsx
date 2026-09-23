@@ -56,7 +56,7 @@ import { AccessCallout, DNSBadge, DomainLinks, DomainsTab, domainURL as rowURL, 
 import { EnvEditor } from "../components/EnvEditor";
 import { ContainerLogs, ContainerTable } from "../components/ContainerTable";
 import { useRegistries } from "../components/registries";
-import { AccessNotice, UpgradeNotice } from "../components/access";
+import { AccessNotice } from "../components/access";
 import { Terminal } from "../components/Terminal";
 import { domainURL, shortSha, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
@@ -524,9 +524,6 @@ function ServersSection({
         </Field>
       )}
       <Field label={t("Additional servers")} className="sm:col-span-2" hint={list.length <= 1 ? t("Add more servers in Servers to deploy this application to several machines.") : undefined}>
-        <div className="mb-2 empty:hidden">
-          <UpgradeNotice feature="multi_server">{t("Deploying to several servers is part of the")}</UpgradeNotice>
-        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           {list
             .filter((s) => s.id !== f.server_id)

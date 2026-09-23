@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/portdock/portdock/internal/deploy"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/registry"
 	"github.com/portdock/portdock/internal/secrets"
@@ -150,15 +149,6 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 		a.BuildServerID = 0
 	}
 	if a.BuildServerID != 0 {
-		var cur int64
-		_ = s.db.QueryRowContext(ctx, "SELECT build_server_id FROM applications WHERE id = ?", a.ID).Scan(&cur)
-		if cur != a.BuildServerID {
-			if err := s.requireFeature(ctx, license.FeatureMultiServer); err != nil {
-				return err
-			}
-		}
-	}
-	if a.BuildServerID != 0 {
 		if _, err := store.ByID[store.Server](ctx, s.db, "servers", a.BuildServerID); err != nil {
 			return badRequest("build server not found")
 		}
@@ -209,14 +199,6 @@ func (s *Server) applyAppServers(r *http.Request, a store.Application, ids *[]in
 		}
 	}
 	before := s.engine.AppServerIDs(ctx, a)
-	for _, id := range *ids {
-		if id != a.ServerID && !slices.Contains(before, id) {
-			if err := s.requireFeature(ctx, license.FeatureMultiServer); err != nil {
-				return err
-			}
-			break
-		}
-	}
 	if err := s.engine.SetAppServers(ctx, a, *ids); err != nil {
 		return err
 	}

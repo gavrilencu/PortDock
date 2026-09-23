@@ -12,7 +12,6 @@ import (
 
 	"github.com/portdock/portdock/internal/audit"
 	"github.com/portdock/portdock/internal/auth"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -93,9 +92,6 @@ func (s *Server) listActivity(w http.ResponseWriter, r *http.Request) error {
 
 // exportActivity downloads the (filtered) audit log as CSV or JSON.
 func (s *Server) exportActivity(w http.ResponseWriter, r *http.Request) error {
-	if err := s.requireFeature(r.Context(), license.FeatureAuditExport); err != nil {
-		return err
-	}
 	q, args, err := s.activityQuery(r)
 	if err != nil {
 		return err
@@ -163,11 +159,6 @@ func (s *Server) updateAuditSettings(w http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	ctx := r.Context()
-	if (in.WebhookURL != nil && strings.TrimSpace(*in.WebhookURL) != "") || (in.Syslog != nil && strings.TrimSpace(*in.Syslog) != "") {
-		if err := s.requireFeature(ctx, license.FeatureAuditStreaming); err != nil {
-			return err
-		}
-	}
 	if in.WebhookURL != nil {
 		v := strings.TrimSpace(*in.WebhookURL)
 		if v != "" {

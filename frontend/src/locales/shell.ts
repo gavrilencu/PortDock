@@ -34,7 +34,6 @@ export const ro: Record<string, string> = {
   Project: "Proiect",
   Server: "Server",
   "Team member": "Membru al echipei",
-  "Manage license": "Gestionează licența",
 
   // ui
   "Something went wrong": "Ceva nu a mers bine",
@@ -194,9 +193,6 @@ export const ro: Record<string, string> = {
   "Deploy and configure unprotected environments; request deployments to protected ones.": "Deploy și configurare în mediile neprotejate; cereri de deploy în cele protejate.",
   "Read-only: resources, logs, deployments and metrics. No secrets.": "Doar citire: resurse, loguri, deploy-uri și metrici. Fără secrete.",
   "Can't see the project.": "Nu vede proiectul.",
-  "{text} {plan} plan.": "{text} {plan}.",
-  "This feature is part of the": "Această funcție face parte din planul",
-  "Start a free trial or add a license": "Începe o perioadă de probă gratuită sau adaugă o licență",
   Approvals: "Aprobări",
   Protected: "Protejat",
   "You have read-only access to this project.": "Ai acces doar în citire la acest proiect.",
@@ -210,7 +206,6 @@ export const ro: Record<string, string> = {
   "Owners and admins always have full access. Everyone else gets their role below, or the default role.":
     "Ownerii și administratorii au mereu acces complet. Ceilalți primesc rolul de mai jos sau rolul implicit.",
   "Save access": "Salvează accesul",
-  "Per-project roles and private projects are part of the": "Rolurile per proiect și proiectele private fac parte din planul",
   "Default role for other members": "Rol implicit pentru ceilalți membri",
   "No access (private)": "Fără acces (privat)",
   "Add a team member…": "Adaugă un membru al echipei…",
@@ -224,14 +219,12 @@ export const ro: Record<string, string> = {
   "Environment “{name}”": "Mediul „{name}”",
   "Protection rules for deployments and configuration changes.": "Reguli de protecție pentru deploy-uri și modificări de configurație.",
   Save: "Salvează",
-  "Protected environments are part of the": "Mediile protejate fac parte din planul",
   "Protected environment": "Mediu protejat",
   "Only maintainers can change configuration, variables and domains. Deployments by developers become approval requests.":
     "Doar maintainerii pot modifica configurația, variabilele și domeniile. Deploy-urile făcute de developeri devin cereri de aprobare.",
   "Require approval for every deployment": "Cere aprobare pentru fiecare deploy",
   "Including Git pushes and API calls. A maintainer other than the requester must approve (four-eyes principle).":
     "Inclusiv push-urile Git și apelurile API. Un maintainer diferit de solicitant trebuie să aprobe (principiul celor patru ochi).",
-  "Deployment approvals are part of the": "Aprobările de deploy fac parte din planul",
 
   // Time and durations
   never: "niciodată",
@@ -281,7 +274,6 @@ export const ru: Record<string, string> = {
   Project: "Проект",
   Server: "Сервер",
   "Team member": "Участник команды",
-  "Manage license": "Управление лицензией",
 
   // ui
   "Something went wrong": "Что-то пошло не так",
@@ -441,9 +433,6 @@ export const ru: Record<string, string> = {
   "Deploy and configure unprotected environments; request deployments to protected ones.": "Деплой и настройка незащищённых окружений; запросы на деплой в защищённые.",
   "Read-only: resources, logs, deployments and metrics. No secrets.": "Только чтение: ресурсы, логи, деплои и метрики. Без секретов.",
   "Can't see the project.": "Не видит проект.",
-  "{text} {plan} plan.": "{text} {plan}.",
-  "This feature is part of the": "Эта функция входит в план",
-  "Start a free trial or add a license": "Начать бесплатный пробный период или добавить лицензию",
   Approvals: "Согласования",
   Protected: "Защищено",
   "You have read-only access to this project.": "У вас доступ к этому проекту только для чтения.",
@@ -457,7 +446,6 @@ export const ru: Record<string, string> = {
   "Owners and admins always have full access. Everyone else gets their role below, or the default role.":
     "Владельцы и администраторы всегда имеют полный доступ. Остальные получают роль ниже или роль по умолчанию.",
   "Save access": "Сохранить доступ",
-  "Per-project roles and private projects are part of the": "Роли в проектах и приватные проекты входят в план",
   "Default role for other members": "Роль по умолчанию для остальных участников",
   "No access (private)": "Нет доступа (приватный)",
   "Add a team member…": "Добавить участника команды…",
@@ -471,14 +459,12 @@ export const ru: Record<string, string> = {
   "Environment “{name}”": "Окружение «{name}»",
   "Protection rules for deployments and configuration changes.": "Правила защиты для деплоев и изменений конфигурации.",
   Save: "Сохранить",
-  "Protected environments are part of the": "Защищённые окружения входят в план",
   "Protected environment": "Защищённое окружение",
   "Only maintainers can change configuration, variables and domains. Deployments by developers become approval requests.":
     "Только мейнтейнеры могут менять конфигурацию, переменные и домены. Деплои разработчиков становятся запросами на согласование.",
   "Require approval for every deployment": "Требовать согласования каждого деплоя",
   "Including Git pushes and API calls. A maintainer other than the requester must approve (four-eyes principle).":
     "Включая Git push и вызовы API. Согласовать должен мейнтейнер, отличный от автора запроса (принцип четырёх глаз).",
-  "Deployment approvals are part of the": "Согласование деплоев входит в план",
 
   // Time and durations
   never: "никогда",

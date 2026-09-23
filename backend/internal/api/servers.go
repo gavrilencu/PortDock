@@ -142,9 +142,6 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) error {
 	if err := validateServer(&srv); err != nil {
 		return err
 	}
-	if err := s.checkServerLimit(r.Context()); err != nil {
-		return err
-	}
 	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
 	}

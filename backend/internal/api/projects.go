@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/portdock/portdock/internal/auth"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -75,11 +74,6 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if !validProjectRole(p.DefaultRole, true) {
 		p.DefaultRole = "developer"
 	}
-	if p.DefaultRole != "developer" {
-		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
-			return err
-		}
-	}
 	if _, err := store.Insert(r.Context(), s.db, "projects", &p); err != nil {
 		return err
 	}
@@ -132,11 +126,6 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) error {
 	if !validProjectRole(p.DefaultRole, true) {
 		return badRequest("default role must be none, viewer, developer or maintainer")
 	}
-	if p.DefaultRole != before && p.DefaultRole != "developer" {
-		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
-			return err
-		}
-	}
 	if err := store.Update(r.Context(), s.db, "projects", &p); err != nil {
 		return err
 	}
@@ -181,9 +170,6 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) error
 	e.ID, e.ProjectID, e.CreatedAt = 0, id, store.Now()
 	if e.RequireApproval {
 		e.Protected = true
-	}
-	if err := s.envFeatures(r, store.Environment{}, e); err != nil {
-		return err
 	}
 	if _, err := store.Insert(r.Context(), s.db, "environments", &e); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -272,10 +258,6 @@ func (s *Server) updateEnvironment(w http.ResponseWriter, r *http.Request) error
 	if env.RequireApproval {
 		env.Protected = true // approvals only make sense on protected environments
 	}
-	before, _ := store.ByID[store.Environment](r.Context(), s.db, "environments", id)
-	if err := s.envFeatures(r, before, env); err != nil {
-		return err
-	}
 	if err := store.Update(r.Context(), s.db, "environments", &env); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return badRequest("environment %q already exists", env.Name)
@@ -331,11 +313,6 @@ func (s *Server) setProjectMembers(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	ctx := r.Context()
-	if len(in.Members) > 0 {
-		if err := s.requireFeature(ctx, license.FeatureProjectRoles); err != nil {
-			return err
-		}
-	}
 	me := auth.UserFrom(ctx)
 	keepsManage := me.IsAdmin()
 	for _, m := range in.Members {
@@ -377,18 +354,6 @@ func (s *Server) setProjectMembers(w http.ResponseWriter, r *http.Request) error
 	return s.listProjectMembers(w, r)
 }
 
-// envFeatures gates turning on protection or approvals.
-func (s *Server) envFeatures(r *http.Request, before, after store.Environment) error {
-	if after.Protected && !before.Protected {
-		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
-			return err
-		}
-	}
-	if after.RequireApproval && !before.RequireApproval {
-		return s.requireFeature(r.Context(), license.FeatureApprovals)
-	}
-	return nil
-}
 
 // memberCandidates lists active users a maintainer can add to the project.
 func (s *Server) memberCandidates(w http.ResponseWriter, r *http.Request) error {
