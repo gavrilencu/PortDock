@@ -1,263 +1,356 @@
+<div align="center">
+
+<img src="frontend/public/favicon.svg" alt="PortDock" width="72" height="72" />
+
 # PortDock
 
-PaaS self-hosted, alternativă la Coolify: deploy din Git cu push-to-deploy, preview-uri pentru PR-uri, rollback instant, baze de date cu backup programat, servicii one-click și management complet de containere pe serverele tale (local sau prin SSH).
+**Your own Heroku, on your own servers.**
+Deploy applications, databases and services from Git or Docker — with HTTPS, rollbacks, monitoring and an AI assistant — on any Linux server you control.
 
-## Stack
+[![Release](https://img.shields.io/github/v/release/gavrilencu/PortDock?label=release)](https://github.com/gavrilencu/PortDock/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Image](https://img.shields.io/badge/image-ghcr.io%2Fgavrilencu%2Fportdock-2496ED?logo=docker&logoColor=white)](https://github.com/gavrilencu/PortDock/pkgs/container/portdock)
+[![Stars](https://img.shields.io/github/stars/gavrilencu/PortDock?style=social)](https://github.com/gavrilencu/PortDock/stargazers)
 
-| Strat | Tehnologii |
-|---|---|
-| Backend | Go 1.27, `net/http` (routing nativ), SQLite (driver pur Go, WAL), `x/crypto/ssh`, WebSocket (`coder/websocket`), SSE, cron |
-| Frontend | React 19, Vite 8, TypeScript 7, Tailwind CSS 4, TanStack Query 5, React Router 8, xterm.js 6 |
-| Runtime | Docker + Docker Compose, Traefik v3 (reverse proxy, Let's Encrypt, HTTP/3) |
+[Quick start](#quick-start) · [Features](#features) · [Screenshots](#screenshots) · [Documentation](#documentation) · [Română](docs/README.ro.md)
 
-Un singur binar (~20 MB) care conține API-ul, UI-ul, workerii de deploy, monitorul și scheduler-ul.
+<img src="docs/images/versions.png" alt="PortDock — versions of an application with drag-and-drop rollback" width="100%" />
 
-## Funcționalități
+</div>
 
-**CI/CD**
-- Deploy din orice repo Git (GitHub, GitLab, Gitea/Forgejo, Bitbucket), public sau privat (token).
-- Build packs: **Dockerfile**, **Nixpacks**, **static** (nginx + fallback SPA), **auto-detect** (generează Dockerfile pentru Node/Bun/pnpm/yarn, Python, Go, site static), **Docker Compose**, **imagine Docker**.
-- Webhook-uri cu verificare HMAC/token: push → deploy; pull request → **preview deployment** cu domeniu propriu, șters automat la închiderea PR-ului.
-- **Watch paths** (glob-uri cu `**` și `!`) pentru monorepo-uri.
-- **Deploy hook** generic pentru orice pipeline CI (GitHub Actions, GitLab CI, Jenkins) — rulezi testele, apoi declanșezi deploy-ul.
-- Coadă persistentă, build-uri paralele configurabile, un singur deploy activ per aplicație, **anularea automată a build-urilor depășite**.
-- **Zero-downtime**: versiunea nouă pornește lângă cea veche, primește trafic doar după health check (HTTP sau `HEALTHCHECK` din imagine), apoi cea veche e oprită. La eșec, versiunea veche rămâne activă.
-- Comenzi **pre-deploy** (ex. migrații, într-un container one-off din imaginea nouă) și **post-deploy**.
-- **Rollback** instant la orice imagine anterioară (se păstrează ultimele 5 per aplicație), cache de imagine per commit, **force rebuild**.
-- Log-uri de build live (SSE), cu secretele mascate.
-- Replici multiple load-balanced, limite CPU/memorie, label-uri și opțiuni `docker run` custom.
+---
 
-**Registry-uri & deploy pe mai multe servere**
-- **Registry-uri de containere**: Docker Hub, GitHub Container Registry, GitLab, **Amazon ECR** (token reînnoit automat la fiecare deploy, semnătură SigV4), Harbor, Quay sau orice registry OCI (Azure ACR, Google Artifact Registry, Nexus). Credențialele se verifică din UI (*Test connection*) și ajung la `docker login` doar prin stdin.
-- Imaginea se construiește **o singură dată**, se publică `registry/namespace/app:<commit>` și `:latest`, iar fiecare server o descarcă din registry. Același registry se folosește și pentru imaginile private (sursă *Docker image* sau Compose).
-- **Aceeași aplicație pe mai multe servere**: deploy de tip rolling, server cu server. Dacă un server pică la health check, deploy-ul se oprește, iar mesajul arată pe câte servere rulează deja versiunea nouă.
-- **Fără registry**, imaginea e transmisă direct, prin SSH, de pe serverul de build pe celelalte (`docker save | docker load`, comprimat).
-- **Server de build dedicat**, ca build-urile să nu consume resursele serverelor de producție.
-- Start/stop/restart, log-uri, terminal, rute Traefik, status și ștergerea funcționează pe toate serverele aplicației. Un server scos din listă e curățat automat de aplicație.
+## Why PortDock
 
-**Monitorizare & alerte**
-- **Metrici istorice** pentru servere (CPU, memorie, disc, rețea, load) și pentru fiecare aplicație, bază de date și serviciu (CPU, memorie față de limită, rețea, disponibilitate, restarturi). Sunt colectate la fiecare minut, printr-o singură conexiune SSH pe server.
-- Grafice pentru 1h, 6h, 24h, 7 zile și 30 de zile. Pentru intervalele lungi se afișează media și vârful pe fiecare oră. Datele la minut se păstrează 48 de ore, cele pe oră 90 de zile. Pentru aplicațiile pe mai multe servere sau cu mai multe replici, valorile se adună.
-- **Reguli de alertă**: CPU, memorie, disc sau load peste un prag pe o durată dată, crash loop (restarturi într-un interval) și resursă căzută. Se aplică pe toate resursele de un tip sau pe una anume, cu severitate warning sau critical.
-- Alerta pornește doar dacă pragul e depășit la fiecare măsurare de pe toată durata (fără alarme false din vârfuri scurte) și se rezolvă automat când valoarea revine. Resursele oprite manual nu generează alerte „down”.
-- Pagina **Alerts** are alertele active (cu *Acknowledge*), istoricul, regulile și alegerea canalelor de notificare (Slack, Discord, Telegram, email, webhook). În meniu apare un badge cu numărul de alerte active.
-- Reguli implicite pe o instalare nouă: CPU server peste 90% timp de 10 minute, memorie peste 90% timp de 5 minute, disc peste 85%, crash loop de aplicație, aplicație căzută, bază de date căzută.
+- **Everything in one place.** Git deployments, Docker Compose stacks, managed databases, one-click services, domains with automatic HTTPS, metrics, alerts and backups — in a single binary with a modern web interface.
+- **Roll back in seconds.** Every production deployment is kept as a version. Drag an older version onto **Live** and it is back — no rebuild, same environment variables.
+- **Monorepos done right.** A frontend and a backend in one `docker-compose.yml` deploy together, each service with its own domain and its own variables.
+- **Built for teams.** Project roles, protected environments, deployment approvals, SSO (OIDC), LDAP / Active Directory, two-factor authentication and a full audit log.
+- **An AI assistant built in.** Ask about failing deployments, DNS or Docker in the corner of every page, with any model on OpenRouter.
+- **Free and open source.** No plans, no license keys, no limits on servers or users. Apache-2.0.
 
-**Management containere & servere**
-- Servere multiple prin SSH (chei Ed25519 generate sau importate, criptate; host key pinning TOFU).
-- Setup automat de server: instalează Docker, rețeaua, Traefik, opțional Nixpacks.
-- Containere: start/stop/restart/pause/remove, log-uri live, **terminal web** (docker exec cu PTY), inspect, statistici CPU/RAM/rețea.
-- Imagini, volume, rețele, prune (build cache, imagini, volume, sistem); curățenie automată zilnică.
-- Metrici server (load, RAM, disk, uptime), monitorizare la 30s cu notificări la căderi.
-- Terminal SSH pe server (doar admin).
+## Quick start
 
-**Resurse**
-- Baze de date: PostgreSQL 18, MySQL 8.4, MariaDB 11, MongoDB 8, Redis 8, Valkey 8, ClickHouse — parole generate, URL-uri de conexiune interne/publice, **backup programat (cron)**, retenție, **upload S3** (AWS, R2, B2, MinIO), download și **restore** din UI.
-- Servicii one-click: WordPress, n8n, Gitea, MinIO, Umami, Grafana, Vaultwarden, Ghost, Metabase, pgAdmin, NocoDB, Uptime Kuma, plus compose custom.
-- Variabile de mediu criptate (AES-256-GCM), build-time/runtime, secrete, override-uri pentru preview, editor `.env` bulk.
-- Domenii multiple cu HTTPS automat, redirect HTTP→HTTPS, domenii wildcard per server.
+On a Linux server (Ubuntu or Debian recommended), as root. Ports **80** and **443** must be free for the HTTPS proxy.
 
-**Securitate & autentificare**
-- **Autentificare cu doi factori (TOTP)**: aplicații tip Microsoft/Google Authenticator, 1Password, Bitwarden; 10 coduri de recuperare de unică folosință; codurile folosite nu pot fi refolosite (replay).
-- **Politică 2FA** la nivel de organizație: opțională, obligatorie pentru admini sau pentru toți; cei care nu au 2FA sunt obligați să-l configureze la următoarea autentificare.
-- **Single sign-on (OpenID Connect)**: Microsoft Entra ID, Okta, Google Workspace, Keycloak, Authentik, GitLab sau orice furnizor OIDC. Folosește PKCE, verifică semnătura ID token-ului (JWKS), plus nonce, audience și expirarea. Conturile pot fi create automat (JIT), există restricție pe domenii de email, iar rolul de admin se mapează din grupuri la fiecare login.
-- Autentificarea cu parolă poate fi dezactivată (SSO obligatoriu); owner-ul păstrează un cont de urgență (break-glass).
-- **Sesiuni active** per utilizator (dispozitiv, IP, metodă de login), deconectare individuală sau de pe toate celelalte sesiuni. Adminii pot dezactiva conturi, reseta 2FA și închide sesiunile unui utilizator.
-- Protecție brute-force: blocare după 10 încercări eșuate în 15 minute (per IP și per cont). Toate evenimentele ajung în audit log.
-- Recuperare din linia de comandă: `docker exec portdock portdock -disable-2fa user@example.com`.
-
-**Control acces & conformitate**
-- **Roluri pe proiect**: *viewer* (doar citire, fără secrete), *developer* (deploy și configurare pe mediile neprotejate), *maintainer* (acces total în proiect, membri, aprobări). Fiecare proiect are și un rol implicit pentru restul membrilor. Cu rolul implicit *none*, proiectul e privat: cine nu e membru nici nu-l vede. Owner-ii și adminii au acces total.
-- **Medii protejate** (de exemplu production): doar maintainerii schimbă configurația, variabilele și domeniile. Deploy-urile făcute de developeri devin cereri de aprobare.
-- **Aprobare obligatorie**: orice deploy dintr-un mediu (inclusiv git push și API) așteaptă aprobarea unui maintainer diferit de cel care l-a cerut (principiul celor patru ochi). Aprobarea și respingerea pot avea comentariu, apar pe pagina deploy-ului, trimit notificare (`deployment.approval_required`) și ajung în audit log.
-- Toate rutele API sunt verificate central după rol, inclusiv containerele de pe servere (log-uri, terminal, acțiuni). Listele, dashboard-ul și alertele arată doar resursele accesibile. Viewerii nu văd parolele bazelor de date.
-- **Audit log**: fiecare acțiune are IP-ul utilizatorului. Poți filtra după text, tip de acțiune și interval, și exporta în **CSV/JSON** (protejat împotriva injecției de formule în Excel). **Streaming către SIEM** (Splunk, Elastic, Sentinel, Datadog): webhook JSON semnat HMAC-SHA256 sau syslog RFC 5424 prin UDP/TCP.
-
-**Gratuit și open source**
-- Toate funcțiile sunt disponibile, fără planuri, chei de licență sau limite de servere și utilizatori.
-
-**Platformă**
-- Proiecte și medii (production, staging…), echipă cu roluri (owner/admin/member), tokenuri API, audit log.
-- Notificări: Discord, Slack, Telegram, email (SMTP), webhook semnat.
-- UI în timp real (evenimente SSE), temă dark/light.
-
-## Pornire rapidă (producție)
-
-Pe un server Linux (Ubuntu/Debian recomandat), ca root, cu porturile 80, 443 și 8000 libere:
+**Option 1 — installer** (installs Docker if it is missing):
 
 ```bash
 git clone https://github.com/gavrilencu/PortDock.git portdock && cd portdock
-sudo bash install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000 (alt port: PORTDOCK_PORT=9000)
+sudo bash install.sh                               # dashboard on http://<server-ip>:8000
+sudo bash install.sh https://portdock.example.com  # or with a domain that points to the server
 ```
 
-Deschide URL-ul, creează contul de owner. Serverul local e adăugat automat; apasă **Servers → localhost → Run setup** ca să pornești Traefik.
+If port 8000 is taken, the installer picks the next free port and prints the address (or set `PORTDOCK_PORT=9000`).
 
-Resetare parolă: `docker exec portdock portdock -reset-password admin@example.com`
-
-### Servere remote
-
-1. **Servers → Add server** → generează o cheie SSH.
-2. Adaugă cheia publică în `~/.ssh/authorized_keys` pe server (user `root` recomandat).
-3. **Run setup** pe noul server — instalează Docker, rețeaua `portdock` și Traefik.
-4. Opțional: setează un *wildcard domain* (`*.apps.example.com` → IP server) pentru domenii automate și preview-uri.
-
-## Dezvoltare
+**Option 2 — prebuilt image** (Docker already installed):
 
 ```bash
-make dev-api   # backend pe :8000 (date în ./.data)
-make dev-ui    # Vite pe :5173, proxy /api → :8000
-make test      # go vet + go test + tsc
-make build     # binar în bin/portdock, cu UI încorporat
+docker run -d --name portdock --restart unless-stopped \
+  -p 8000:8000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /data/portdock:/data/portdock \
+  -e PORTDOCK_PUBLIC_URL=http://<server-ip>:8000 \
+  ghcr.io/gavrilencu/portdock:latest
 ```
 
-Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/WSL și Docker Desktop, sau rulează totul cu `docker compose up --build`.
+Keep the data directory mounted at the same path as on the host (`/data/portdock`): builds and backups are bind-mounted into helper containers by absolute path.
 
-## Configurare (variabile de mediu)
+**Then:** open the dashboard, create the owner account, and start the proxy from **Servers → localhost → Run setup**. Every [release](https://github.com/gavrilencu/PortDock/releases) lists the exact commands for that version.
 
-| Variabilă | Implicit | Descriere |
+## Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🚀 Deployments**
+- From GitHub (GitHub App), GitLab, Gitea / Forgejo, Bitbucket or any Git URL; Docker images; Docker Compose
+- Build packs: Dockerfile, Nixpacks, Node.js, Bun, Python, Go, static sites, shell scripts — auto-detected
+- Push-to-deploy, pull request previews with their own domain, deploy hooks for any CI
+- Zero-downtime rollouts: traffic moves only after the health check passes
+- Pre- and post-deploy commands, replicas, CPU / memory limits, watch paths for monorepos
+- Several servers per application, dedicated build servers, private registries
+
+</td>
+<td width="50%" valign="top">
+
+**🕘 Versions**
+- Every production deployment becomes a version (v1, v2…)
+- The live version and the last 5 are kept for 15 days
+- Roll back by drag and drop or in two clicks — no rebuild, current variables
+- Docker Compose services each keep their own images
+
+**🌐 Domains & HTTPS**
+- Automatic Let's Encrypt certificates, renewal and expiry watchdog
+- Wildcards, DNS-01 (Cloudflare, Route 53, Azure, Hetzner…), uploaded certificates
+- www redirects, per-domain ports and paths, a domain per compose service
+- Changes apply in seconds, without a redeploy
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🗄️ Databases & services**
+- PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse
+- Scheduled backups with retention, upload to S3 (AWS, R2, B2, MinIO), one-click restore
+- Access from outside by domain or public IP
+- 13 one-click services (n8n, WordPress, Gitea, Grafana, Vaultwarden, MinIO…) and a catalog of 127 Docker images
+
+**⚙️ Configuration**
+- Encrypted environment variables (AES-256-GCM), build-time and runtime, per compose service
+- Variables from `docker-compose.yml` shown and overridable; apply with a restart
+- Registries: Docker Hub, GHCR, GitLab, Amazon ECR, Harbor, Quay, any OCI registry
+
+</td>
+<td valign="top">
+
+**🖥️ Servers & containers**
+- The local server and remote servers over SSH (keys encrypted, host key pinning)
+- One-click server setup: Docker, network and the Traefik proxy
+- Web terminal, live logs, start / stop / restart, images, volumes, networks, prune
+- Live topology map with crash-loop detection, in the style of Argo CD
+
+**📈 Monitoring & alerts**
+- CPU, memory, disk, network and load history for servers and every resource
+- Alert rules with duration and severity; notifications by email, Slack, Discord, Telegram or signed webhook
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🔐 Teams & security**
+- Owner / admin / member, plus viewer / developer / maintainer roles per project
+- Protected environments and deployment approvals (four-eyes principle)
+- Two-factor authentication with recovery codes, organization-wide 2FA policy
+- Single sign-on (OIDC: Entra ID, Okta, Google, Keycloak, Authentik…) and LDAP / Active Directory
+- Audit log with CSV / JSON export and SIEM streaming (webhook or syslog), API tokens
+
+</td>
+<td valign="top">
+
+**✨ Platform**
+- One-click updates from GitHub releases, with a backup and automatic rollback
+- AI assistant with any model on OpenRouter, per-user history, access control
+- Interface in English, Romanian and Russian; light and dark theme
+- Command palette (Ctrl K), real-time UI, full-width responsive layout
+
+</td>
+</tr>
+</table>
+
+## Screenshots
+
+| | |
+|---|---|
+| <img src="docs/images/dashboard.png" alt="Dashboard" /> **Dashboard** — every project, deployment and server at a glance | <img src="docs/images/application.png" alt="Application" /> **Application** — deployments, containers, domains and details |
+| <img src="docs/images/topology.png" alt="Topology" /> **Topology** — domains, resources, servers and containers, live | <img src="docs/images/assistant.png" alt="AI assistant" /> **AI assistant** — help with deployments, right where you work |
+| <img src="docs/images/domains.png" alt="Domains" /> **Domains** — HTTPS, redirects and DNS checks per domain | <img src="docs/images/about.png" alt="About" /> **About** — everything PortDock can do |
+
+## PortDock vs. a hosted PaaS
+
+| | Hosted PaaS (Heroku, Vercel, Render…) | PortDock |
 |---|---|---|
-| `PORTDOCK_ADDR` | `:8000` | Adresa HTTP |
-| `PORTDOCK_DATA_DIR` | `/data/portdock` | DB, cheia de criptare, build-uri, backup-uri. **În Docker, montează-l la aceeași cale ca pe host.** |
-| `PORTDOCK_PUBLIC_URL` | `http://localhost:8000` | URL-ul extern (pentru webhook-uri); `https://` activează cookie-uri Secure |
-| `PORTDOCK_SECRET_KEY` | generat în `secret.key` | Cheia AES pentru secrete (base64 32 bytes sau passphrase). **Fă backup la ea.** |
-| `PORTDOCK_MAX_BUILDS` | `4` | Deploy-uri paralele |
-| `PORTDOCK_NETWORK` | `portdock` | Rețeaua Docker partajată cu Traefik |
-| `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS pentru dev / log-uri debug |
-| `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API-ul folosit de asistentul AI (un gateway compatibil OpenRouter, de exemplu în rețele fără acces direct) |
+| Where your apps and data live | The provider's cloud | Your own servers, any provider or on-premises |
+| Cost | Per app, per seat, per GB | Free — you pay only for your servers |
+| Limits | Plan limits on apps, builds, bandwidth | None |
+| Databases | Paid add-ons | Included, with backups to your own S3 |
+| Single sign-on, LDAP, audit log | Usually enterprise plans | Included |
+| Vendor lock-in | Provider-specific configuration | Standard Docker and Docker Compose |
 
-## Asistent AI
+If you know Coolify, Dokploy or CapRover, PortDock will feel familiar — with versions and drag-and-drop rollback, a domain and variables per compose service, deployment approvals, SSO / LDAP and an AI assistant included.
 
-**Settings → AI assistant** activează un asistent de chat în colțul din dreapta jos al aplicației:
+## Documentation
 
-- **Model:** orice model de pe [OpenRouter](https://openrouter.ai), ales din catalogul complet (cu căutare, context și preț per 1M de tokeni, filtru pentru modelele gratuite) sau scris manual (de exemplu `anthropic/claude-sonnet-4.5`).
-- **Cheia API** OpenRouter se salvează criptat; **Test connection** verifică cheia și modelul.
-- **Acces:** toți utilizatorii, doar administratorii sau doar utilizatorii bifați.
-- **Instrucțiuni** opționale adăugate la prompt-ul de sistem (convențiile echipei, tonul).
-- Fiecare utilizator are **istoricul** conversațiilor lui (vizibil doar lui). Răspunsurile apar pe măsură ce sunt generate, cu Stop, copiere și formatare Markdown; fereastra se poate minimiza și mări.
+<details>
+<summary><b>Remote servers</b></summary>
 
-Mesajele sunt trimise la OpenRouter și la furnizorul modelului ales: nu lipi secrete în chat.
+1. **Servers → Add server** and generate an SSH key.
+2. Add the public key to `~/.ssh/authorized_keys` on the server (the `root` user is recommended).
+3. Press **Run setup** on the new server: it installs Docker, the `portdock` network and the Traefik proxy.
+4. Optional: set a *wildcard domain* (`*.apps.example.com` → server IP) for automatic domains and previews.
 
-## Domenii
+</details>
 
-Fiecare aplicație are tab-ul **Domains**, cu un tabel similar celui din Coolify: domeniu, redirect HTTP→HTTPS, redirect spre www sau fără www, port intern per domeniu, indexare în motoarele de căutare (`X-Robots-Tag`), status DNS și acțiuni.
+<details>
+<summary><b>Domains and certificates</b></summary>
 
-- Modificările se aplică **în câteva secunde, fără redeploy**. Rutarea e generată ca fișiere Traefik (`/data/portdock/proxy/dynamic`), nu ca label-uri pe containere.
-- La deploy, traficul se mută pe versiunea nouă **doar după health check**. Am verificat cu 120 de cereri continue în timpul unui redeploy: 0 erori.
-- **Check all DNS** compară A/AAAA cu IP-ul serverului și detectează Cloudflare proxy. **DNS records** arată exact înregistrările de creat.
-- Același domeniu nu poate fi folosit de două aplicații. Domeniile wildcard (`*.apps.example.com`) sunt suportate, dar certificatul wildcard cere o provocare DNS-01.
+- Each application has a **Domains** tab: HTTP → HTTPS redirect, www redirect, internal port per domain, search indexing (`X-Robots-Tag`), DNS status and certificate status. Changes reach the proxy within seconds, without a redeploy.
+- **Check all DNS** compares A / AAAA records with the server IP and detects the Cloudflare proxy; **DNS records** lists exactly what to create.
+- Let's Encrypt certificates are issued and renewed automatically. A watchdog checks them every 6 hours and forces a renewal when fewer than 14 days are left, with notifications (`certificate.expiring`, `certificate.renewed`, `certificate.failed`).
+- **DNS-01** for wildcard and internal domains: Cloudflare, Route 53, Azure DNS, Google Cloud DNS, DigitalOcean, Hetzner, OVH, GoDaddy, RFC 2136 or any provider supported by lego. A custom ACME server (step-ca) or the Let's Encrypt staging environment can be used too.
+- **Uploaded certificates** (corporate CA, EV / OV) are validated and distributed to every proxy, with reminders before they expire.
+- **Settings → General** sets the dashboard URL (PortDock serves itself on that domain with a certificate), time zone and public IPs.
 
-**Settings → General**: URL-ul panoului (PortDock se servește singur pe acel domeniu, prin Traefik, cu certificat Let's Encrypt), nume, redirect HTTPS, fus orar (folosit de backup-urile programate) și IPv4/IPv6 public (butonul Detect le află automat).
+</details>
 
-Build prin oglindă, când Docker Hub limitează descărcările: `BASE_REGISTRY=mirror.gcr.io/library docker compose build`.
+<details>
+<summary><b>Docker Compose: a domain and variables per service</b></summary>
 
-## Certificate SSL
+- When the repository comes from GitHub, PortDock reads `docker-compose.yml` and offers a domain field for every service at creation — for example `app.example.com` → `frontend` and `api.example.com` → `backend`. The port is taken from `ports` / `expose`.
+- Later, the **Domains** tab has a *Service* selector; changes apply without a redeploy.
+- The **Environment** tab has variables for the whole application (available as `${VAR}` in the compose file) and variables per service, which override the values in `docker-compose.yml`. **Restart with new variables** applies them without a rebuild.
+- Prefer `expose:` over `ports:` so containers don't bind ports on the host — traffic comes through the proxy.
 
-- Certificatele Let's Encrypt se emit și se reînnoiesc automat, prin Traefik (reînnoirea are loc cu 30 de zile înainte de expirare). **Settings → Certificates** afișează fiecare domeniu cu starea certificatului, emitentul și zilele rămase.
-- **Supraveghere automată** la fiecare 6 ore. Dacă un certificat are sub 14 zile rămase (pragul se poate configura), Traefik n-a reușit reînnoirea, iar PortDock forțează o emitere nouă: oprește proxy-ul câteva secunde, șterge certificatul vechi, pornește proxy-ul și verifică din nou după 3 minute. Rezultatul vine ca notificare (`certificate.expiring`, `certificate.renewed`, `certificate.failed`). Reînnoirea forțată se face cel mult o dată pe zi per domeniu, din cauza limitelor Let's Encrypt. Pentru fiecare domeniu există și butonul *Renew now*.
-- **DNS-01** pentru domenii wildcard și interne: Cloudflare, Route 53, Azure DNS, Google Cloud DNS, DigitalOcean, Hetzner, OVH, GoDaddy, RFC 2136 (Windows DNS/BIND/PowerDNS) sau orice provider suportat de lego. Credențialele sunt criptate și ajung pe server într-un fișier cu permisiuni 0600.
-- **Server ACME propriu** (step-ca, PKI internă) sau Let's Encrypt staging pentru teste.
-- **Certificate încărcate manual** (CA corporativ, EV/OV): lanțul și cheia sunt validate (cheia trebuie să corespundă certificatului, iar certificatul să nu fie expirat). Se distribuie pe toate proxy-urile, iar tu primești notificări la 30, 14, 7 și 3 zile înainte de expirare.
-- La orice schimbare de configurare (email, CA, DNS), proxy-ul se recreează singur, pe baza unei amprente a configurației.
+</details>
 
-## LDAP / Active Directory
+<details>
+<summary><b>Versions and rollbacks</b></summary>
 
-**Settings → Authentication → LDAP & Active Directory**. Există presetări pentru Active Directory, OpenLDAP și FreeIPA:
-- conexiune LDAPS sau StartTLS, cu CA propriu opțional;
-- un cont de serviciu caută utilizatorul, iar parola lui se verifică printr-un bind cu propriul DN;
-- conturile dezactivate în AD sunt refuzate;
-- grupurile imbricate din AD sunt rezolvate;
-- poți cere apartenența la anumite grupuri pentru acces și poți mapa grupurile de admin;
-- contul PortDock se creează automat la prima logare.
+- Every successful production deployment is saved as a numbered version. Single-container applications tag their image; compose applications tag the image of every built service and keep the compose file.
+- The live version plus the last 5 are kept for 15 days; older ones are removed automatically.
+- In the **Versions** tab, drag a version onto **Live**, press **Deploy** or **Roll back to vN**. Nothing is rebuilt, the current variables are used, and the old version stops only once the new one is healthy. Approvals apply when the environment requires them.
 
-Utilizatorii se loghează cu username, UPN sau email. Politicile de 2FA se aplică și lor, iar conturile locale rămân disponibile ca rezervă. Butonul *Test* verifică conexiunea și arată pentru un utilizator emailul, grupurile și rolul rezultat.
+</details>
 
-## Actualizări PortDock
+<details>
+<summary><b>GitHub integration</b></summary>
 
-Împingi un tag `vX.Y.Z` pe GitHub, iar workflow-ul `.github/workflows/release.yml` rulează testele, publică imaginea `ghcr.io/<owner>/<repo>:vX.Y.Z` și creează release-ul. Workflow-ul include în imagine și numele repository-ului, așa că **orice instalare dintr-un release știe singură de unde vin update-urile, fără nicio configurare**. Repository-ul fiind public, nu e nevoie de token nici pentru release-uri, nici pentru imagine. PortDock verifică la fiecare 6 ore și afișează în meniu *Update available*, cu versiunea instalată, versiunea nouă și notele de release. Sursa se poate schimba doar din *Settings → Updates → Advanced* (pentru fork-uri sau mirror-uri).
+1. **Settings → Git sources → Connect GitHub.** PortDock creates a private GitHub App with minimal permissions (Contents, Metadata and Pull requests read; Commit statuses write), optionally under an organization or on GitHub Enterprise Server. **Use existing app** takes an App ID, private key and webhook secret.
+2. Install the app on your account or organization and choose the repositories.
+3. **New resource → Git repository → GitHub**: pick the repository and branch; the build pack is detected automatically.
+4. Every push deploys; pull requests get previews if enabled. The status appears on the commit as `portdock/deploy`.
 
-La *Update now*:
-1. Update-ul e refuzat dacă rulează deploy-uri.
-2. Se descarcă imaginea, iar baza de date și cheia de criptare se salvează în `/data/portdock/backups/portdock/`.
-3. Un container *updater* pornește din **imaginea curentă, verificată**, apoi:
-   - oprește PortDock;
-   - creează containerul nou cu exact aceeași configurare (volume, porturi, rețele, env, restart policy);
-   - așteaptă health check-ul.
-4. Dacă versiunea nouă nu pornește sau e nesănătoasă, **revine automat** la versiunea veche.
+GitHub needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver webhooks.
 
-Aplicațiile rulează în continuare pe tot parcursul update-ului. Opțional poți activa update-uri automate între 02:00 și 05:00, doar pentru versiunile stabile.
+</details>
 
-## Topology
+<details>
+<summary><b>CI/CD</b></summary>
 
-Pagina **Topology** (și tab-ul *Topology* din fiecare aplicație) e o hartă live, în stilul ArgoCD: *domeniu → resursă → server → containere*. Culorile arată starea (healthy, running, starting, unhealthy, restarting, **CrashLoop**, failed, exited), iar muchiile animate arată containerele care cad în buclă. Se reîmprospătează la fiecare 5 secunde.
+**Push-to-deploy:** in the application, *CI/CD & Webhooks* shows the GitHub / GitLab / Gitea webhook URL and secret (events: push and pull request).
 
-Click pe un container deschide un panou cu:
-- rezumatul: imagine, exit code, OOM, restarturi, porturi, rețele cu IP;
-- **log-uri live**;
-- **variabilele de mediu**: valorile sunt vizibile doar celor cu drept de modificare, iar secretele sunt ascunse până le afișezi;
-- **terminal**;
-- butoane pentru restart, stop și start.
-
-## Single sign-on
-
-1. **Settings → Authentication → Add provider** și alegi furnizorul.
-2. Copiezi **Redirect URI** (`<URL panou>/api/auth/sso/<slug>/callback`) în aplicația creată la furnizor.
-3. Completezi Issuer URL-ul, apeși **Test** (verifică documentul de discovery), apoi Client ID și Client secret.
-   - Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0`. Pentru maparea adminilor, adaugă claim-ul opțional `groups` și pune ID-ul grupului la *Admin groups*.
-   - Okta: `https://<org>.okta.com`, scope-ul `groups`.
-   - Keycloak: `https://<host>/realms/<realm>`.
-4. Opțional, în **Sign-in policy**: 2FA obligatoriu și dezactivarea autentificării cu parolă.
-
-URL-ul panoului (Settings → General → URL) trebuie să fie cel pe care îl folosesc utilizatorii, pentru că din el se construiește redirect URI-ul.
-
-## Integrarea GitHub (GitHub App)
-
-1. **Settings → Git sources → Connect GitHub.** PortDock creează prin *manifest flow* o aplicație GitHub privată cu permisiunile minime: Contents / Metadata / Pull requests (read) și Commit statuses (write). Opțional o poți crea sub o organizație sau pe **GitHub Enterprise Server**. Dacă organizația gestionează aplicațiile centralizat, folosește **Use existing app** (App ID + cheie privată + webhook secret).
-2. **Instalează aplicația** pe contul sau organizația dorită și alege repo-urile.
-3. **New resource → Git repository → GitHub:** cauți repo-ul, alegi branch-ul, iar tipul de deploy se detectează automat (Dockerfile, Compose, Node/Bun/Python/Go, static). Îl poți schimba, inclusiv pe **Shell script**: comenzi proprii de install/build/start pe orice imagine de bază.
-4. **Deploy automat:** fiecare push pe branch declanșează un deploy, iar PR-urile primesc preview-uri dacă le activezi. Statusul apare pe commit în GitHub ca `portdock/deploy`.
-
-Pentru ca GitHub să poată trimite webhook-uri, `PORTDOCK_PUBLIC_URL` trebuie să fie o adresă HTTPS publică. Pe localhost merg navigarea prin repo-uri și deploy-urile manuale.
-
-## CI/CD în practică
-
-**Push-to-deploy**: în aplicație → *CI/CD & Webhooks*, copiază URL-ul GitHub/GitLab/Gitea și secretul în setările webhook ale repo-ului (evenimente: push + pull request).
-
-**Teste înainte de deploy** (GitHub Actions): dezactivează *Deploy on push* și declanșează deploy-ul după teste:
+**Tests before deploying** (GitHub Actions) — turn off *Deploy on push* and trigger the deployment after the tests:
 
 ```yaml
 - run: npm ci && npm test
 - run: curl -fsS -X POST "${{ secrets.PORTDOCK_DEPLOY_HOOK }}&commit=${{ github.sha }}"
 ```
 
-**API**: `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer pd_…"`
+**API:** `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer pd_…"`
 
-## Arhitectură
+</details>
+
+<details>
+<summary><b>Single sign-on and LDAP / Active Directory</b></summary>
+
+**SSO (OpenID Connect):** **Settings → Authentication → Add provider**, copy the *Redirect URI* (`<dashboard URL>/api/auth/sso/<slug>/callback`) into the app at your identity provider, then fill in the issuer URL, client ID and secret. PKCE, ID token signatures, nonce, audience and expiry are verified. Accounts can be created on first sign-in, restricted to email domains, and admin rights mapped from groups. Password sign-in can be turned off (the owner keeps a break-glass account).
+
+- Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0` (add the optional `groups` claim for admin mapping)
+- Okta: `https://<org>.okta.com` with the `groups` scope
+- Keycloak: `https://<host>/realms/<realm>`
+
+**LDAP / Active Directory:** presets for Active Directory, OpenLDAP and FreeIPA; LDAPS or StartTLS with an optional custom CA; a service account finds the user and the password is checked with a bind; disabled AD accounts are refused and nested groups resolved; required groups and admin groups can be set. **Test** shows the email, groups and resulting role of a user.
+
+</details>
+
+<details>
+<summary><b>AI assistant</b></summary>
+
+**Settings → AI assistant** turns on a chat assistant in the bottom-right corner:
+
+- any model on [OpenRouter](https://openrouter.ai), picked from the full catalog (search, context, price per 1M tokens, free-models filter) or typed by id, e.g. `anthropic/claude-sonnet-4.5`;
+- the API key is stored encrypted; **Test connection** checks the key and the model;
+- access for all users, administrators only or selected users; optional instructions for the system prompt;
+- each user has a private history; replies stream in with Markdown, code blocks, Stop and copy.
+
+Messages are sent to OpenRouter and the provider of the selected model — don't paste secrets. `PORTDOCK_OPENROUTER_URL` points the assistant at an OpenRouter-compatible gateway.
+
+</details>
+
+<details>
+<summary><b>Updates</b></summary>
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`: tests, the multi-arch image `ghcr.io/<owner>/<repo>:vX.Y.Z` and the GitHub release, whose description comes from `docs/releases/vX.Y.Z.md` plus install instructions. Every build knows its repository, so installations find updates without configuration. PortDock checks for a new release whenever it is opened and shows **Update available** in the sidebar.
+
+On update, PortDock refuses to start while deployments are running, downloads the image, backs up the database and encryption key to `/data/portdock/backups/portdock/`, then an updater container recreates PortDock with the same configuration and waits for its health check — rolling back automatically if the new version doesn't start. Applications keep running throughout. Automatic updates between 02:00 and 05:00 can be enabled for stable releases.
+
+</details>
+
+<details>
+<summary><b>Recovery from the command line</b></summary>
+
+```bash
+docker exec portdock portdock -reset-password admin@example.com   # new password for a user
+docker exec portdock portdock -disable-2fa user@example.com       # turn off two-factor authentication
+```
+
+</details>
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORTDOCK_ADDR` | `:8000` | HTTP listen address |
+| `PORTDOCK_PORT` | `8000` | Host port used by `install.sh` / `docker-compose.yml` |
+| `PORTDOCK_DATA_DIR` | `/data/portdock` | Database, encryption key, builds and backups. In Docker, mount it at the same path as on the host. |
+| `PORTDOCK_PUBLIC_URL` | `http://localhost:8000` | External URL (webhooks); `https://` enables secure cookies |
+| `PORTDOCK_SECRET_KEY` | generated in `secret.key` | AES key for secrets (base64, 32 bytes, or a passphrase). **Back it up.** |
+| `PORTDOCK_MAX_BUILDS` | `4` | Parallel deployments |
+| `PORTDOCK_NETWORK` | `portdock` | Docker network shared with Traefik |
+| `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API used by the AI assistant |
+| `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS for development / debug logs |
+
+Behind Docker Hub rate limits, build through a mirror: `BASE_REGISTRY=mirror.gcr.io/library docker compose build`.
+
+## Development
+
+```bash
+make dev-api   # backend on :8000, data in ./.data
+make dev-ui    # Vite on :5173, proxying /api to :8000
+make test      # go vet, go test and the TypeScript check
+make build     # bin/portdock with the UI embedded
+```
+
+The backend runs Docker commands through a shell; on Windows use Git Bash or WSL with Docker Desktop, or run everything with `docker compose up --build`. New interface texts go through `t("…")` with translations in `frontend/src/locales/`; `npm run i18n:check` lists missing ones.
+
+### Stack
+
+| Layer | Technologies |
+|---|---|
+| Backend | Go, `net/http`, SQLite (pure-Go driver, WAL), `x/crypto/ssh`, WebSocket, SSE |
+| Frontend | React 19, Vite, TypeScript, Tailwind CSS 4, TanStack Query, React Router, xterm.js |
+| Runtime | Docker and Docker Compose, Traefik v3 (reverse proxy, Let's Encrypt, HTTP/3) |
+
+### Architecture
 
 ```
 backend/
-  cmd/portdock          entrypoint (server HTTP, workeri, monitor, scheduler)
-  internal/api          REST, SSE (log-uri/evenimente), WebSocket (terminal), webhook-uri, UI embed
-  internal/deploy       coada de deploy, pipeline (clone → build → health check → rollout),
-                        builderi, compose, baze de date, backup, servicii, monitor
-  internal/executor     rulare comenzi local / SSH (pool, PTY, host key pinning)
-  internal/docker       wrapper Docker CLI (containere, stats, imagini, volume, rețele, metrici)
-  internal/proxy        Traefik: pornire + label-uri de rutare/TLS
-  internal/templates    motoare DB și șabloane de servicii
-  internal/store        SQLite, schema, mapper generic
-  internal/{auth,secrets,notify,scheduler,stream}
+  cmd/portdock          entrypoint: HTTP server, deploy workers, monitor, scheduler
+  internal/api          REST, SSE (logs, events, chat), WebSocket (terminal), webhooks, embedded UI
+  internal/deploy       queue and pipeline (clone → build → health check → rollout), compose,
+                        versions, databases, backups, services, certificates, routes
+  internal/executor     local / SSH command execution (pool, PTY, host key pinning)
+  internal/docker       Docker CLI wrapper
+  internal/proxy        Traefik: proxy container, file-provider routes, TLS
+  internal/assistant    OpenRouter client for the AI assistant
+  internal/updater      self-update from GitHub releases
+  internal/store        SQLite schema, migrations and mapper
+  internal/{auth,secrets,notify,scheduler,monitor,ldapauth,sso,registry,templates,…}
 frontend/src
-  pages/                Dashboard, Projects, Application, Deployment, Database, Service, Servers, Settings
-  components/           UI kit, LogViewer, Terminal (xterm), EnvEditor, ContainerTable
-  lib/                  client API, tipuri, hook-uri SSE
+  pages/ components/ lib/ locales/
 ```
 
-Toate operațiile pe servere trec prin `Executor` (local sau SSH) și CLI-ul Docker, așa că serverele locale și cele remote se comportă identic. Fiecare workload are label-uri `portdock.*`, iar Traefik descoperă rutele din label-uri.
+Every server operation goes through an `Executor` (local or SSH) and the Docker CLI, so local and remote servers behave the same. Routing is written as Traefik file-provider configuration, which is why domain changes apply instantly.
 
-## Limitări cunoscute / următorii pași
+### Known limitations
 
-- Bazele de date și serviciile one-click rulează pe un singur server. Aplicațiile pot rula pe mai multe servere, dar echilibrarea traficului între ele se face prin DNS (mai multe înregistrări A) sau printr-un load balancer extern.
-- Preview-urile pentru PR-uri rulează doar pe serverul principal.
-- Fără Docker Swarm/Kubernetes.
-- GitHub App (autentificare fără token) și repo-uri prin cheie SSH (`git@…`) nu sunt încă suportate — folosește HTTPS + token.
-- Rollback-ul nu e disponibil pentru aplicații Docker Compose (redeploy pe un commit anterior în schimb).
-- Baze de date/servicii fără backup la nivel de volum (doar dump logic pentru DB-uri).
+- Databases and one-click services run on a single server. Applications can run on several servers; balance traffic between them with DNS or an external load balancer.
+- Pull request previews run on the primary server only.
+- No Docker Swarm or Kubernetes.
+- Git over SSH (`git@…`) isn't supported — use HTTPS with a token, or the GitHub App.
+- Database backups are logical dumps, not volume snapshots.
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). To report a security problem privately, see [SECURITY.md](SECURITY.md).
+
+If PortDock is useful to you, a ⭐ on GitHub helps others find it.
+
+## License
+
+PortDock is free and open source under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE).
+
+Developed by **Gavrilencu Grigore**.
