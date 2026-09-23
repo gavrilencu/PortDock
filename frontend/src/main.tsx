@@ -21,6 +21,7 @@ import { SettingsPage } from "./pages/Settings";
 import { AlertsPage } from "./pages/Alerts";
 import { TopologyPage } from "./pages/Topology";
 import { ApiError } from "./lib/api";
+import { LocaleRoot, t } from "./lib/i18n";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function NotFound() {
+  return <div className="py-20 text-center text-muted">{t("Page not found.")}</div>;
+}
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -51,7 +56,7 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
       { path: "alerts", element: <AlertsPage /> },
       { path: "topology", element: <TopologyPage /> },
-      { path: "*", element: <div className="py-20 text-center text-muted">Page not found.</div> },
+      { path: "*", element: <NotFound /> },
     ],
   },
 ]);
@@ -59,10 +64,12 @@ const router = createBrowserRouter([
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ConfirmProvider>
-        <RouterProvider router={router} />
-        <Toaster theme="system" position="bottom-right" richColors closeButton />
-      </ConfirmProvider>
+      <LocaleRoot>
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+          <Toaster theme="system" position="bottom-right" richColors closeButton />
+        </ConfirmProvider>
+      </LocaleRoot>
     </QueryClientProvider>
   </StrictMode>,
 );

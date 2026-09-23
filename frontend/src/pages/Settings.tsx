@@ -16,6 +16,8 @@ import { AuditLog, LicenseSettings } from "../components/auditLicense";
 import { CertificatesSettings } from "../components/certificates";
 import { UpdateSettings } from "../components/updates";
 import { timeAgo } from "../lib/utils";
+import { isLocale, LOCALES, t, tk, useLocale } from "../lib/i18n";
+import { useChangeLocale } from "../components/LanguagePicker";
 
 type Tab = "general" | "profile" | "security" | "auth" | "registries" | "license" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
 
@@ -27,39 +29,39 @@ export function SettingsPage() {
   const admin = user.role !== "member";
   const groups: { label: string; items: { id: Tab; label: string; icon: React.ReactNode; hidden?: boolean }[] }[] = [
     {
-      label: "Account",
+      label: t("Account"),
       items: [
-        { id: "profile", label: "Profile", icon: <UserIcon /> },
-        { id: "security", label: "Sign-in & security", icon: <ShieldCheck /> },
-        { id: "tokens", label: "API tokens", icon: <TerminalIcon /> },
+        { id: "profile", label: t("Profile"), icon: <UserIcon /> },
+        { id: "security", label: t("Sign-in & security"), icon: <ShieldCheck /> },
+        { id: "tokens", label: t("API tokens"), icon: <TerminalIcon /> },
       ],
     },
     {
-      label: "Organization",
+      label: t("Organization"),
       items: [
-        { id: "general", label: "General", icon: <Settings2 />, hidden: !admin },
-        { id: "users", label: "Team members", icon: <Users />, hidden: !admin },
-        { id: "auth", label: "Authentication", icon: <LockKeyhole />, hidden: !admin },
-        { id: "git", label: "Git sources", icon: <GitHubMark />, hidden: !admin },
-        { id: "registries", label: "Container registries", icon: <Boxes />, hidden: !admin },
-        { id: "certificates", label: "Certificates", icon: <FileKey2 />, hidden: !admin },
-        { id: "license", label: "License", icon: <Sparkles />, hidden: !admin },
-        { id: "updates", label: "Updates", icon: <ArrowUpCircle />, hidden: !admin },
-        { id: "notifications", label: "Notifications", icon: <Bell />, hidden: !admin },
-        { id: "storage", label: "Backup storage", icon: <Cloud />, hidden: !admin },
+        { id: "general", label: t("General"), icon: <Settings2 />, hidden: !admin },
+        { id: "users", label: t("Team members"), icon: <Users />, hidden: !admin },
+        { id: "auth", label: t("Authentication"), icon: <LockKeyhole />, hidden: !admin },
+        { id: "git", label: t("Git sources"), icon: <GitHubMark />, hidden: !admin },
+        { id: "registries", label: t("Container registries"), icon: <Boxes />, hidden: !admin },
+        { id: "certificates", label: t("Certificates"), icon: <FileKey2 />, hidden: !admin },
+        { id: "license", label: t("License"), icon: <Sparkles />, hidden: !admin },
+        { id: "updates", label: t("Updates"), icon: <ArrowUpCircle />, hidden: !admin },
+        { id: "notifications", label: t("Notifications"), icon: <Bell />, hidden: !admin },
+        { id: "storage", label: t("Backup storage"), icon: <Cloud />, hidden: !admin },
       ],
     },
     {
-      label: "Security",
+      label: t("Security"),
       items: [
-        { id: "keys", label: "SSH keys", icon: <KeyRound /> },
-        { id: "activity", label: "Audit log", icon: <Activity /> },
+        { id: "keys", label: t("SSH keys"), icon: <KeyRound /> },
+        { id: "activity", label: t("Audit log"), icon: <Activity /> },
       ],
     },
   ];
   return (
     <>
-      <PageHeader title="Settings" subtitle="Manage your account, organization and security preferences." />
+      <PageHeader title={t("Settings")} subtitle={t("Manage your account, organization and security preferences.")} />
       <div className="grid gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
         <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-5 lg:overflow-visible">
           {groups.map((g) => (
@@ -117,36 +119,59 @@ function Profile() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["auth-status"] });
       setF((x) => ({ ...x, current_password: "", new_password: "" }));
-      toast.success("Profile updated");
+      toast.success(t("Profile updated"));
     },
     onError: (e) => toast.error(e.message),
   });
   return (
-    <Card title="Your profile">
-      <div className="grid gap-4 p-5 md:grid-cols-2">
-        <Field label="Name">
-          <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-        </Field>
-        <Field label="Email">
-          <Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-        </Field>
-        {user.has_password ? (
-          <Field label="Current password" hint="Required to set a new password. Other sessions are signed out after a change.">
-            <PasswordInput value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} />
+    <div className="space-y-6">
+      <Card title={t("Your profile")}>
+        <div className="grid gap-4 p-5 md:grid-cols-2">
+          <Field label={t("Name")}>
+            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-        ) : (
-          <Field label="Password" hint="You sign in with single sign-on. Set a password only if your administrator allows password sign-in.">
-            <Input value="Not set" disabled />
+          <Field label={t("Email")}>
+            <Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
           </Field>
-        )}
-        <Field label="New password">
-          <PasswordInput value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} />
-        </Field>
-        <div className="flex justify-end md:col-span-2">
-          <Button variant="primary" icon={<Save className="size-4" />} loading={save.isPending} onClick={() => save.mutate()}>
-            Save
-          </Button>
+          {user.has_password ? (
+            <Field label={t("Current password")} hint={t("Required to set a new password. Other sessions are signed out after a change.")}>
+              <PasswordInput value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} />
+            </Field>
+          ) : (
+            <Field label={t("Password")} hint={t("You sign in with single sign-on. Set a password only if your administrator allows password sign-in.")}>
+              <Input value={t("Not set")} disabled />
+            </Field>
+          )}
+          <Field label={t("New password")}>
+            <PasswordInput value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} />
+          </Field>
+          <div className="flex justify-end md:col-span-2">
+            <Button variant="primary" icon={<Save className="size-4" />} loading={save.isPending} onClick={() => save.mutate()}>
+              {t("Save")}
+            </Button>
+          </div>
         </div>
+      </Card>
+      <LanguageCard />
+    </div>
+  );
+}
+
+function LanguageCard() {
+  const locale = useLocale();
+  const change = useChangeLocale();
+  return (
+    <Card title={t("Interface language")} description={t("Saved for your account and used on every device.")}>
+      <div className="p-5">
+        <Field label={t("Language")}>
+          <Select className="max-w-xs" value={locale} onChange={(e) => isLocale(e.target.value) && change(e.target.value)}>
+            {LOCALES.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </div>
     </Card>
   );
@@ -196,8 +221,8 @@ function General() {
     onSuccess: (s) => {
       qc.setQueryData(["settings"], s);
       qc.invalidateQueries({ queryKey: ["dns-check"] });
-      if (s.instance_route_error) toast.warning("Settings saved, but the dashboard domain could not be routed", { description: s.instance_route_error });
-      else toast.success("Settings saved");
+      if (s.instance_route_error) toast.warning(t("Settings saved, but the dashboard domain could not be routed"), { description: s.instance_route_error });
+      else toast.success(t("Settings saved"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -205,7 +230,7 @@ function General() {
     mutationFn: () => api.post<{ public_ipv4: string; public_ipv6: string }>("/settings/detect-ip"),
     onSuccess: (r) => {
       setF((x) => ({ ...x, public_ipv4: r.public_ipv4 || x.public_ipv4, public_ipv6: r.public_ipv6 || x.public_ipv6 }));
-      toast.success(r.public_ipv4 || r.public_ipv6 ? "Public addresses detected — save to apply" : "Could not detect a public address");
+      toast.success(r.public_ipv4 || r.public_ipv6 ? t("Public addresses detected — save to apply") : t("Could not detect a public address"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -215,13 +240,13 @@ function General() {
 
   return (
     <div className="space-y-6">
-      <Card title="General" description="How this PortDock instance is identified and reached.">
+      <Card title={t("General")} description={t("How this PortDock instance is identified and reached.")}>
         <div className="grid gap-5 p-5 md:grid-cols-2">
           <Field
-            label="URL"
+            label={t("URL")}
             hint={
               <>
-                The dashboard is served on this domain by Traefik with a Let's Encrypt certificate. Point its DNS record to this server.
+                {t("The dashboard is served on this domain by Traefik with a Let's Encrypt certificate. Point its DNS record to this server.")}
                 {dns.data && (
                   <span className="mt-1.5 flex items-center gap-1.5">
                     <DNSBadge d={{ dns_status: dns.data.status, dns_detail: dns.data.detail, dns_checked_at: "" }} />
@@ -233,16 +258,16 @@ function General() {
           >
             <Input value={f.instance_url ?? ""} onChange={(e) => setF({ ...f, instance_url: e.target.value })} placeholder="https://panel.example.com" />
           </Field>
-          <Field label="Redirect HTTP to HTTPS" hint="Permanently redirect plain HTTP requests to the dashboard.">
+          <Field label={t("Redirect HTTP to HTTPS")} hint={t("Permanently redirect plain HTTP requests to the dashboard.")}>
             <Select value={f.instance_https === "false" ? "off" : "on"} onChange={(e) => setF({ ...f, instance_https: e.target.value === "on" ? "true" : "false" })}>
-              <option value="on">Enabled</option>
-              <option value="off">Disabled</option>
+              <option value="on">{t("Enabled")}</option>
+              <option value="off">{t("Disabled")}</option>
             </Select>
           </Field>
-          <Field label="Name" hint="Shown in notifications and the browser title.">
+          <Field label={t("Name")} hint={t("Shown in notifications and the browser title.")}>
             <Input value={f.instance_name ?? ""} onChange={(e) => setF({ ...f, instance_name: e.target.value })} placeholder="PortDock" />
           </Field>
-          <Field label="Instance timezone" hint="Used for scheduled jobs such as database backups.">
+          <Field label={t("Instance timezone")} hint={t("Used for scheduled jobs such as database backups.")}>
             <Select value={f.instance_timezone || "UTC"} onChange={(e) => setF({ ...f, instance_timezone: e.target.value })}>
               {zones.map((z) => (
                 <option key={z} value={z}>
@@ -253,21 +278,21 @@ function General() {
           </Field>
         </div>
         {data!.instance_route_error && (
-          <div className="border-t border-border bg-warning-soft px-5 py-3 text-xs text-warning">Dashboard routing: {data!.instance_route_error}</div>
+          <div className="border-t border-border bg-warning-soft px-5 py-3 text-xs text-warning">{t("Dashboard routing: {error}", { error: data!.instance_route_error })}</div>
         )}
       </Card>
 
       <Card
-        title="Network addresses"
-        description="Public addresses of this server, used to verify DNS records and generate the records to create."
+        title={t("Network addresses")}
+        description={t("Public addresses of this server, used to verify DNS records and generate the records to create.")}
         actions={
           <Button size="sm" icon={<RefreshCw />} loading={detect.isPending} onClick={() => detect.mutate()}>
-            Detect
+            {t("Detect")}
           </Button>
         }
       >
         <div className="grid gap-5 p-5 md:grid-cols-2">
-          <Field label="Instance public IPv4">
+          <Field label={t("Instance public IPv4")}>
             <div className="relative">
               <Input className="pr-9 font-mono text-xs" type={showV4 ? "text" : "password"} value={f.public_ipv4 ?? ""} onChange={(e) => setF({ ...f, public_ipv4: e.target.value.trim() })} placeholder="203.0.113.10" />
               <button type="button" onClick={() => setShowV4(!showV4)} className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-subtle hover:text-fg">
@@ -275,7 +300,7 @@ function General() {
               </button>
             </div>
           </Field>
-          <Field label="Instance public IPv6">
+          <Field label={t("Instance public IPv6")}>
             <div className="relative">
               <Input className="pr-9 font-mono text-xs" type={showV6 ? "text" : "password"} value={f.public_ipv6 ?? ""} onChange={(e) => setF({ ...f, public_ipv6: e.target.value.trim() })} placeholder="2001:db8::1" />
               <button type="button" onClick={() => setShowV6(!showV6)} className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-subtle hover:text-fg">
@@ -286,22 +311,22 @@ function General() {
         </div>
       </Card>
 
-      <Card title="Proxy & maintenance">
+      <Card title={t("Proxy & maintenance")}>
         <div className="grid gap-5 p-5 md:grid-cols-2">
-          <Field label="Let's Encrypt email" hint="Receives certificate expiry notices. Recreate proxies after changing.">
+          <Field label={t("Let's Encrypt email")} hint={t("Receives certificate expiry notices. Recreate proxies after changing.")}>
             <Input value={f.acme_email ?? ""} onChange={(e) => setF({ ...f, acme_email: e.target.value })} placeholder="ops@example.com" />
           </Field>
-          <Field label="Version">
+          <Field label={t("Version")}>
             <Input value={data!.version} disabled />
           </Field>
-          <Switch checked={f.auto_cleanup !== "false"} onChange={(v) => setF({ ...f, auto_cleanup: v ? "true" : "false" })} label="Automatic cleanup" description="Daily prune of build cache (>72h) and dangling images on all servers." />
-          <Switch checked={f.proxy_dashboard === "true"} onChange={(v) => setF({ ...f, proxy_dashboard: v ? "true" : "false" })} label="Traefik dashboard" description="Expose the Traefik dashboard on 127.0.0.1:8080 of each server." />
+          <Switch checked={f.auto_cleanup !== "false"} onChange={(v) => setF({ ...f, auto_cleanup: v ? "true" : "false" })} label={t("Automatic cleanup")} description={t("Daily prune of build cache (>72h) and dangling images on all servers.")} />
+          <Switch checked={f.proxy_dashboard === "true"} onChange={(v) => setF({ ...f, proxy_dashboard: v ? "true" : "false" })} label={t("Traefik dashboard")} description={t("Expose the Traefik dashboard on 127.0.0.1:8080 of each server.")} />
         </div>
       </Card>
 
       <div className="sticky bottom-4 z-10 flex justify-end">
         <Button variant="primary" icon={<Save className="size-4" />} disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()} className="shadow-pop">
-          Save settings
+          {t("Save settings")}
         </Button>
       </div>
     </div>
@@ -319,7 +344,7 @@ function Team() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       setInvite(null);
-      toast.success("User created — share the credentials securely");
+      toast.success(t("User created — share the credentials securely"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -344,21 +369,21 @@ function Team() {
   if (users.isLoading) return <Loading />;
   return (
     <Card
-      title="Team members"
-      description="Admins manage servers, settings and users. Members manage projects and resources."
+      title={t("Team members")}
+      description={t("Admins manage servers, settings and users. Members manage projects and resources.")}
       actions={
         <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setInvite({ name: "", email: "", password: "", role: "member" })}>
-          Add member
+          {t("Add member")}
         </Button>
       }
     >
       <Table>
         <thead>
           <tr>
-            <th>User</th>
-            <th>Role</th>
-            <th>Security</th>
-            <th>Last sign-in</th>
+            <th>{t("User")}</th>
+            <th>{t("Role")}</th>
+            <th>{t("Security")}</th>
+            <th>{t("Last sign-in")}</th>
             <th />
           </tr>
         </thead>
@@ -367,17 +392,17 @@ function Team() {
             <tr key={u.id}>
               <td className={u.disabled ? "opacity-60" : undefined}>
                 <div className="font-medium">
-                  {u.name} {u.id === me.id && <Badge>you</Badge>} {u.disabled && <Badge tone="danger">Disabled</Badge>}
+                  {u.name} {u.id === me.id && <Badge>{t("you")}</Badge>} {u.disabled && <Badge tone="danger">{t("Disabled")}</Badge>}
                 </div>
                 <div className="text-xs text-muted">{u.email}</div>
               </td>
               <td>
                 {u.role === "owner" ? (
-                  <Badge tone="accent">Owner</Badge>
+                  <Badge tone="accent">{t("Owner")}</Badge>
                 ) : (
                   <Select value={u.role} onChange={(e) => update.mutate({ id: u.id, role: e.target.value })} className="h-8 w-32">
-                    <option value="admin">admin</option>
-                    <option value="member">member</option>
+                    <option value="admin">{t("admin")}</option>
+                    <option value="member">{t("member")}</option>
                   </Select>
                 )}
               </td>
@@ -389,18 +414,18 @@ function Team() {
                     </Badge>
                   ) : (
                     <Badge tone={u.auth_source ? "neutral" : "warning"}>
-                      <ShieldOff /> No 2FA
+                      <ShieldOff /> {t("No 2FA")}
                     </Badge>
                   )}
                   {u.auth_source && <Badge tone="info">SSO · {u.auth_source}</Badge>}
                 </div>
               </td>
-              <td className="text-xs text-muted">{u.last_login_at ? timeAgo(u.last_login_at) : "Never"}</td>
+              <td className="text-xs text-muted">{u.last_login_at ? timeAgo(u.last_login_at) : t("Never")}</td>
               <td className="text-right">
                 {u.id !== me.id && (u.role !== "owner" || me.role === "owner") && (
                   <Menu
                     trigger={
-                      <Button size="icon-sm" variant="ghost" aria-label="Actions">
+                      <Button size="icon-sm" variant="ghost" aria-label={t("Actions")}>
                         <MoreHorizontal />
                       </Button>
                     }
@@ -408,30 +433,30 @@ function Team() {
                     <MenuItem
                       icon={<LogOut />}
                       onClick={async () =>
-                        (await confirm({ title: `Sign ${u.name} out everywhere?`, confirmText: "Sign out" })) && action.mutate({ id: u.id, path: "sessions/revoke", done: "All sessions signed out" })
+                        (await confirm({ title: t("Sign {name} out everywhere?", { name: u.name }), confirmText: t("Sign out") })) && action.mutate({ id: u.id, path: "sessions/revoke", done: t("All sessions signed out") })
                       }
                     >
-                      Sign out all sessions
+                      {t("Sign out all sessions")}
                     </MenuItem>
                     {u.totp_enabled && (
                       <MenuItem
                         icon={<ShieldOff />}
                         onClick={async () =>
-                          (await confirm({ title: `Reset 2FA for ${u.email}?`, description: "Use this when the user lost their device. They will be signed out and can enroll again.", danger: true, confirmText: "Reset 2FA" })) &&
-                          action.mutate({ id: u.id, path: "2fa/reset", done: "Two-factor authentication reset" })
+                          (await confirm({ title: t("Reset 2FA for {email}?", { email: u.email }), description: t("Use this when the user lost their device. They will be signed out and can enroll again."), danger: true, confirmText: t("Reset 2FA") })) &&
+                          action.mutate({ id: u.id, path: "2fa/reset", done: t("Two-factor authentication reset") })
                         }
                       >
-                        Reset two-factor
+                        {t("Reset two-factor")}
                       </MenuItem>
                     )}
                     {u.role !== "owner" && (
                       <>
                         <MenuItem icon={<Ban />} onClick={() => update.mutate({ id: u.id, disabled: !u.disabled })}>
-                          {u.disabled ? "Enable account" : "Disable account"}
+                          {u.disabled ? t("Enable account") : t("Disable account")}
                         </MenuItem>
                         <MenuSeparator />
-                        <MenuItem icon={<Trash2 />} danger onClick={async () => (await confirm({ title: `Remove ${u.email}?`, danger: true, confirmText: "Remove" })) && del.mutate(u.id)}>
-                          Remove member
+                        <MenuItem icon={<Trash2 />} danger onClick={async () => (await confirm({ title: t("Remove {name}?", { name: u.email }), danger: true, confirmText: t("Remove") })) && del.mutate(u.id)}>
+                          {t("Remove member")}
                         </MenuItem>
                       </>
                     )}
@@ -445,28 +470,28 @@ function Team() {
       <Modal
         open={!!invite}
         onClose={() => setInvite(null)}
-        title="Add team member"
+        title={t("Add team member")}
         footer={
           <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
-            Create user
+            {t("Create user")}
           </Button>
         }
       >
         {invite && (
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Name">
+            <Field label={t("Name")}>
               <Input value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} />
             </Field>
-            <Field label="Email">
+            <Field label={t("Email")}>
               <Input type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} />
             </Field>
-            <Field label="Initial password" hint="At least 8 characters.">
+            <Field label={t("Initial password")} hint={t("At least 8 characters.")}>
               <PasswordInput value={invite.password} onChange={(e) => setInvite({ ...invite, password: e.target.value })} />
             </Field>
-            <Field label="Role">
+            <Field label={t("Role")}>
               <Select value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
+                <option value="member">{t("Member")}</option>
+                <option value="admin">{t("Admin")}</option>
               </Select>
             </Field>
           </div>
@@ -498,19 +523,19 @@ function Keys() {
   if (keys.isLoading) return <Loading />;
   return (
     <Card
-      title="SSH keys"
-      description="Private keys are encrypted at rest and never leave PortDock."
+      title={t("SSH keys")}
+      description={t("Private keys are encrypted at rest and never leave PortDock.")}
       actions={
         user.role !== "member" && (
           <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setF({ name: "", private_key: "" })}>
-            Add key
+            {t("Add key")}
           </Button>
         )
       }
     >
       {keys.data!.length === 0 ? (
         <div className="p-5">
-          <Empty icon={<KeyRound />} title="No SSH keys" description="Generate a key to connect remote servers." />
+          <Empty icon={<KeyRound />} title={t("No SSH keys")} description={t("Generate a key to connect remote servers.")} />
         </div>
       ) : (
         <div className="divide-y divide-border">
@@ -522,7 +547,7 @@ function Keys() {
                 <CopyField value={k.public_key} />
               </div>
               {user.role !== "member" && (
-                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Delete key ${k.name}?`, danger: true, confirmText: "Delete" })) && del.mutate(k.id)}>
+                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Delete key {name}?", { name: k.name }), danger: true, confirmText: t("Delete") })) && del.mutate(k.id)}>
                   <Trash2 className="size-4 text-danger" />
                 </Button>
               )}
@@ -533,19 +558,19 @@ function Keys() {
       <Modal
         open={!!f}
         onClose={() => setF(null)}
-        title="Add SSH key"
+        title={t("Add SSH key")}
         footer={
           <Button variant="primary" loading={create.isPending} disabled={!f?.name} onClick={() => create.mutate()}>
-            {f?.private_key ? "Import" : "Generate"}
+            {f?.private_key ? t("Import") : t("Generate")}
           </Button>
         }
       >
         {f && (
           <div className="space-y-4">
-            <Field label="Name">
+            <Field label={t("Name")}>
               <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus />
             </Field>
-            <Field label="Private key" hint="Leave empty to generate a new Ed25519 key.">
+            <Field label={t("Private key")} hint={t("Leave empty to generate a new Ed25519 key.")}>
               <textarea
                 className="h-32 w-full rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs focus:border-accent focus:outline-none"
                 value={f.private_key}
@@ -581,7 +606,7 @@ function Tokens() {
   if (tokens.isLoading) return <Loading />;
   return (
     <div className="space-y-6">
-      <Card title="API tokens" description="Use with Authorization: Bearer <token> to automate PortDock from scripts or CI.">
+      <Card title={t("API tokens")} description={t("Use with Authorization: Bearer <token> to automate PortDock from scripts or CI.")}>
         <form
           className="flex gap-2 border-b border-border p-5"
           onSubmit={(e) => {
@@ -589,37 +614,37 @@ function Tokens() {
             if (name) create.mutate();
           }}
         >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Token name, e.g. github-actions" className="max-w-sm" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Token name, e.g. github-actions")} className="max-w-sm" />
           <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={create.isPending} disabled={!name}>
-            Create
+            {t("Create")}
           </Button>
         </form>
         {created && (
           <div className="border-b border-border bg-success/5 p-5">
-            <p className="mb-2 text-sm font-medium text-success">Copy your token now — it won't be shown again.</p>
+            <p className="mb-2 text-sm font-medium text-success">{t("Copy your token now — it won't be shown again.")}</p>
             <CopyField value={created} />
           </div>
         )}
         {tokens.data!.length === 0 ? (
-          <p className="p-5 text-sm text-muted">No tokens.</p>
+          <p className="p-5 text-sm text-muted">{t("No tokens.")}</p>
         ) : (
           <Table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Created</th>
-                <th>Last used</th>
+                <th>{t("Name")}</th>
+                <th>{t("Created")}</th>
+                <th>{t("Last used")}</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {tokens.data!.map((t) => (
-                <tr key={t.id}>
-                  <td className="font-medium">{t.name}</td>
-                  <td className="text-xs text-muted">{timeAgo(t.created_at)}</td>
-                  <td className="text-xs text-muted">{timeAgo(t.last_used_at)}</td>
+              {tokens.data!.map((tok) => (
+                <tr key={tok.id}>
+                  <td className="font-medium">{tok.name}</td>
+                  <td className="text-xs text-muted">{timeAgo(tok.created_at)}</td>
+                  <td className="text-xs text-muted">{timeAgo(tok.last_used_at)}</td>
                   <td className="text-right">
-                    <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Revoke ${t.name}?`, danger: true, confirmText: "Revoke" })) && del.mutate(t.id)}>
+                    <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Revoke {name}?", { name: tok.name }), danger: true, confirmText: t("Revoke") })) && del.mutate(tok.id)}>
                       <Trash2 className="size-4 text-danger" />
                     </Button>
                   </td>
@@ -629,7 +654,7 @@ function Tokens() {
           </Table>
         )}
       </Card>
-      <Card title="Example">
+      <Card title={t("Example")}>
         <pre className="overflow-x-auto p-5 font-mono text-xs text-muted">{`curl -X POST ${location.origin}/api/applications/<id>/deploy \\
   -H "Authorization: Bearer sy_…" \\
   -H "Content-Type: application/json" \\
@@ -640,25 +665,27 @@ function Tokens() {
 }
 
 const channelFields: Record<NotificationChannel["type"], { key: string; label: string; secret?: boolean; placeholder?: string }[]> = {
-  discord: [{ key: "webhook_url", label: "Webhook URL", secret: true, placeholder: "https://discord.com/api/webhooks/…" }],
-  slack: [{ key: "webhook_url", label: "Webhook URL", secret: true, placeholder: "https://hooks.slack.com/services/…" }],
+  discord: [{ key: "webhook_url", label: tk("Webhook URL"), secret: true, placeholder: "https://discord.com/api/webhooks/…" }],
+  slack: [{ key: "webhook_url", label: tk("Webhook URL"), secret: true, placeholder: "https://hooks.slack.com/services/…" }],
   telegram: [
-    { key: "bot_token", label: "Bot token", secret: true },
-    { key: "chat_id", label: "Chat ID" },
+    { key: "bot_token", label: tk("Bot token"), secret: true },
+    { key: "chat_id", label: tk("Chat ID") },
   ],
   webhook: [
-    { key: "url", label: "URL", placeholder: "https://example.com/hooks/portdock" },
-    { key: "secret", label: "Signing secret (optional)", secret: true },
+    { key: "url", label: tk("URL"), placeholder: "https://example.com/hooks/portdock" },
+    { key: "secret", label: tk("Signing secret (optional)"), secret: true },
   ],
   email: [
-    { key: "host", label: "SMTP host" },
-    { key: "port", label: "SMTP port", placeholder: "587" },
-    { key: "username", label: "Username" },
-    { key: "password", label: "Password", secret: true },
-    { key: "from", label: "From" },
-    { key: "to", label: "Recipients (comma separated)" },
+    { key: "host", label: tk("SMTP host") },
+    { key: "port", label: tk("SMTP port"), placeholder: "587" },
+    { key: "username", label: tk("Username") },
+    { key: "password", label: tk("Password"), secret: true },
+    { key: "from", label: tk("From") },
+    { key: "to", label: tk("Recipients (comma separated)") },
   ],
 };
+
+const channelTypeLabels: Record<string, string> = { webhook: tk("webhook"), email: tk("email") };
 
 const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed"];
 
@@ -672,13 +699,13 @@ function Notifications() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications"] });
       setEdit(null);
-      toast.success("Channel saved");
+      toast.success(t("Channel saved"));
     },
     onError: (e) => toast.error(e.message),
   });
   const test = useMutation({
     mutationFn: (id: number) => api.post(`/notifications/${id}/test`),
-    onSuccess: () => toast.success("Test notification sent"),
+    onSuccess: () => toast.success(t("Test notification sent")),
     onError: (e) => toast.error(e.message),
   });
   const del = useMutation({
@@ -689,35 +716,35 @@ function Notifications() {
   const events = (edit?.events ?? allEvents.join(",")).split(",").filter(Boolean);
   return (
     <Card
-      title="Notification channels"
-      description="Get notified about deployments, backups and server health."
+      title={t("Notification channels")}
+      description={t("Get notified about deployments, backups and server health.")}
       actions={
         <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEdit({ type: "discord", name: "", enabled: true, events: allEvents.join(","), config: {} })}>
-          Add channel
+          {t("Add channel")}
         </Button>
       }
     >
       {list.data!.length === 0 ? (
         <div className="p-5">
-          <Empty icon={<Bell />} title="No channels" description="Connect Discord, Slack, Telegram, email or a webhook." />
+          <Empty icon={<Bell />} title={t("No channels")} description={t("Connect Discord, Slack, Telegram, email or a webhook.")} />
         </div>
       ) : (
         <div className="divide-y divide-border">
           {list.data!.map((c) => (
             <div key={c.id} className="flex flex-wrap items-center gap-4 px-5 py-3">
-              <Badge>{c.type}</Badge>
+              <Badge>{t(channelTypeLabels[c.type] ?? c.type)}</Badge>
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">{c.name}</div>
                 <div className="truncate text-xs text-muted">{c.events.split(",").join(" · ")}</div>
               </div>
-              {!c.enabled && <Badge>disabled</Badge>}
+              {!c.enabled && <Badge>{t("disabled")}</Badge>}
               <Button size="sm" icon={<Send className="size-3.5" />} loading={test.isPending && test.variables === c.id} onClick={() => test.mutate(c.id)}>
-                Test
+                {t("Test")}
               </Button>
               <Button size="icon" variant="ghost" onClick={() => setEdit(c)}>
                 <Settings2 className="size-4" />
               </Button>
-              <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Delete ${c.name}?`, danger: true, confirmText: "Delete" })) && del.mutate(c.id)}>
+              <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Delete {name}?", { name: c.name }), danger: true, confirmText: t("Delete") })) && del.mutate(c.id)}>
                 <Trash2 className="size-4 text-danger" />
               </Button>
             </div>
@@ -727,31 +754,31 @@ function Notifications() {
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}
-        title={edit?.id ? "Edit channel" : "New channel"}
+        title={edit?.id ? t("Edit channel") : t("New channel")}
         footer={
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate(edit!)}>
-            Save
+            {t("Save")}
           </Button>
         }
       >
         {edit && (
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Name">
+              <Field label={t("Name")}>
                 <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="#deployments" />
               </Field>
-              <Field label="Type">
+              <Field label={t("Type")}>
                 <Select value={edit.type} disabled={!!edit.id} onChange={(e) => setEdit({ ...edit, type: e.target.value as NotificationChannel["type"], config: {} })}>
-                  {Object.keys(channelFields).map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {Object.keys(channelFields).map((ty) => (
+                    <option key={ty} value={ty}>
+                      {t(channelTypeLabels[ty] ?? ty)}
                     </option>
                   ))}
                 </Select>
               </Field>
             </div>
             {channelFields[edit.type!].map((fld) => (
-              <Field key={fld.key} label={fld.label}>
+              <Field key={fld.key} label={t(fld.label)}>
                 {fld.secret ? (
                   <PasswordInput value={edit.config?.[fld.key] ?? ""} placeholder={fld.placeholder} onChange={(e) => setEdit({ ...edit, config: { ...edit.config, [fld.key]: e.target.value } })} />
                 ) : (
@@ -760,7 +787,7 @@ function Notifications() {
               </Field>
             ))}
             <div>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Events</div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">{t("Events")}</div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {allEvents.map((ev) => (
                   <Switch
@@ -772,7 +799,7 @@ function Notifications() {
                 ))}
               </div>
             </div>
-            <Switch checked={!!edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label="Enabled" />
+            <Switch checked={!!edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label={t("Enabled")} />
           </div>
         )}
       </Modal>
@@ -791,32 +818,32 @@ function Storage() {
     mutationFn: () => api.patch<Settings>("/settings", f),
     onSuccess: (s) => {
       qc.setQueryData(["settings"], s);
-      toast.success("S3 destination saved");
+      toast.success(t("S3 destination saved"));
     },
     onError: (e) => toast.error(e.message),
   });
   if (isLoading) return <Loading />;
   return (
-    <Card title="S3 backup destination" description="AWS S3, Cloudflare R2, Backblaze B2, MinIO or any S3-compatible storage. Enable 'Upload to S3' per backup schedule.">
+    <Card title={t("S3 backup destination")} description={t("AWS S3, Cloudflare R2, Backblaze B2, MinIO or any S3-compatible storage. Enable 'Upload to S3' per backup schedule.")}>
       <div className="grid gap-4 p-5 md:grid-cols-2">
-        <Field label="Endpoint" hint="Leave empty for AWS S3.">
+        <Field label={t("Endpoint")} hint={t("Leave empty for AWS S3.")}>
           <Input value={f.s3_endpoint} onChange={(e) => setF({ ...f, s3_endpoint: e.target.value })} placeholder="https://<account>.r2.cloudflarestorage.com" />
         </Field>
-        <Field label="Bucket">
+        <Field label={t("Bucket")}>
           <Input value={f.s3_bucket} onChange={(e) => setF({ ...f, s3_bucket: e.target.value })} />
         </Field>
-        <Field label="Region">
+        <Field label={t("Region")}>
           <Input value={f.s3_region} onChange={(e) => setF({ ...f, s3_region: e.target.value })} placeholder="us-east-1 / auto" />
         </Field>
-        <Field label="Access key ID">
+        <Field label={t("Access key ID")}>
           <Input value={f.s3_access_key} onChange={(e) => setF({ ...f, s3_access_key: e.target.value })} />
         </Field>
-        <Field label="Secret access key" hint={data!.s3_secret_key_set ? "A secret is stored; enter a new one to replace it." : undefined}>
+        <Field label={t("Secret access key")} hint={data!.s3_secret_key_set ? t("A secret is stored; enter a new one to replace it.") : undefined}>
           <PasswordInput value={f.s3_secret_key} onChange={(e) => setF({ ...f, s3_secret_key: e.target.value })} placeholder={data!.s3_secret_key_set ? "••••••••" : ""} />
         </Field>
         <div className="flex items-end justify-end">
           <Button variant="primary" icon={<Save className="size-4" />} loading={save.isPending} onClick={() => save.mutate()}>
-            Save
+            {t("Save")}
           </Button>
         </div>
       </div>

@@ -11,15 +11,16 @@ import { AppForm } from "./AppForm";
 import { ImageCatalogBrowser, ImageConfigure } from "../components/ImageCatalog";
 import type { CatalogImage } from "../lib/types";
 import { cn } from "../lib/utils";
+import { t, tk } from "../lib/i18n";
 
 type Kind = "git" | "image" | "compose" | "database" | "service";
 
 const kinds: { id: Kind; title: string; text: string; icon: ReactNode }[] = [
-  { id: "git", title: "Git repository", text: "Import from GitHub or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more.", icon: <GitBranch /> },
-  { id: "image", title: "Docker image", text: "Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own.", icon: <Container /> },
-  { id: "compose", title: "Docker Compose", text: "Deploy a multi-container stack from a compose file in Git.", icon: <FileCode /> },
-  { id: "database", title: "Database", text: "PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse.", icon: <DatabaseIcon /> },
-  { id: "service", title: "One-click service", text: "WordPress, n8n, Gitea, MinIO, Grafana, Umami and more.", icon: <Boxes /> },
+  { id: "git", title: tk("Git repository"), text: tk("Import from GitHub or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more."), icon: <GitBranch /> },
+  { id: "image", title: tk("Docker image"), text: tk("Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own."), icon: <Container /> },
+  { id: "compose", title: "Docker Compose", text: tk("Deploy a multi-container stack from a compose file in Git."), icon: <FileCode /> },
+  { id: "database", title: tk("Database"), text: "PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse.", icon: <DatabaseIcon /> },
+  { id: "service", title: tk("One-click service"), text: tk("WordPress, n8n, Gitea, MinIO, Grafana, Umami and more."), icon: <Boxes /> },
 ];
 
 export function NewResourcePage() {
@@ -41,11 +42,11 @@ export function NewResourcePage() {
   return (
     <>
       <PageHeader
-        title="New resource"
-        subtitle={`in ${p.name} / ${p.environments.find((e) => e.id === envId)?.name ?? ""}`}
+        title={t("New resource")}
+        subtitle={t("in {project} / {environment}", { project: p.name, environment: p.environments.find((e) => e.id === envId)?.name ?? "" })}
         breadcrumbs={
           <>
-            <Link to="/projects" className="hover:text-fg">Projects</Link> / <Link to={`/projects/${p.id}?env=${envId}`} className="hover:text-fg">{p.name}</Link> / <span className="text-fg">New</span>
+            <Link to="/projects" className="hover:text-fg">{t("Projects")}</Link> / <Link to={`/projects/${p.id}?env=${envId}`} className="hover:text-fg">{p.name}</Link> / <span className="text-fg">{t("New")}</span>
           </>
         }
       />
@@ -54,22 +55,22 @@ export function NewResourcePage() {
           {kinds.map((k) => (
             <button key={k.id} onClick={() => setKind(k.id)} className="group flex flex-col items-start rounded-xl border border-border bg-surface p-5 text-left shadow-card transition-[border,box-shadow] hover:border-border-strong hover:shadow-pop">
               <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-surface-2 text-fg [&>svg]:size-[18px]">{k.icon}</div>
-              <div className="mt-4 font-semibold">{k.title}</div>
-              <p className="mt-1 text-sm text-muted">{k.text}</p>
+              <div className="mt-4 font-semibold">{t(k.title)}</div>
+              <p className="mt-1 text-sm text-muted">{t(k.text)}</p>
             </button>
           ))}
         </div>
       ) : (
         <div className="space-y-6">
           <button onClick={() => (setKind(null), setCatalogImage(null))} className="flex items-center gap-1.5 text-sm text-muted hover:text-fg">
-            <ArrowLeft className="size-4" /> Choose another type
+            <ArrowLeft className="size-4" /> {t("Choose another type")}
           </button>
-          <Card title="Destination server" description="Where the resource will run.">
+          <Card title={t("Destination server")} description={t("Where the resource will run.")}>
             <div className="p-5">
               <Select value={server} onChange={(e) => setServerId(Number(e.target.value))} className="max-w-md">
                 {servers.data!.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} {s.is_local ? "(this machine)" : `(${s.host})`} — {s.status}
+                    {s.name} {s.is_local ? t("(this machine)") : `(${s.host})`} — {s.status}
                   </option>
                 ))}
               </Select>
@@ -110,14 +111,14 @@ function DatabaseForm({ envId, serverId, onCreated, initialEngine }: { envId: nu
   const create = useMutation({
     mutationFn: () => api.post<DatabaseDetail>("/databases", { ...f, engine, environment_id: envId, server_id: serverId, name: f.name || engine }),
     onSuccess: (d) => {
-      toast.success(`${d.name} is starting`);
+      toast.success(t("{name} is starting", { name: d.name }));
       onCreated(d);
     },
     onError: (e) => toast.error(e.message),
   });
   if (engines.isLoading) return <Loading />;
   return (
-    <Card title="Database">
+    <Card title={t("Database")}>
       <div className="space-y-5 p-5">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
           {engines.data!.map((e) => (
@@ -134,31 +135,31 @@ function DatabaseForm({ envId, serverId, onCreated, initialEngine }: { envId: nu
             create.mutate();
           }}
         >
-          <Field label="Name">
+          <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={engine} />
           </Field>
-          <Field label="Image" hint={`Default: ${eng?.default_image}`}>
+          <Field label={t("Image")} hint={t("Default: {image}", { image: eng?.default_image ?? "" })}>
             <Input value={f.image} onChange={(e) => setF({ ...f, image: e.target.value })} placeholder={eng?.default_image} />
           </Field>
           {eng?.has_user && (
-            <Field label="Username" hint="Leave empty for the default.">
+            <Field label={t("Username")} hint={t("Leave empty for the default.")}>
               <Input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
             </Field>
           )}
           {eng?.has_database && (
-            <Field label="Database name" hint="Derived from the name when empty.">
+            <Field label={t("Database name")} hint={t("Derived from the name when empty.")}>
               <Input value={f.database_name} onChange={(e) => setF({ ...f, database_name: e.target.value })} />
             </Field>
           )}
-          <Field label="Password" hint="A strong password is generated when empty.">
+          <Field label={t("Password")} hint={t("A strong password is generated when empty.")}>
             <PasswordInput value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
           </Field>
-          <Field label="Public port" hint="Expose on the host (0 = internal network only).">
+          <Field label={t("Public port")} hint={t("Expose on the host (0 = internal network only).")}>
             <Input type="number" value={f.public_port} onChange={(e) => setF({ ...f, public_port: Number(e.target.value) })} />
           </Field>
           <div className="md:col-span-2 flex justify-end border-t border-border pt-5">
             <Button type="submit" variant="primary" loading={create.isPending}>
-              Create {eng?.name}
+              {t("Create {name}", { name: eng?.name ?? "" })}
             </Button>
           </div>
         </form>
@@ -186,7 +187,7 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
         compose: custom ? f.compose : undefined,
       }),
     onSuccess: (s) => {
-      toast.success(`${s.name} is deploying`);
+      toast.success(t("{name} is deploying", { name: s.name }));
       onCreated(s);
     },
     onError: (e) => toast.error(e.message),
@@ -196,17 +197,17 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
   if (!tpl && !custom)
     return (
       <Card
-        title="Choose a service"
+        title={t("Choose a service")}
         actions={
           <Button size="sm" onClick={() => setCustom(true)} icon={<FileCode className="size-3.5" />}>
-            Custom compose
+            {t("Custom compose")}
           </Button>
         }
       >
         <div className="p-5">
           <div className="relative mb-4 max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <Input className="pl-9" placeholder="Search services…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input className="pl-9" placeholder={t("Search services…")} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {list.map((t) => (
@@ -225,11 +226,11 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
 
   return (
     <Card
-      title={custom ? "Custom Docker Compose" : tpl!.name}
-      description={custom ? "Add `x-portdock: {service, port}` to choose which service receives the domain." : tpl!.description}
+      title={custom ? t("Custom Docker Compose") : tpl!.name}
+      description={custom ? t("Add {code} to choose which service receives the domain.", { code: "`x-portdock: {service, port}`" }) : tpl!.description}
       actions={
         <Button size="sm" variant="ghost" onClick={() => (setTpl(null), setCustom(false))}>
-          Change
+          {t("Change")}
         </Button>
       }
     >
@@ -240,10 +241,10 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
           create.mutate();
         }}
       >
-        <Field label="Name">
+        <Field label={t("Name")}>
           <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={custom ? "stack" : tpl!.name} />
         </Field>
-        <Field label="Domain" hint="Credentials and URLs in the template are generated for this domain.">
+        <Field label={t("Domain")} hint={t("Credentials and URLs in the template are generated for this domain.")}>
           <Input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} placeholder="service.example.com" />
         </Field>
         <div className="md:col-span-2">
@@ -257,7 +258,7 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
         </div>
         <div className="md:col-span-2 flex justify-end border-t border-border pt-5">
           <Button type="submit" variant="primary" loading={create.isPending}>
-            Deploy service
+            {t("Deploy service")}
           </Button>
         </div>
       </form>

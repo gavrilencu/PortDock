@@ -8,6 +8,7 @@ import type { ApplicationDetail, BuildPack, BuildSuggestion, GitHubRepo } from "
 import { Button, Card, Field, Input, PasswordInput, SegmentedControl, Switch } from "../components/ui";
 import { BranchSelect, GitHubMark, RepoPicker, useGitHubApps } from "../components/github";
 import { BuildSettings, applySuggestion } from "../components/BuildSettings";
+import { t, tx } from "../lib/i18n";
 
 /** Creates an application from GitHub, any Git URL, or a Docker image. */
 export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "image" | "compose"; envId: number; serverId: number; onCreated: (a: ApplicationDetail) => void }) {
@@ -68,7 +69,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
         source_type: kind === "image" ? "image" : "git",
       };
       if (useGH) {
-        if (!repo) throw new Error("Select a repository");
+        if (!repo) throw new Error(t("Select a repository"));
         body.github_app_id = repo.github_app_id;
         body.github_installation_id = repo.installation_id;
         body.git_full_name = repo.full_name;
@@ -81,7 +82,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
       return app;
     },
     onSuccess: (a) => {
-      toast.success(f.deploy ? `${a.name} created — first deployment queued` : `${a.name} created`);
+      toast.success(f.deploy ? t("{name} created — first deployment queued", { name: a.name }) : t("{name} created", { name: a.name }));
       onCreated(a);
     },
     onError: (e) => toast.error(e.message),
@@ -89,7 +90,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
 
   if (kind === "image")
     return (
-      <Card title="Docker image" description="Deploy any public image, or a private one the server can pull.">
+      <Card title={t("Docker image")} description={t("Deploy any public image, or a private one the server can pull.")}>
         <form
           className="grid gap-5 p-5 md:grid-cols-2"
           onSubmit={(e) => {
@@ -97,22 +98,22 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
             create.mutate();
           }}
         >
-          <Field label="Image" required hint="e.g. nginx:alpine, ghcr.io/acme/api:1.4.2" className="md:col-span-2">
+          <Field label={t("Image")} required hint={t("e.g. nginx:alpine, ghcr.io/acme/api:1.4.2")} className="md:col-span-2">
             <Input required value={f.docker_image} onChange={(e) => set({ docker_image: e.target.value })} placeholder="ghcr.io/acme/app:latest" />
           </Field>
-          <Field label="Name">
+          <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="my-app" />
           </Field>
-          <Field label="Container port">
+          <Field label={t("Container port")}>
             <Input type="number" value={f.port} onChange={(e) => set({ port: Number(e.target.value) })} />
           </Field>
-          <Field label="Domains" hint="Comma separated. TLS certificates are issued automatically." className="md:col-span-2">
+          <Field label={t("Domains")} hint={t("Comma separated. TLS certificates are issued automatically.")} className="md:col-span-2">
             <Input value={f.domains} onChange={(e) => set({ domains: e.target.value })} placeholder="app.example.com" />
           </Field>
           <div className="flex items-center justify-between gap-4 border-t border-border pt-5 md:col-span-2">
-            <Switch checked={f.deploy} onChange={(v) => set({ deploy: v })} label="Deploy immediately" />
+            <Switch checked={f.deploy} onChange={(v) => set({ deploy: v })} label={t("Deploy immediately")} />
             <Button type="submit" variant="primary" loading={create.isPending}>
-              Create application
+              {t("Create application")}
             </Button>
           </div>
         </form>
@@ -124,8 +125,8 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
   return (
     <div className="space-y-6">
       <Card
-        title="Source"
-        description={useGH ? "Pick a repository from your connected GitHub accounts." : "Clone from any Git host over HTTPS."}
+        title={t("Source")}
+        description={useGH ? t("Pick a repository from your connected GitHub accounts.") : t("Clone from any Git host over HTTPS.")}
         actions={
           hasGitHub && (
             <SegmentedControl
@@ -141,7 +142,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
                     </span>
                   ),
                 },
-                { value: "url", label: "Git URL" },
+                { value: "url", label: t("Git URL") },
               ]}
             />
           )
@@ -157,20 +158,20 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
                     {repo.full_name}
                     {repo.private && <Lock className="size-3 text-faint" />}
                   </div>
-                  <div className="truncate text-xs text-subtle">{repo.description || "No description"}</div>
+                  <div className="truncate text-xs text-subtle">{repo.description || t("No description")}</div>
                 </div>
                 <Button size="sm" onClick={() => setPicking(true)}>
-                  Change
+                  {t("Change")}
                 </Button>
               </div>
-              <Field label="Branch" hint="Commits to this branch are deployed.">
+              <Field label={t("Branch")} hint={t("Commits to this branch are deployed.")}>
                 <BranchSelect appId={repo.github_app_id} installationId={repo.installation_id} repo={repo.full_name} value={f.git_branch} defaultBranch={repo.default_branch} onChange={(b) => set({ git_branch: b })} />
               </Field>
-              <Field label="Root directory" hint="For monorepos, e.g. /apps/web">
+              <Field label={t("Root directory")} hint={t("For monorepos, e.g. /apps/web")}>
                 <Input value={f.base_directory} onChange={(e) => set({ base_directory: e.target.value || "/" })} />
               </Field>
               <div className="flex items-end pb-1">
-                <Switch checked={f.auto_deploy} onChange={(v) => set({ auto_deploy: v })} label="Deploy on push" description="Build every new commit on this branch." />
+                <Switch checked={f.auto_deploy} onChange={(v) => set({ auto_deploy: v })} label={t("Deploy on push")} description={t("Build every new commit on this branch.")} />
               </div>
             </div>
           ) : (
@@ -186,26 +187,28 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
           )
         ) : (
           <div className="grid gap-4 p-5 md:grid-cols-2">
-            <Field label="Repository URL" required className="md:col-span-2">
+            <Field label={t("Repository URL")} required className="md:col-span-2">
               <Input required value={f.git_repository} onChange={(e) => set({ git_repository: e.target.value })} placeholder="https://gitlab.com/acme/web.git" />
             </Field>
-            <Field label="Branch">
+            <Field label={t("Branch")}>
               <Input value={f.git_branch} onChange={(e) => set({ git_branch: e.target.value })} />
             </Field>
-            <Field label="Root directory">
+            <Field label={t("Root directory")}>
               <Input value={f.base_directory} onChange={(e) => set({ base_directory: e.target.value || "/" })} />
             </Field>
             <div className="space-y-3 md:col-span-2">
-              <Switch checked={privateRepo} onChange={setPrivateRepo} label="Private repository" description="Authenticate with a personal access or deploy token." />
+              <Switch checked={privateRepo} onChange={setPrivateRepo} label={t("Private repository")} description={t("Authenticate with a personal access or deploy token.")} />
               {privateRepo && <PasswordInput value={f.git_token} onChange={(e) => set({ git_token: e.target.value })} placeholder="glpat-… / ghp_…" />}
             </div>
             {!hasGitHub && (
               <div className="rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 text-xs text-muted md:col-span-2">
-                Tip:{" "}
-                <Link to="/settings?tab=git" className="font-medium text-fg underline">
-                  connect GitHub
-                </Link>{" "}
-                to browse repositories and deploy automatically on every push.
+                {tx("Tip: {link} to browse repositories and deploy automatically on every push.", {
+                  link: (
+                    <Link to="/settings?tab=git" className="font-medium text-fg underline">
+                      {t("connect GitHub")}
+                    </Link>
+                  ),
+                })}
               </div>
             )}
           </div>
@@ -214,7 +217,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
 
       {ready && (
         <>
-          <Card title="Build & runtime" description={detect.isFetching ? "Analyzing repository…" : "How the application is built and started."}>
+          <Card title={t("Build & runtime")} description={detect.isFetching ? t("Analyzing repository…") : t("How the application is built and started.")}>
             <div className="p-5">
               <BuildSettings
                 value={f}
@@ -226,7 +229,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
               />
             </div>
           </Card>
-          <Card title="Application">
+          <Card title={t("Application")}>
             <form
               className="grid gap-4 p-5 md:grid-cols-2"
               onSubmit={(e) => {
@@ -234,16 +237,16 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
                 create.mutate();
               }}
             >
-              <Field label="Name" hint="Defaults to the repository name.">
+              <Field label={t("Name")} hint={t("Defaults to the repository name.")}>
                 <Input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={repoName || "my-app"} />
               </Field>
-              <Field label="Domains" hint="Comma separated. Leave empty to use the server's wildcard domain.">
+              <Field label={t("Domains")} hint={t("Comma separated. Leave empty to use the server's wildcard domain.")}>
                 <Input value={f.domains} onChange={(e) => set({ domains: e.target.value })} placeholder="app.example.com" />
               </Field>
               <div className="flex items-center justify-between gap-4 border-t border-border pt-5 md:col-span-2">
-                <Switch checked={f.deploy} onChange={(v) => set({ deploy: v })} label="Deploy immediately" />
+                <Switch checked={f.deploy} onChange={(v) => set({ deploy: v })} label={t("Deploy immediately")} />
                 <Button type="submit" variant="primary" loading={create.isPending} disabled={f.build_pack === "shell" && !f.start_command}>
-                  {f.deploy ? "Create & deploy" : "Create application"}
+                  {f.deploy ? t("Create & deploy") : t("Create application")}
                 </Button>
               </div>
             </form>

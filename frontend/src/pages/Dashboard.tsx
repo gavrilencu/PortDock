@@ -9,6 +9,7 @@ import { DeploymentsTable } from "../components/shared";
 import { DeployActivityChart } from "../components/DeployActivityChart";
 import { useUser } from "../components/Layout";
 import { cn, timeAgo } from "../lib/utils";
+import { t } from "../lib/i18n";
 
 function median(xs: number[]) {
   if (!xs.length) return 0;
@@ -19,8 +20,8 @@ function median(xs: number[]) {
 
 function fmtSeconds(s: number) {
   if (!s) return "—";
-  if (s < 60) return `${Math.round(s)}s`;
-  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+  if (s < 60) return t("{s}s", { s: Math.round(s) });
+  return t("{m}m {s}s", { m: Math.floor(s / 60), s: Math.round(s % 60) });
 }
 
 export function DashboardPage() {
@@ -44,19 +45,19 @@ export function DashboardPage() {
   const online = d.servers.filter((s) => s.status === "reachable").length;
 
   const steps = [
-    { done: online > 0, title: "Connect a server", text: "Validate the local machine or add a remote server over SSH.", to: "/servers" },
-    { done: d.counts.projects > 0, title: "Create a project", text: "Projects group resources into environments such as production and staging.", to: "/projects?new=1" },
-    { done: d.counts.applications > 0, title: "Deploy an application", text: "Connect a Git repository or a Docker image and ship the first release.", to: "/projects" },
-    { done: (channels.data?.length ?? 0) > 0, title: "Set up notifications", text: "Get alerted in Slack, Discord, Telegram or email when deployments fail.", to: "/settings?tab=notifications" },
+    { done: online > 0, title: t("Connect a server"), text: t("Validate the local machine or add a remote server over SSH."), to: "/servers" },
+    { done: d.counts.projects > 0, title: t("Create a project"), text: t("Projects group resources into environments such as production and staging."), to: "/projects?new=1" },
+    { done: d.counts.applications > 0, title: t("Deploy an application"), text: t("Connect a Git repository or a Docker image and ship the first release."), to: "/projects" },
+    { done: (channels.data?.length ?? 0) > 0, title: t("Set up notifications"), text: t("Get alerted in Slack, Discord, Telegram or email when deployments fail."), to: "/settings?tab=notifications" },
   ];
   const onboarding = steps.filter((s) => s.done).length < steps.length && user.role !== "member";
 
   return (
     <>
-      <PageHeader title="Overview" subtitle="Health, delivery and activity across your organization." />
+      <PageHeader title={t("Overview")} subtitle={t("Health, delivery and activity across your organization.")} />
 
       {onboarding && (
-        <Card className="mb-6" title="Get started with PortDock" description={`${steps.filter((s) => s.done).length} of ${steps.length} steps completed`}>
+        <Card className="mb-6" title={t("Get started with PortDock")} description={t("{done} of {n} steps completed", { done: steps.filter((s) => s.done).length, n: steps.length })}>
           <div className="grid divide-y divide-border md:grid-cols-4 md:divide-x md:divide-y-0">
             {steps.map((s, i) => (
               <Link key={s.title} to={s.to} className="group flex gap-3 p-4 transition-colors hover:bg-surface-2/50">
@@ -82,28 +83,38 @@ export function DashboardPage() {
       )}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label="Applications" icon={<Box />} value={d.counts.applications} sub={`${d.counts.running} resources running · ${d.counts.databases} databases · ${d.counts.services} services`} />
-        <Stat label="Deployments · 14 days" icon={<Rocket />} value={stats.total} sub={`${d.counts.deployments_today} today${d.counts.failed_today ? ` · ${d.counts.failed_today} failed` : ""}`} />
         <Stat
-          label="Success rate · 14 days"
+          label={t("Applications")}
+          icon={<Box />}
+          value={d.counts.applications}
+          sub={`${t("{n} resource running|{n} resources running", { n: d.counts.running })} · ${t("{n} database|{n} databases", { n: d.counts.databases })} · ${t("{n} service|{n} services", { n: d.counts.services })}`}
+        />
+        <Stat
+          label={t("Deployments · 14 days")}
+          icon={<Rocket />}
+          value={stats.total}
+          sub={`${t("{n} today", { n: d.counts.deployments_today })}${d.counts.failed_today ? ` · ${t("{n} failed", { n: d.counts.failed_today })}` : ""}`}
+        />
+        <Stat
+          label={t("Success rate · 14 days")}
           icon={<CircleCheck />}
           value={stats.rate === null ? "—" : `${stats.rate}%`}
-          sub={stats.rate === null ? "No completed deployments yet" : stats.rate >= 95 ? "Healthy delivery pipeline" : "Review failing deployments"}
+          sub={stats.rate === null ? t("No completed deployments yet") : stats.rate >= 95 ? t("Healthy delivery pipeline") : t("Review failing deployments")}
         />
-        <Stat label="Median build time" icon={<Timer />} value={fmtSeconds(stats.median)} sub="Successful deployments, 14 days" />
+        <Stat label={t("Median build time")} icon={<Timer />} value={fmtSeconds(stats.median)} sub={t("Successful deployments, 14 days")} />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title="Deployment activity" description="Completed deployments per day, last 14 days">
+        <Card className="xl:col-span-2" title={t("Deployment activity")} description={t("Completed deployments per day, last 14 days")}>
           <div className="p-4 pt-3">{deps.isLoading ? <div className="skeleton h-[240px]" /> : <DeployActivityChart deployments={deps.data ?? []} />}</div>
         </Card>
         <Card
-          title="Infrastructure"
-          description={`${online} of ${d.servers.length} servers online`}
+          title={t("Infrastructure")}
+          description={t("{online} of {n} server online|{online} of {n} servers online", { online, n: d.servers.length })}
           actions={
             <Link to="/servers">
               <Button size="sm" variant="ghost" trailing={<ArrowRight />}>
-                Servers
+                {t("Servers")}
               </Button>
             </Link>
           }
@@ -120,7 +131,7 @@ export function DashboardPage() {
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{s.name}</span>
                         <span className="block truncate text-xs text-subtle">
-                          {s.docker_version ? `Docker ${s.docker_version}` : "Docker unavailable"} · {timeAgo(s.last_check_at)}
+                          {s.docker_version ? `Docker ${s.docker_version}` : t("Docker unavailable")} · {timeAgo(s.last_check_at)}
                         </span>
                       </span>
                     </Link>
@@ -137,11 +148,11 @@ export function DashboardPage() {
 
       <Card
         className="mt-6"
-        title="Recent deployments"
+        title={t("Recent deployments")}
         actions={
           <Link to="/deployments">
             <Button size="sm" variant="ghost" trailing={<ArrowRight />}>
-              View all
+              {t("View all")}
             </Button>
           </Link>
         }
@@ -151,12 +162,12 @@ export function DashboardPage() {
             <Empty
               compact
               icon={<Rocket />}
-              title="No deployments yet"
-              description="Deploy an application to see its build history here."
+              title={t("No deployments yet")}
+              description={t("Deploy an application to see its build history here.")}
               action={
                 <Link to="/projects">
                   <Button variant="primary" icon={<FolderKanban />}>
-                    Go to projects
+                    {t("Go to projects")}
                   </Button>
                 </Link>
               }
@@ -170,9 +181,9 @@ export function DashboardPage() {
       {user.role !== "member" && channels.data && channels.data.length === 0 && !onboarding && (
         <div className="mt-6 flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 text-[13px] text-muted">
           <Bell className="size-4 text-faint" />
-          No notification channels configured — failures will go unnoticed.
+          {t("No notification channels configured — failures will go unnoticed.")}
           <Link to="/settings?tab=notifications" className="ml-auto font-medium text-fg hover:underline">
-            Configure
+            {t("Configure")}
           </Link>
         </div>
       )}

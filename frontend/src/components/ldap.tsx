@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Network, Pencil, Plus, PlugZap, Trash2, UserSearch, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { t } from "../lib/i18n";
 import { UpgradeNotice, useLicense } from "./access";
 import { Badge, Button, Card, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Switch, Table, Textarea, useConfirm } from "./ui";
 
@@ -68,7 +69,7 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ldap"] });
       qc.invalidateQueries({ queryKey: ["login-providers"] });
-      toast.success(f.id ? "Directory updated" : "Directory added — users can sign in with their directory account");
+      toast.success(f.id ? t("Directory updated") : t("Directory added — users can sign in with their directory account"));
       onClose();
     },
     onError: (e) => toast.error(e.message),
@@ -79,12 +80,12 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
       open={!!initial}
       onClose={onClose}
       size="xl"
-      title={f.id ? `Edit ${f.name}` : preset ? `Add ${preset.name}` : "Add LDAP directory"}
-      description={preset ? "Users sign in with their directory username (or email) and password. A service account looks the user up; their own password is verified with a bind." : "Choose your directory type."}
+      title={f.id ? t("Edit {name}", { name: f.name ?? "" }) : preset ? t("Add {name}", { name: preset.name }) : t("Add LDAP directory")}
+      description={preset ? t("Users sign in with their directory username (or email) and password. A service account looks the user up; their own password is verified with a bind.") : t("Choose your directory type.")}
       footer={
         preset && (
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-            {f.id ? "Save changes" : "Add directory"}
+            {f.id ? t("Save changes") : t("Add directory")}
           </Button>
         )
       }
@@ -102,83 +103,83 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Display name" hint="Shown on the sign-in page.">
+              <Field label={t("Display name")} hint={t("Shown on the sign-in page.")}>
                 <Input value={f.name ?? ""} onChange={(e) => upd({ name: e.target.value })} placeholder="Corporate AD" />
               </Field>
-              <Switch checked={f.enabled !== false} onChange={(v) => upd({ enabled: v })} label="Enabled" description="Allow sign-in with this directory." />
+              <Switch checked={f.enabled !== false} onChange={(v) => upd({ enabled: v })} label={t("Enabled")} description={t("Allow sign-in with this directory.")} />
             </div>
             <div className="rounded-lg border border-border">
-              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">Connection</div>
+              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">{t("Connection")}</div>
               <div className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_110px_150px]">
-                <Field label="Host" hint={f.kind === "ad" ? "A domain controller or the domain name (DNS round-robin)." : undefined}>
+                <Field label={t("Host")} hint={f.kind === "ad" ? t("A domain controller or the domain name (DNS round-robin).") : undefined}>
                   <Input value={f.host ?? ""} onChange={(e) => upd({ host: e.target.value })} placeholder="dc01.corp.example" className="font-mono text-xs" />
                 </Field>
-                <Field label="Port">
+                <Field label={t("Port")}>
                   <Input type="number" value={f.port ?? ""} onChange={(e) => upd({ port: Number(e.target.value) })} />
                 </Field>
-                <Field label="Security">
+                <Field label={t("Security")}>
                   <Select value={f.security} onChange={(e) => upd({ security: e.target.value as Directory["security"], port: e.target.value === "ldaps" ? 636 : 389 })}>
                     <option value="ldaps">LDAPS (TLS)</option>
                     <option value="starttls">StartTLS</option>
-                    <option value="none">None (insecure)</option>
+                    <option value="none">{t("None (insecure)")}</option>
                   </Select>
                 </Field>
                 {f.security !== "none" && (
                   <>
-                    <Field label="CA certificate (PEM)" hint="For directories signed by an internal CA (e.g. AD Certificate Services)." className="md:col-span-2">
+                    <Field label={t("CA certificate (PEM)")} hint={t("For directories signed by an internal CA (e.g. AD Certificate Services).")} className="md:col-span-2">
                       <Textarea rows={3} className="font-mono text-2xs" value={f.ca_cert ?? ""} onChange={(e) => upd({ ca_cert: e.target.value })} placeholder="-----BEGIN CERTIFICATE-----" />
                     </Field>
                     <div className="pt-6">
-                      <Switch checked={!!f.skip_verify} onChange={(v) => upd({ skip_verify: v })} label="Skip verification" description="Lab use only." />
+                      <Switch checked={!!f.skip_verify} onChange={(v) => upd({ skip_verify: v })} label={t("Skip verification")} description={t("Lab use only.")} />
                     </div>
                   </>
                 )}
-                {f.security === "none" && <p className="text-xs text-warning md:col-span-3">Passwords would travel unencrypted. Use LDAPS or StartTLS in production.</p>}
+                {f.security === "none" && <p className="text-xs text-warning md:col-span-3">{t("Passwords would travel unencrypted. Use LDAPS or StartTLS in production.")}</p>}
               </div>
             </div>
             <div className="rounded-lg border border-border">
-              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">Search</div>
+              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">{t("Search")}</div>
               <div className="grid gap-4 p-4 md:grid-cols-2">
-                <Field label="Service account (bind DN)" hint={preset.bind_hint || "Leave empty for anonymous search."}>
+                <Field label={t("Service account (bind DN)")} hint={preset.bind_hint || t("Leave empty for anonymous search.")}>
                   <Input value={f.bind_dn ?? ""} onChange={(e) => upd({ bind_dn: e.target.value })} className="font-mono text-xs" />
                 </Field>
-                <Field label="Service account password" hint={f.id && f.bind_password_set ? "Leave empty to keep the stored password." : "Stored encrypted."}>
+                <Field label={t("Service account password")} hint={f.id && f.bind_password_set ? t("Leave empty to keep the stored password.") : t("Stored encrypted.")}>
                   <PasswordInput value={f.bind_password ?? ""} onChange={(e) => upd({ bind_password: e.target.value })} placeholder={f.id && f.bind_password_set ? "••••••••" : ""} />
                 </Field>
-                <Field label="Base DN" hint={preset.base_hint} className="md:col-span-2">
+                <Field label={t("Base DN")} hint={preset.base_hint} className="md:col-span-2">
                   <Input value={f.base_dn ?? ""} onChange={(e) => upd({ base_dn: e.target.value })} placeholder={preset.base_hint} className="font-mono text-xs" />
                 </Field>
-                <Field label="User filter" hint="{username} is replaced (escaped) with what the user types." className="md:col-span-2">
+                <Field label={t("User filter")} hint={t("{username} is replaced (escaped) with what the user types.")} className="md:col-span-2">
                   <Input value={f.user_filter ?? ""} onChange={(e) => upd({ user_filter: e.target.value })} className="font-mono text-xs" />
                 </Field>
                 <div className="grid grid-cols-3 gap-3 md:col-span-2">
-                  <Field label="Email attribute">
+                  <Field label={t("Email attribute")}>
                     <Input value={f.email_attr ?? ""} onChange={(e) => upd({ email_attr: e.target.value })} className="font-mono text-xs" />
                   </Field>
-                  <Field label="Name attribute">
+                  <Field label={t("Name attribute")}>
                     <Input value={f.name_attr ?? ""} onChange={(e) => upd({ name_attr: e.target.value })} className="font-mono text-xs" />
                   </Field>
-                  <Field label="Groups attribute">
+                  <Field label={t("Groups attribute")}>
                     <Input value={f.groups_attr ?? ""} onChange={(e) => upd({ groups_attr: e.target.value })} className="font-mono text-xs" />
                   </Field>
                 </div>
               </div>
             </div>
             <div className="rounded-lg border border-border">
-              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">Access & roles</div>
+              <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">{t("Access & roles")}</div>
               <div className="grid gap-4 p-4 md:grid-cols-2">
-                <Field label="Required groups" hint="Only members may sign in. CN or full DN, comma-separated. Empty = any account.">
+                <Field label={t("Required groups")} hint={t("Only members may sign in. CN or full DN, comma-separated. Empty = any account.")}>
                   <Input value={f.required_groups ?? ""} onChange={(e) => upd({ required_groups: e.target.value })} placeholder="PortDock-Users" />
                 </Field>
-                <Field label="Admin groups" hint="Members become admins; synced at every sign-in.">
+                <Field label={t("Admin groups")} hint={t("Members become admins; synced at every sign-in.")}>
                   <Input value={f.admin_groups ?? ""} onChange={(e) => upd({ admin_groups: e.target.value })} placeholder="PortDock-Admins, Domain Admins" />
                 </Field>
-                <Switch checked={f.auto_register !== false} onChange={(v) => upd({ auto_register: v })} label="Create accounts automatically" description="On first sign-in. Otherwise only invited emails can sign in." />
-                {f.kind === "ad" && <Switch checked={f.nested_groups !== false} onChange={(v) => upd({ nested_groups: v })} label="Nested groups" description="Resolve membership through nested AD groups." />}
-                <Field label="Default role">
+                <Switch checked={f.auto_register !== false} onChange={(v) => upd({ auto_register: v })} label={t("Create accounts automatically")} description={t("On first sign-in. Otherwise only invited emails can sign in.")} />
+                {f.kind === "ad" && <Switch checked={f.nested_groups !== false} onChange={(v) => upd({ nested_groups: v })} label={t("Nested groups")} description={t("Resolve membership through nested AD groups.")} />}
+                <Field label={t("Default role")}>
                   <Select value={f.default_role ?? "member"} onChange={(e) => upd({ default_role: e.target.value as "member" | "admin" })}>
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
+                    <option value="member">{t("Member")}</option>
+                    <option value="admin">{t("Admin")}</option>
                   </Select>
                 </Field>
               </div>
@@ -187,16 +188,16 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
 
           <div className="space-y-3 lg:sticky lg:top-0 lg:self-start">
             <div className="rounded-lg border border-border bg-surface-2/40 p-4">
-              <div className="mb-3 text-[13px] font-semibold">Test</div>
+              <div className="mb-3 text-[13px] font-semibold">{t("Test")}</div>
               <div className="space-y-3">
-                <Field label="Username (optional)">
+                <Field label={t("Username (optional)")}>
                   <Input value={probe.username} onChange={(e) => setProbe({ ...probe, username: e.target.value })} placeholder="jdoe" autoComplete="off" />
                 </Field>
-                <Field label="Password (optional)" hint="With a password the full sign-in is verified.">
+                <Field label={t("Password (optional)")} hint={t("With a password the full sign-in is verified.")}>
                   <PasswordInput value={probe.password} onChange={(e) => setProbe({ ...probe, password: e.target.value })} autoComplete="new-password" />
                 </Field>
                 <Button className="w-full justify-center" icon={probe.username ? <UserSearch /> : <PlugZap />} loading={runTest.isPending} onClick={() => runTest.mutate()}>
-                  {probe.username ? "Test user" : "Test connection"}
+                  {probe.username ? t("Test user") : t("Test connection")}
                 </Button>
               </div>
               {test && (
@@ -209,14 +210,14 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
                       <div className="font-medium">
                         {test.user.identity.name} <span className="text-muted">({test.user.identity.username})</span>
                       </div>
-                      <div className="text-muted">{test.user.identity.email || <span className="text-danger">no email attribute</span>}</div>
+                      <div className="text-muted">{test.user.identity.email || <span className="text-danger">{t("no email attribute")}</span>}</div>
                       <div className="break-all font-mono text-2xs text-faint">{test.user.identity.dn}</div>
                       <div className="flex flex-wrap gap-1">
-                        <Badge tone={test.user.allowed ? "success" : "danger"}>{test.user.allowed ? "Allowed" : "Not in required groups"}</Badge>
-                        <Badge tone="accent">{test.user.role}</Badge>
-                        {test.user.password_checked && <Badge tone="success">Password OK</Badge>}
+                        <Badge tone={test.user.allowed ? "success" : "danger"}>{test.user.allowed ? t("Allowed") : t("Not in required groups")}</Badge>
+                        <Badge tone="accent">{test.user.role === "admin" ? t("Admin") : test.user.role === "member" ? t("Member") : test.user.role}</Badge>
+                        {test.user.password_checked && <Badge tone="success">{t("Password OK")}</Badge>}
                       </div>
-                      <div className="text-muted">{test.user.identity.groups.length} group(s)</div>
+                      <div className="text-muted">{t("{n} group|{n} groups", { n: test.user.identity.groups.length })}</div>
                       <div className="max-h-28 space-y-0.5 overflow-y-auto font-mono text-2xs text-faint">
                         {test.user.identity.groups.map((g) => (
                           <div key={g} className="truncate" title={g}>
@@ -257,18 +258,18 @@ export function LDAPCard() {
   return (
     <Card
       title="LDAP & Active Directory"
-      description="Sign in with directory accounts. Local accounts keep working as a fallback; 2FA policies still apply."
+      description={t("Sign in with directory accounts. Local accounts keep working as a fallback; 2FA policies still apply.")}
       actions={
         directories.length > 0 && (
           <Button size="sm" variant="primary" icon={<Plus />} onClick={() => setEdit({})}>
-            Add directory
+            {t("Add directory")}
           </Button>
         )
       }
     >
       {!has("ldap") && (
         <div className="border-b border-border p-4">
-          <UpgradeNotice feature="ldap">LDAP and Active Directory sign-in are part of the</UpgradeNotice>
+          <UpgradeNotice feature="ldap">{t("LDAP and Active Directory sign-in are part of the")}</UpgradeNotice>
         </div>
       )}
       {directories.length === 0 ? (
@@ -276,11 +277,11 @@ export function LDAPCard() {
           <Empty
             compact
             icon={<Network />}
-            title="No directories"
-            description="Connect Microsoft Active Directory, OpenLDAP or FreeIPA."
+            title={t("No directories")}
+            description={t("Connect Microsoft Active Directory, OpenLDAP or FreeIPA.")}
             action={
               <Button variant="primary" icon={<Plus />} onClick={() => setEdit({})}>
-                Add directory
+                {t("Add directory")}
               </Button>
             }
           />
@@ -289,10 +290,10 @@ export function LDAPCard() {
         <Table>
           <thead>
             <tr>
-              <th>Directory</th>
-              <th>Security</th>
-              <th>Users</th>
-              <th>Enabled</th>
+              <th>{t("Directory")}</th>
+              <th>{t("Security")}</th>
+              <th>{t("Users")}</th>
+              <th>{t("Enabled")}</th>
               <th />
             </tr>
           </thead>
@@ -311,7 +312,7 @@ export function LDAPCard() {
                   </div>
                 </td>
                 <td>
-                  <Badge tone={d.security === "none" ? "danger" : d.skip_verify ? "warning" : "success"}>{d.security === "none" ? "Unencrypted" : d.security === "ldaps" ? "LDAPS" : "StartTLS"}</Badge>
+                  <Badge tone={d.security === "none" ? "danger" : d.skip_verify ? "warning" : "success"}>{d.security === "none" ? t("Unencrypted") : d.security === "ldaps" ? "LDAPS" : "StartTLS"}</Badge>
                 </td>
                 <td>
                   <span className="inline-flex items-center gap-1 text-xs text-muted">
@@ -323,10 +324,10 @@ export function LDAPCard() {
                 </td>
                 <td className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button size="icon-sm" variant="ghost" title="Edit" onClick={() => setEdit({ ...d, bind_password: "" })}>
+                    <Button size="icon-sm" variant="ghost" title={t("Edit")} onClick={() => setEdit({ ...d, bind_password: "" })}>
                       <Pencil />
                     </Button>
-                    <Button size="icon-sm" variant="ghost" title="Remove" onClick={async () => (await confirm({ title: `Remove ${d.name}?`, description: "Directory users can no longer sign in. Their PortDock accounts are kept.", danger: true, confirmText: "Remove" })) && del.mutate(d.id)}>
+                    <Button size="icon-sm" variant="ghost" title={t("Remove")} onClick={async () => (await confirm({ title: t("Remove {name}?", { name: d.name }), description: t("Directory users can no longer sign in. Their PortDock accounts are kept."), danger: true, confirmText: t("Remove") })) && del.mutate(d.id)}>
                       <Trash2 className="text-danger" />
                     </Button>
                   </div>

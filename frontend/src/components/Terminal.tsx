@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { RotateCw } from "lucide-react";
 import { wsURL } from "../lib/api";
 import { Button, StatusDot } from "./ui";
+import { t } from "../lib/i18n";
 
 /** Interactive terminal over WebSocket (docker exec or SSH shell). */
 export function Terminal({ path, className = "h-[520px]" }: { path: string; className?: string }) {
@@ -62,10 +63,10 @@ export function Terminal({ path, className = "h-[520px]" }: { path: string; clas
       <div className="flex items-center justify-between border-b border-white/5 px-3 py-2 text-xs text-zinc-400">
         <span className="flex items-center gap-2">
           <StatusDot status={state === "open" ? "running" : state === "connecting" ? "starting" : "stopped"} />
-          {state === "open" ? "Connected" : state === "connecting" ? "Connecting…" : "Disconnected"}
+          {state === "open" ? t("Connected") : state === "connecting" ? t("Connecting…") : t("Disconnected")}
         </span>
         <Button size="sm" variant="ghost" icon={<RotateCw className="size-3.5" />} onClick={() => setSession((s) => s + 1)}>
-          Reconnect
+          {t("Reconnect")}
         </Button>
       </div>
       <div ref={host} className={className} />

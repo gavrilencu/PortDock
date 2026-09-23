@@ -10,8 +10,16 @@ import { ContainerLogs } from "../components/ContainerTable";
 import { Terminal } from "../components/Terminal";
 import { formatBytes, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
+import { t, tk } from "../lib/i18n";
 
 type Tab = "overview" | "metrics" | "backups" | "logs" | "terminal" | "settings";
+
+const actionDone: Record<string, string> = {
+  start: tk("Database started"),
+  stop: tk("Database stopped"),
+  restart: tk("Database restarted"),
+  recreate: tk("Database recreated"),
+};
 
 export function DatabasePage() {
   const id = Number(useParams().id);
@@ -22,7 +30,7 @@ export function DatabasePage() {
   const action = useMutation({
     mutationFn: (a: string) => api.post(`/databases/${id}/${a}`),
     onSuccess: (_, a) => {
-      toast.success(`Database ${a} ok`);
+      toast.success(actionDone[a] ? t(actionDone[a]) : t("Done"));
       qc.invalidateQueries({ queryKey: ["database", id] });
     },
     onError: (e) => toast.error(e.message),
@@ -41,10 +49,10 @@ export function DatabasePage() {
             {db.name} <StatusBadge status={db.status} />
           </span>
         }
-        subtitle={`${db.engine_name} · ${db.image} · on ${db.server_name}`}
+        subtitle={`${db.engine_name} · ${db.image} · ${t("on {server}", { server: db.server_name })}`}
         breadcrumbs={
           <>
-            <Link to="/projects" className="hover:text-fg">Projects</Link> / <Link to={`/projects/${db.project.id}?env=${db.environment_id}`} className="hover:text-fg">{db.project.name}</Link> / <span>{db.environment.name}</span> /{" "}
+            <Link to="/projects" className="hover:text-fg">{t("Projects")}</Link> / <Link to={`/projects/${db.project.id}?env=${db.environment_id}`} className="hover:text-fg">{db.project.name}</Link> / <span>{db.environment.name}</span> /{" "}
             <span className="text-fg">{db.name}</span>
           </>
         }
@@ -52,48 +60,48 @@ export function DatabasePage() {
           running ? (
             <>
               <Button icon={<RotateCw className="size-4" />} onClick={() => action.mutate("restart")} loading={action.isPending && action.variables === "restart"}>
-                Restart
+                {t("Restart")}
               </Button>
               <Button icon={<Square className="size-4" />} onClick={() => action.mutate("stop")} loading={action.isPending && action.variables === "stop"}>
-                Stop
+                {t("Stop")}
               </Button>
             </>
           ) : (
             <Button variant="primary" icon={<Play className="size-4" />} onClick={() => action.mutate("start")} loading={action.isPending}>
-              Start
+              {t("Start")}
             </Button>
           )
         }
       />
       <Tabs
         value={tab}
-        onChange={(t) => setParams({ tab: t })}
+        onChange={(v) => setParams({ tab: v })}
         tabs={[
-          { id: "overview", label: "Connection", icon: <LayoutGrid /> },
-          { id: "metrics", label: "Metrics", icon: <Activity /> },
-          { id: "backups", label: "Backups", icon: <DatabaseBackup /> },
-          { id: "logs", label: "Logs", icon: <ScrollText /> },
-          { id: "terminal", label: "Terminal", icon: <SquareTerminal /> },
-          { id: "settings", label: "Settings", icon: <Settings2 /> },
+          { id: "overview", label: t("Connection"), icon: <LayoutGrid /> },
+          { id: "metrics", label: t("Metrics"), icon: <Activity /> },
+          { id: "backups", label: t("Backups"), icon: <DatabaseBackup /> },
+          { id: "logs", label: t("Logs"), icon: <ScrollText /> },
+          { id: "terminal", label: t("Terminal"), icon: <SquareTerminal /> },
+          { id: "settings", label: t("Settings"), icon: <Settings2 /> },
         ]}
       />
       {tab === "overview" && (
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card title="Internal connection" description={`From applications on the same server (Docker network), use host ${db.hostname}.`}>
+          <Card title={t("Internal connection")} description={t("From applications on the same server (Docker network), use host {host}.", { host: db.hostname })}>
             <div className="space-y-4 p-5">
-              <CopyField label="Connection URL" value={db.internal_url} secret />
+              <CopyField label={t("Connection URL")} value={db.internal_url} secret />
               <div className="grid gap-4 sm:grid-cols-2">
-                <CopyField label="Host" value={db.hostname} />
-                <CopyField label="Port" value={String(db.port)} />
-                {db.username && <CopyField label="User" value={db.username} />}
-                <CopyField label="Password" value={db.password} secret />
-                {db.database_name && <CopyField label="Database" value={db.database_name} />}
+                <CopyField label={t("Host")} value={db.hostname} />
+                <CopyField label={t("Port")} value={String(db.port)} />
+                {db.username && <CopyField label={t("User")} value={db.username} />}
+                <CopyField label={t("Password")} value={db.password} secret />
+                {db.database_name && <CopyField label={t("Database")} value={db.database_name} />}
               </div>
             </div>
           </Card>
-          <Card title="Public access" description="Expose the database on a host port (configure in Settings). Protect it with a firewall.">
+          <Card title={t("Public access")} description={t("Expose the database on a host port (configure in Settings). Protect it with a firewall.")}>
             <div className="p-5">
-              {db.public_url ? <CopyField label="Public URL" value={db.public_url} secret /> : <p className="text-sm text-muted">Not publicly exposed. Only reachable from the internal network.</p>}
+              {db.public_url ? <CopyField label={t("Public URL")} value={db.public_url} secret /> : <p className="text-sm text-muted">{t("Not publicly exposed. Only reachable from the internal network.")}</p>}
             </div>
           </Card>
         </div>
@@ -101,7 +109,7 @@ export function DatabasePage() {
       {tab === "metrics" && <MetricsPanel scope="database" id={db.id} />}
       {tab === "backups" && <Backups db={db} />}
       {tab === "logs" && <ContainerLogs url={`/databases/${id}/logs?tail=500`} className="h-[600px]" />}
-      {tab === "terminal" && (running ? <Terminal path={`/servers/${db.server_id}/containers/${db.uuid}/terminal`} /> : <Empty icon={<SquareTerminal />} title="Database is not running" />)}
+      {tab === "terminal" && (running ? <Terminal path={`/servers/${db.server_id}/containers/${db.uuid}/terminal`} /> : <Empty icon={<SquareTerminal />} title={t("Database is not running")} />)}
       {tab === "settings" && <DatabaseSettings db={db} onRecreate={() => action.mutate("recreate")} />}
     </>
   );
@@ -117,7 +125,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["backups", db.id] });
       setEdit(null);
-      toast.success("Backup schedule saved");
+      toast.success(t("Backup schedule saved"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -129,22 +137,22 @@ function Backups({ db }: { db: DatabaseDetail }) {
   return (
     <div className="space-y-6">
       <Card
-        title="Scheduled backups"
-        description="Dumps are stored on the server under the PortDock data directory, with optional S3 upload."
+        title={t("Scheduled backups")}
+        description={t("Dumps are stored on the server under the PortDock data directory, with optional S3 upload.")}
         actions={
           <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEdit({ schedule: "0 3 * * *", retention: 7, enabled: true, upload_s3: false })}>
-            Add schedule
+            {t("Add schedule")}
           </Button>
         }
       >
         {backups.data!.length === 0 ? (
           <div className="p-5">
-            <Empty icon={<CalendarClock />} title="No backup schedules" description="Create a schedule, or run a one-off backup after adding one." />
+            <Empty icon={<CalendarClock />} title={t("No backup schedules")} description={t("Create a schedule, or run a one-off backup after adding one.")} />
           </div>
         ) : (
           <div className="divide-y divide-border">
             {backups.data!.map((b) => (
-              <BackupItem key={b.id} b={b} onEdit={() => setEdit(b)} onDelete={async () => (await confirm({ title: "Delete this schedule?", danger: true, confirmText: "Delete" })) && del.mutate(b.id)} db={db} />
+              <BackupItem key={b.id} b={b} onEdit={() => setEdit(b)} onDelete={async () => (await confirm({ title: t("Delete this schedule?"), danger: true, confirmText: t("Delete") })) && del.mutate(b.id)} db={db} />
             ))}
           </div>
         )}
@@ -152,23 +160,23 @@ function Backups({ db }: { db: DatabaseDetail }) {
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}
-        title={edit?.id ? "Edit schedule" : "New backup schedule"}
+        title={edit?.id ? t("Edit schedule") : t("New backup schedule")}
         footer={
           <Button variant="primary" loading={save.isPending} onClick={() => save.mutate(edit!)}>
-            Save
+            {t("Save")}
           </Button>
         }
       >
         {edit && (
           <div className="space-y-4">
-            <Field label="Cron schedule" hint="Standard 5-field cron (UTC). e.g. 0 3 * * * = daily at 03:00, @hourly, @every 6h">
+            <Field label={t("Cron schedule")} hint={t("Standard 5-field cron (UTC). e.g. 0 3 * * * = daily at 03:00, @hourly, @every 6h")}>
               <Input value={edit.schedule} onChange={(e) => setEdit({ ...edit, schedule: e.target.value })} className="font-mono" />
             </Field>
-            <Field label="Keep last N backups">
+            <Field label={t("Keep last N backups")}>
               <Input type="number" value={edit.retention} onChange={(e) => setEdit({ ...edit, retention: Number(e.target.value) })} />
             </Field>
-            <Switch checked={!!edit.upload_s3} onChange={(v) => setEdit({ ...edit, upload_s3: v })} label="Upload to S3" description="Configure the S3 destination in Settings → Backups." />
-            <Switch checked={!!edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label="Enabled" />
+            <Switch checked={!!edit.upload_s3} onChange={(v) => setEdit({ ...edit, upload_s3: v })} label={t("Upload to S3")} description={t("Configure the S3 destination in Settings → Backups.")} />
+            <Switch checked={!!edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label={t("Enabled")} />
           </div>
         )}
       </Modal>
@@ -184,7 +192,7 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
   const run = useMutation({
     mutationFn: () => api.post(`/backups/${b.id}/run`),
     onSuccess: () => {
-      toast.success("Backup started");
+      toast.success(t("Backup started"));
       setOpen(true);
       setTimeout(() => qc.invalidateQueries({ queryKey: ["backup-runs", b.id] }), 1500);
     },
@@ -192,7 +200,7 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
   });
   const restore = useMutation({
     mutationFn: (rid: number) => api.post(`/backup-runs/${rid}/restore`),
-    onSuccess: () => toast.success("Restore completed"),
+    onSuccess: () => toast.success(t("Restore completed")),
     onError: (e) => toast.error(e.message),
   });
   return (
@@ -200,13 +208,13 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
       <div className="flex flex-wrap items-center gap-4 px-5 py-3">
         <code className="rounded-md bg-panel-2 px-2 py-1 font-mono text-xs">{b.schedule}</code>
         <div className="flex-1 text-sm text-muted">
-          keep {b.retention} · last run {timeAgo(b.last_run_at)} {b.upload_s3 && <Badge tone="info">S3</Badge>} {!b.enabled && <Badge>paused</Badge>}
+          {t("keep {count} · last run {time}", { count: b.retention, time: timeAgo(b.last_run_at) })} {b.upload_s3 && <Badge tone="info">S3</Badge>} {!b.enabled && <Badge>{t("paused")}</Badge>}
         </div>
         <Button size="sm" icon={<History className="size-3.5" />} onClick={() => setOpen(!open)}>
-          History
+          {t("History")}
         </Button>
         <Button size="sm" variant="primary" icon={<Play className="size-3.5" />} loading={run.isPending} onClick={() => run.mutate()}>
-          Run now
+          {t("Run now")}
         </Button>
         <Button size="icon" variant="ghost" onClick={onEdit}>
           <Settings2 className="size-4" />
@@ -220,15 +228,15 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
           {runs.isLoading ? (
             <Loading />
           ) : !runs.data?.length ? (
-            <p className="px-5 py-4 text-sm text-muted">No runs yet.</p>
+            <p className="px-5 py-4 text-sm text-muted">{t("No runs yet.")}</p>
           ) : (
             <Table>
               <thead>
                 <tr>
-                  <th>Status</th>
-                  <th>When</th>
-                  <th>Size</th>
-                  <th>File / message</th>
+                  <th>{t("Status")}</th>
+                  <th>{t("When")}</th>
+                  <th>{t("Size")}</th>
+                  <th>{t("File / message")}</th>
                   <th />
                 </tr>
               </thead>
@@ -248,7 +256,7 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
                         <div className="flex justify-end gap-1">
                           <a href={`/api/backup-runs/${r.id}/download`}>
                             <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
-                              Download
+                              {t("Download")}
                             </Button>
                           </a>
                           <Button
@@ -256,11 +264,11 @@ function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail
                             variant="ghost"
                             loading={restore.isPending && restore.variables === r.id}
                             onClick={async () => {
-                              if (await confirm({ title: "Restore this backup?", description: `Data in ${db.name} will be overwritten by this dump.`, danger: true, confirmText: "Restore", typeToConfirm: db.name }))
+                              if (await confirm({ title: t("Restore this backup?"), description: t("Data in {name} will be overwritten by this dump.", { name: db.name }), danger: true, confirmText: t("Restore"), typeToConfirm: db.name }))
                                 restore.mutate(r.id);
                             }}
                           >
-                            Restore
+                            {t("Restore")}
                           </Button>
                         </div>
                       )}
@@ -286,7 +294,7 @@ function DatabaseSettings({ db, onRecreate }: { db: DatabaseDetail; onRecreate: 
     mutationFn: () => api.patch<DatabaseDetail>(`/databases/${db.id}`, f),
     onSuccess: async (d) => {
       qc.setQueryData(["database", db.id], d);
-      if (await confirm({ title: "Settings saved", description: "Recreate the container now to apply image, port and resource changes? Data is kept in the volume.", confirmText: "Recreate now" })) onRecreate();
+      if (await confirm({ title: t("Settings saved"), description: t("Recreate the container now to apply image, port and resource changes? Data is kept in the volume."), confirmText: t("Recreate now") })) onRecreate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -297,46 +305,46 @@ function DatabaseSettings({ db, onRecreate }: { db: DatabaseDetail; onRecreate: 
   });
   return (
     <div className="space-y-6">
-      <Card title="Configuration">
+      <Card title={t("Configuration")}>
         <div className="grid gap-4 p-5 md:grid-cols-2">
-          <Field label="Name">
+          <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-          <Field label="Image" hint="Upgrading major versions may require a manual migration.">
+          <Field label={t("Image")} hint={t("Upgrading major versions may require a manual migration.")}>
             <Input value={f.image} onChange={(e) => setF({ ...f, image: e.target.value })} />
           </Field>
-          <Field label="Public port" hint="0 = not exposed">
+          <Field label={t("Public port")} hint={t("0 = not exposed")}>
             <Input type="number" value={f.public_port} onChange={(e) => setF({ ...f, public_port: Number(e.target.value) })} />
           </Field>
-          <Field label="Custom arguments" hint="Appended to the container command.">
+          <Field label={t("Custom arguments")} hint={t("Appended to the container command.")}>
             <Input value={f.custom_args} onChange={(e) => setF({ ...f, custom_args: e.target.value })} />
           </Field>
-          <Field label="CPU limit">
-            <Input value={f.cpu_limit} onChange={(e) => setF({ ...f, cpu_limit: e.target.value })} placeholder="unlimited" />
+          <Field label={t("CPU limit")}>
+            <Input value={f.cpu_limit} onChange={(e) => setF({ ...f, cpu_limit: e.target.value })} placeholder={t("unlimited")} />
           </Field>
-          <Field label="Memory limit">
-            <Input value={f.memory_limit} onChange={(e) => setF({ ...f, memory_limit: e.target.value })} placeholder="unlimited" />
+          <Field label={t("Memory limit")}>
+            <Input value={f.memory_limit} onChange={(e) => setF({ ...f, memory_limit: e.target.value })} placeholder={t("unlimited")} />
           </Field>
           <div className="flex justify-end md:col-span-2">
             <Button variant="primary" icon={<Save className="size-4" />} loading={save.isPending} onClick={() => save.mutate()}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         </div>
       </Card>
-      <Card title="Danger zone" className="border-danger/30">
+      <Card title={t("Danger zone")} className="border-danger/30">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <p className="text-sm text-muted">Delete the database container. Optionally delete its data volume too.</p>
+          <p className="text-sm text-muted">{t("Delete the database container. Optionally delete its data volume too.")}</p>
           <div className="flex gap-2">
-            <Button variant="danger" onClick={async () => (await confirm({ title: "Delete database (keep data)?", danger: true, confirmText: "Delete" })) && del.mutate(false)}>
-              Delete, keep volume
+            <Button variant="danger" onClick={async () => (await confirm({ title: t("Delete database (keep data)?"), danger: true, confirmText: t("Delete") })) && del.mutate(false)}>
+              {t("Delete, keep volume")}
             </Button>
             <Button
               variant="danger"
               icon={<Trash2 className="size-4" />}
-              onClick={async () => (await confirm({ title: "Delete database and ALL data?", description: "The data volume will be destroyed.", danger: true, confirmText: "Delete everything", typeToConfirm: db.name })) && del.mutate(true)}
+              onClick={async () => (await confirm({ title: t("Delete database and ALL data?"), description: t("The data volume will be destroyed."), danger: true, confirmText: t("Delete everything"), typeToConfirm: db.name })) && del.mutate(true)}
             >
-              Delete with data
+              {t("Delete with data")}
             </Button>
           </div>
         </div>

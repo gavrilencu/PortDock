@@ -34,6 +34,7 @@ import { LogViewer } from "../components/LogViewer";
 import { Terminal } from "../components/Terminal";
 import { formatBytes, formatUptime, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
+import { t } from "../lib/i18n";
 
 type Tab = "overview" | "monitoring" | "containers" | "images" | "volumes" | "networks" | "terminal" | "settings";
 
@@ -50,7 +51,7 @@ export function ServerPage() {
     onSuccess: (s) => {
       qc.setQueryData(["server", id], s);
       qc.invalidateQueries({ queryKey: ["servers"] });
-      s.status === "reachable" ? toast.success("Server is reachable") : toast.error(s.status_message || "Server unreachable");
+      s.status === "reachable" ? toast.success(t("Server is reachable")) : toast.error(s.status_message || t("Server unreachable"));
     },
   });
 
@@ -67,46 +68,46 @@ export function ServerPage() {
             {s.name} <StatusBadge status={s.status} />
           </span>
         }
-        subtitle={s.is_local ? "The machine running PortDock" : `${s.user}@${s.host}:${s.port}`}
+        subtitle={s.is_local ? t("The machine running PortDock") : `${s.user}@${s.host}:${s.port}`}
         breadcrumbs={
           <>
-            <Link to="/servers" className="hover:text-fg">Servers</Link> / <span className="text-fg">{s.name}</span>
+            <Link to="/servers" className="hover:text-fg">{t("Servers")}</Link> / <span className="text-fg">{s.name}</span>
           </>
         }
         actions={
           <Button icon={<RefreshCw className="size-4" />} loading={validate.isPending} onClick={() => validate.mutate()}>
-            Validate
+            {t("Validate")}
           </Button>
         }
       />
       <Tabs
         value={tab}
-        onChange={(t) => setParams({ tab: t })}
+        onChange={(v) => setParams({ tab: v })}
         tabs={[
-          { id: "overview", label: "Overview", icon: <LayoutGrid /> },
-          { id: "monitoring", label: "Monitoring", icon: <Activity /> },
-          { id: "containers", label: "Containers", icon: <Boxes /> },
-          { id: "images", label: "Images", icon: <Layers /> },
-          { id: "volumes", label: "Volumes", icon: <HardDrive /> },
-          { id: "networks", label: "Networks", icon: <Network /> },
-          { id: "terminal", label: "Terminal", icon: <SquareTerminal />, hidden: !isAdmin },
-          { id: "settings", label: "Settings", icon: <Settings2 />, hidden: !isAdmin },
+          { id: "overview", label: t("Overview"), icon: <LayoutGrid /> },
+          { id: "monitoring", label: t("Monitoring"), icon: <Activity /> },
+          { id: "containers", label: t("Containers"), icon: <Boxes /> },
+          { id: "images", label: t("Images"), icon: <Layers /> },
+          { id: "volumes", label: t("Volumes"), icon: <HardDrive /> },
+          { id: "networks", label: t("Networks"), icon: <Network /> },
+          { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !isAdmin },
+          { id: "settings", label: t("Settings"), icon: <Settings2 />, hidden: !isAdmin },
         ]}
       />
       {s.status === "unreachable" && tab !== "settings" && (
         <div className="mb-6">
-          <ErrorBox error={s.status_message || "Server is unreachable"} />
+          <ErrorBox error={s.status_message || t("Server is unreachable")} />
         </div>
       )}
       {tab === "overview" && <Overview s={s} />}
-      {tab === "monitoring" && <MetricsPanel scope="server" id={s.id} title="Server metrics" />}
+      {tab === "monitoring" && <MetricsPanel scope="server" id={s.id} title={t("Server metrics")} />}
       {tab === "containers" && <Containers s={s} />}
       {tab === "images" && <Images s={s} />}
       {tab === "volumes" && <Volumes s={s} />}
       {tab === "networks" && <Networks s={s} />}
       {tab === "terminal" && (
         <div className="space-y-3">
-          {s.is_local && <p className="text-sm text-muted">For the local server this opens a shell inside the PortDock container (the Docker CLI there controls the host daemon).</p>}
+          {s.is_local && <p className="text-sm text-muted">{t("For the local server this opens a shell inside the PortDock container (the Docker CLI there controls the host daemon).")}</p>}
           <Terminal path={`/servers/${id}/terminal`} />
         </div>
       )}
@@ -128,7 +129,7 @@ function Overview({ s }: { s: Server }) {
   const proxy = useMutation({
     mutationFn: (a: string) => api.post<{ proxy_status: string }>(`/servers/${s.id}/proxy/${a}`),
     onSuccess: (r) => {
-      toast.success(`Proxy: ${r.proxy_status}`);
+      toast.success(t("Proxy: {status}", { status: r.proxy_status }));
       qc.invalidateQueries({ queryKey: ["server", s.id] });
     },
     onError: (e) => toast.error(e.message),
@@ -142,36 +143,36 @@ function Overview({ s }: { s: Server }) {
     <div className="space-y-6">
       {m && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Stat label="CPU load" icon={<Cpu />} value={m.load1.toFixed(2)} sub={`${m.cpus} cores · ${m.load5.toFixed(2)} / ${m.load15.toFixed(2)}`} />
+          <Stat label={t("CPU load")} icon={<Cpu />} value={m.load1.toFixed(2)} sub={`${t("{n} core|{n} cores", { n: m.cpus })} · ${m.load5.toFixed(2)} / ${m.load15.toFixed(2)}`} />
           <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-center justify-between text-[13px] font-medium text-subtle">
-              Memory <MemoryStick className="size-4 text-faint" />
+              {t("Memory")} <MemoryStick className="size-4 text-faint" />
             </div>
             <div className="mt-2 text-2xl font-semibold tabular-nums">{formatBytes(m.mem_used)}</div>
             <Meter value={m.mem_used} max={m.mem_total} className="mt-2" />
-            <div className="mt-1 text-xs text-muted">of {formatBytes(m.mem_total)}</div>
+            <div className="mt-1 text-xs text-muted">{t("of {total}", { total: formatBytes(m.mem_total) })}</div>
           </div>
           <div className="rounded-xl border border-border bg-surface p-4 shadow-card">
             <div className="flex items-center justify-between text-[13px] font-medium text-subtle">
-              Disk <HardDrive className="size-4 text-faint" />
+              {t("Disk")} <HardDrive className="size-4 text-faint" />
             </div>
             <div className="mt-2 text-2xl font-semibold tabular-nums">{formatBytes(m.disk_used)}</div>
             <Meter value={m.disk_used} max={m.disk_total} className="mt-2" />
-            <div className="mt-1 text-xs text-muted">of {formatBytes(m.disk_total)}</div>
+            <div className="mt-1 text-xs text-muted">{t("of {total}", { total: formatBytes(m.disk_total) })}</div>
           </div>
-          <Stat label="Containers" icon={<Boxes />} value={`${m.running_containers}/${m.containers}`} sub={`up ${formatUptime(m.uptime)}`} />
+          <Stat label={t("Containers")} icon={<Boxes />} value={`${m.running_containers}/${m.containers}`} sub={t("up {time}", { time: formatUptime(m.uptime) })} />
         </div>
       )}
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="System">
+        <Card title={t("System")}>
           <dl className="space-y-3 p-5 text-sm">
             {[
-              ["Status", <StatusBadge status={s.status} />],
-              ["Docker", s.docker_version || "not installed"],
-              ["OS", m?.os ?? "—"],
-              ["Kernel", m?.kernel ?? "—"],
-              ["Wildcard domain", s.wildcard_domain || "—"],
-              ["Last check", timeAgo(s.last_check_at)],
+              [t("Status"), <StatusBadge status={s.status} />],
+              ["Docker", s.docker_version || t("not installed")],
+              [t("OS"), m?.os ?? "—"],
+              [t("Kernel"), m?.kernel ?? "—"],
+              [t("Wildcard domain"), s.wildcard_domain || "—"],
+              [t("Last check"), timeAgo(s.last_check_at)],
             ].map(([k, v], i) => (
               <div key={i} className="flex justify-between gap-4">
                 <dt className="text-muted">{k}</dt>
@@ -183,26 +184,26 @@ function Overview({ s }: { s: Server }) {
         <Card
           title={
             <span className="flex items-center gap-2">
-              <ShieldCheck className="size-4 text-subtle" /> Reverse proxy (Traefik)
+              <ShieldCheck className="size-4 text-subtle" /> {t("Reverse proxy (Traefik)")}
             </span>
           }
-          description="Routes domains to containers and issues Let's Encrypt certificates."
+          description={t("Routes domains to containers and issues Let's Encrypt certificates.")}
         >
           <div className="space-y-4 p-5">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted">Status</span>
+              <span className="text-sm text-muted">{t("Status")}</span>
               <StatusBadge status={s.proxy_status === "running" ? "running" : s.proxy_status === "disabled" ? "stopped" : s.proxy_status} />
             </div>
             <AdminOnly>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" icon={<Play className="size-3.5" />} onClick={() => proxy.mutate("start")} loading={proxy.isPending && proxy.variables === "start"}>
-                  Start
+                  {t("Start")}
                 </Button>
                 <Button size="sm" icon={<RotateCw className="size-3.5" />} onClick={() => proxy.mutate("restart")} loading={proxy.isPending && proxy.variables === "restart"}>
-                  Recreate
+                  {t("Recreate")}
                 </Button>
                 <Button size="sm" variant="danger" icon={<Square className="size-3.5" />} onClick={() => proxy.mutate("stop")}>
-                  Stop
+                  {t("Stop")}
                 </Button>
               </div>
             </AdminOnly>
@@ -210,10 +211,10 @@ function Overview({ s }: { s: Server }) {
         </Card>
       </div>
       <AdminOnly>
-        <Card title="Server setup" description="Installs Docker (if missing), prepares directories, the portdock network and the proxy. Safe to re-run.">
+        <Card title={t("Server setup")} description={t("Installs Docker (if missing), prepares directories, the portdock network and the proxy. Safe to re-run.")}>
           <div className="space-y-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <Switch checked={nixpacks} onChange={setNixpacks} label="Also install Nixpacks" description="Needed only for the Nixpacks build pack." />
+              <Switch checked={nixpacks} onChange={setNixpacks} label={t("Also install Nixpacks")} description={t("Needed only for the Nixpacks build pack.")} />
               <Button
                 variant="primary"
                 icon={<Wrench className="size-4" />}
@@ -223,7 +224,7 @@ function Overview({ s }: { s: Server }) {
                   setTimeout(() => setup.mutate(), 300);
                 }}
               >
-                Run setup
+                {t("Run setup")}
               </Button>
             </div>
             {setupKey > 0 && <LogViewer lines={setupStream.lines} live={!setupStream.status} className="h-80" />}
@@ -244,12 +245,12 @@ function Containers({ s }: { s: Server }) {
   return (
     <div className="space-y-6">
       <Card
-        title={`Containers (${list.length})`}
+        title={t("Containers ({n})", { n: list.length })}
         actions={
           <div className="flex gap-1 rounded-lg border border-border p-0.5">
             {(["all", "managed"] as const).map((f) => (
               <button key={f} onClick={() => setFilter(f)} className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize ${filter === f ? "bg-panel-2 text-fg" : "text-muted"}`}>
-                {f}
+                {f === "all" ? t("All") : t("Managed")}
               </button>
             ))}
           </div>
@@ -258,15 +259,15 @@ function Containers({ s }: { s: Server }) {
         <ContainerTable serverId={s.id} containers={list} />
       </Card>
       {stats.data && stats.data.length > 0 && (
-        <Card title="Resource usage">
+        <Card title={t("Resource usage")}>
           <Table>
             <thead>
               <tr>
-                <th>Container</th>
+                <th>{t("Container")}</th>
                 <th>CPU</th>
-                <th>Memory</th>
-                <th>Net I/O</th>
-                <th>Block I/O</th>
+                <th>{t("Memory")}</th>
+                <th>{t("Net I/O")}</th>
+                <th>{t("Block I/O")}</th>
                 <th>PIDs</th>
               </tr>
             </thead>
@@ -297,7 +298,7 @@ function PruneButton({ serverId, scope, label }: { serverId: number; scope: stri
   const prune = useMutation({
     mutationFn: () => api.post<{ output: string }>(`/servers/${serverId}/prune`, { scope }),
     onSuccess: (r) => {
-      toast.success(r.output.split("\n").pop() || "Pruned");
+      toast.success(r.output.split("\n").pop() || t("Pruned"));
       qc.invalidateQueries();
     },
     onError: (e) => toast.error(e.message),
@@ -309,7 +310,7 @@ function PruneButton({ serverId, scope, label }: { serverId: number; scope: stri
         variant="danger"
         icon={<Trash2 className="size-3.5" />}
         loading={prune.isPending}
-        onClick={async () => (await confirm({ title: `${label}?`, description: "Unused Docker data will be removed permanently.", danger: true, confirmText: "Prune" })) && prune.mutate()}
+        onClick={async () => (await confirm({ title: `${label}?`, description: t("Unused Docker data will be removed permanently."), danger: true, confirmText: t("Prune") })) && prune.mutate()}
       >
         {label}
       </Button>
@@ -330,21 +331,21 @@ function Images({ s }: { s: Server }) {
   if (error) return <ErrorBox error={error} />;
   return (
     <Card
-      title={`Images (${data!.length})`}
+      title={t("Images ({n})", { n: data!.length })}
       actions={
         <>
-          <PruneButton serverId={s.id} scope="builder" label="Prune build cache" />
-          <PruneButton serverId={s.id} scope="images" label="Prune unused images" />
+          <PruneButton serverId={s.id} scope="builder" label={t("Prune build cache")} />
+          <PruneButton serverId={s.id} scope="images" label={t("Prune unused images")} />
         </>
       }
     >
       <Table>
         <thead>
           <tr>
-            <th>Repository</th>
-            <th>Tag</th>
-            <th>Size</th>
-            <th>Created</th>
+            <th>{t("Repository")}</th>
+            <th>{t("Tag")}</th>
+            <th>{t("Size")}</th>
+            <th>{t("Created")}</th>
             <th />
           </tr>
         </thead>
@@ -352,13 +353,13 @@ function Images({ s }: { s: Server }) {
           {data!.map((i) => (
             <tr key={i.id + i.tag}>
               <td className="font-mono text-xs">
-                {i.repository} {i.repository.startsWith("portdock/") && <Badge>managed</Badge>}
+                {i.repository} {i.repository.startsWith("portdock/") && <Badge>{t("managed")}</Badge>}
               </td>
               <td className="font-mono text-xs text-muted">{i.tag}</td>
               <td className="tabular-nums text-xs">{i.size}</td>
               <td className="text-xs text-muted">{i.created_at.split(" +")[0]}</td>
               <td className="text-right">
-                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Remove ${i.repository}:${i.tag}?`, danger: true, confirmText: "Remove" })) && del.mutate(i.tag !== "<none>" ? `${i.repository}:${i.tag}` : i.id)}>
+                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Remove {name}?", { name: `${i.repository}:${i.tag}` }), danger: true, confirmText: t("Remove") })) && del.mutate(i.tag !== "<none>" ? `${i.repository}:${i.tag}` : i.id)}>
                   <Trash2 className="size-4 text-danger" />
                 </Button>
               </td>
@@ -382,12 +383,12 @@ function Volumes({ s }: { s: Server }) {
   if (isLoading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   return (
-    <Card title={`Volumes (${data!.length})`} actions={<PruneButton serverId={s.id} scope="volumes" label="Prune unused volumes" />}>
+    <Card title={t("Volumes ({n})", { n: data!.length })} actions={<PruneButton serverId={s.id} scope="volumes" label={t("Prune unused volumes")} />}>
       <Table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Driver</th>
+            <th>{t("Name")}</th>
+            <th>{t("Driver")}</th>
             <th />
           </tr>
         </thead>
@@ -397,7 +398,7 @@ function Volumes({ s }: { s: Server }) {
               <td className="font-mono text-xs">{v.name}</td>
               <td className="text-xs text-muted">{v.driver}</td>
               <td className="text-right">
-                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Delete volume ${v.name}?`, description: "All data in the volume is lost.", danger: true, confirmText: "Delete", typeToConfirm: v.name })) && del.mutate(v.name)}>
+                <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Delete volume {name}?", { name: v.name }), description: t("All data in the volume is lost."), danger: true, confirmText: t("Delete"), typeToConfirm: v.name })) && del.mutate(v.name)}>
                   <Trash2 className="size-4 text-danger" />
                 </Button>
               </td>
@@ -414,13 +415,13 @@ function Networks({ s }: { s: Server }) {
   if (isLoading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   return (
-    <Card title={`Networks (${data!.length})`} actions={<PruneButton serverId={s.id} scope="networks" label="Prune unused networks" />}>
+    <Card title={t("Networks ({n})", { n: data!.length })} actions={<PruneButton serverId={s.id} scope="networks" label={t("Prune unused networks")} />}>
       <Table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Driver</th>
-            <th>Scope</th>
+            <th>{t("Name")}</th>
+            <th>{t("Driver")}</th>
+            <th>{t("Scope")}</th>
             <th>ID</th>
           </tr>
         </thead>
@@ -428,7 +429,7 @@ function Networks({ s }: { s: Server }) {
           {data!.map((n) => (
             <tr key={n.id}>
               <td className="font-medium">
-                {n.name} {n.name === "portdock" && <Badge>proxy</Badge>}
+                {n.name} {n.name === "portdock" && <Badge>{t("proxy")}</Badge>}
               </td>
               <td className="text-xs text-muted">{n.driver}</td>
               <td className="text-xs text-muted">{n.scope}</td>
@@ -452,13 +453,13 @@ function ServerSettings({ s }: { s: Server }) {
     mutationFn: () => api.patch<Server>(`/servers/${s.id}`, f),
     onSuccess: (d) => {
       qc.setQueryData(["server", s.id], d);
-      toast.success("Server saved");
+      toast.success(t("Server saved"));
     },
     onError: (e) => toast.error(e.message),
   });
   const resetKey = useMutation({
     mutationFn: () => api.post(`/servers/${s.id}/reset-host-key`),
-    onSuccess: () => toast.success("Host key reset — it will be pinned again on next connect"),
+    onSuccess: () => toast.success(t("Host key reset — it will be pinned again on next connect")),
   });
   const del = useMutation({
     mutationFn: () => api.del(`/servers/${s.id}`),
@@ -470,26 +471,26 @@ function ServerSettings({ s }: { s: Server }) {
   });
   return (
     <div className="space-y-6">
-      <Card title="Connection">
+      <Card title={t("Connection")}>
         <div className="grid gap-4 p-5 md:grid-cols-2">
-          <Field label="Name">
+          <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-          <Field label="Description">
+          <Field label={t("Description")}>
             <Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           </Field>
           {!s.is_local && (
             <>
-              <Field label="Host">
+              <Field label={t("Host")}>
                 <Input value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} />
               </Field>
-              <Field label="Port">
+              <Field label={t("Port")}>
                 <Input type="number" value={f.port} onChange={(e) => setF({ ...f, port: Number(e.target.value) })} />
               </Field>
-              <Field label="User">
+              <Field label={t("User")}>
                 <Input value={f.user} onChange={(e) => setF({ ...f, user: e.target.value })} />
               </Field>
-              <Field label="SSH key">
+              <Field label={t("SSH key")}>
                 <Select value={f.ssh_key_id} onChange={(e) => setF({ ...f, ssh_key_id: Number(e.target.value) })}>
                   {keys.data?.map((k) => (
                     <option key={k.id} value={k.id}>
@@ -500,42 +501,42 @@ function ServerSettings({ s }: { s: Server }) {
               </Field>
             </>
           )}
-          <Field label="Wildcard domain" hint="Used for automatic app & preview domains.">
+          <Field label={t("Wildcard domain")} hint={t("Used for automatic app & preview domains.")}>
             <Input value={f.wildcard_domain} onChange={(e) => setF({ ...f, wildcard_domain: e.target.value })} placeholder="apps.example.com" />
           </Field>
           <div className="flex items-end">
-            <Switch checked={f.proxy_enabled} onChange={(v) => setF({ ...f, proxy_enabled: v })} label="Manage Traefik proxy" description="Disable if you run your own reverse proxy." />
+            <Switch checked={f.proxy_enabled} onChange={(v) => setF({ ...f, proxy_enabled: v })} label={t("Manage Traefik proxy")} description={t("Disable if you run your own reverse proxy.")} />
           </div>
           <div className="flex justify-end gap-2 md:col-span-2">
             {!s.is_local && (
               <Button onClick={() => resetKey.mutate()} loading={resetKey.isPending}>
-                Reset host key
+                {t("Reset host key")}
               </Button>
             )}
             <Button variant="primary" icon={<Save className="size-4" />} loading={save.isPending} onClick={() => save.mutate()}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         </div>
       </Card>
-      <Card title="Maintenance" description="Reclaim disk space. PortDock also prunes build cache older than 72h daily.">
+      <Card title={t("Maintenance")} description={t("Reclaim disk space. PortDock also prunes build cache older than 72h daily.")}>
         <div className="flex flex-wrap gap-2 p-5">
-          <PruneButton serverId={s.id} scope="containers" label="Remove stopped containers" />
-          <PruneButton serverId={s.id} scope="builder" label="Prune build cache" />
-          <PruneButton serverId={s.id} scope="all" label="System prune (all unused)" />
+          <PruneButton serverId={s.id} scope="containers" label={t("Remove stopped containers")} />
+          <PruneButton serverId={s.id} scope="builder" label={t("Prune build cache")} />
+          <PruneButton serverId={s.id} scope="all" label={t("System prune (all unused)")} />
           <a href={`/api/servers/${s.id}/metrics`} target="_blank" rel="noreferrer">
             <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
-              Raw metrics
+              {t("Raw metrics")}
             </Button>
           </a>
         </div>
       </Card>
       {!s.is_local && (
-        <Card title="Danger zone" className="border-danger/30">
+        <Card title={t("Danger zone")} className="border-danger/30">
           <div className="flex items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted">Remove the server from PortDock. Containers on the server are not touched.</p>
-            <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: `Remove ${s.name}?`, danger: true, confirmText: "Remove", typeToConfirm: s.name })) && del.mutate()}>
-              Remove server
+            <p className="text-sm text-muted">{t("Remove the server from PortDock. Containers on the server are not touched.")}</p>
+            <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: t("Remove {name}?", { name: s.name }), danger: true, confirmText: t("Remove"), typeToConfirm: s.name })) && del.mutate()}>
+              {t("Remove server")}
             </Button>
           </div>
         </Card>

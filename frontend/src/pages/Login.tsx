@@ -7,11 +7,13 @@ import type { LoginProviders } from "../lib/types";
 import { ProviderMark } from "../components/sso";
 import { LogoMark, useAuthStatus } from "../components/Layout";
 import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
+import { LanguageSelect } from "../components/LanguagePicker";
+import { t, tk, tx } from "../lib/i18n";
 
 const highlights = [
-  { icon: GitBranch, title: "Git-driven delivery", text: "Push-to-deploy, pull request previews and one-click rollbacks." },
-  { icon: Workflow, title: "Zero-downtime releases", text: "Health-checked rollouts across every server you connect." },
-  { icon: ShieldCheck, title: "Secure by default", text: "Encrypted secrets, automatic TLS, role-based access and audit log." },
+  { icon: GitBranch, title: tk("Git-driven delivery"), text: tk("Push-to-deploy, pull request previews and one-click rollbacks.") },
+  { icon: Workflow, title: tk("Zero-downtime releases"), text: tk("Health-checked rollouts across every server you connect.") },
+  { icon: ShieldCheck, title: tk("Secure by default"), text: tk("Encrypted secrets, automatic TLS, role-based access and audit log.") },
 ];
 
 export function LoginPage() {
@@ -67,6 +69,7 @@ export function LoginPage() {
         <div className="flex items-center gap-2.5">
           <LogoMark />
           <span className="text-[15px] font-semibold tracking-[-0.02em]">PortDock</span>
+          <LanguageSelect className="ml-auto" />
         </div>
         <div className="flex flex-1 items-center justify-center py-12">
           {mfa ? (
@@ -74,12 +77,12 @@ export function LoginPage() {
               <span className="flex size-10 items-center justify-center rounded-lg border border-border bg-surface-2">
                 <ShieldCheck className="size-5" />
               </span>
-              <h1 className="mt-5 text-2xl font-semibold tracking-[-0.025em]">Two-factor authentication</h1>
+              <h1 className="mt-5 text-2xl font-semibold tracking-[-0.025em]">{t("Two-factor authentication")}</h1>
               <p className="mt-2 text-[13px] leading-relaxed text-subtle">
-                {mfa.recovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication." : "Open your authenticator app and enter the 6-digit code for PortDock."}
+                {mfa.recovery ? t("Enter one of the recovery codes you saved when you set up two-factor authentication.") : t("Open your authenticator app and enter the 6-digit code for PortDock.")}
               </p>
               <div className="mt-8 space-y-4">
-                <Field label={mfa.recovery ? "Recovery code" : "Authentication code"}>
+                <Field label={mfa.recovery ? t("Recovery code") : t("Authentication code")}>
                   {mfa.recovery ? (
                     <Input className="h-11 font-mono tracking-wider" value={mfa.code} onChange={(e) => setMfa({ ...mfa, code: e.target.value })} placeholder="xxxxx-xxxxx" autoFocus autoComplete="off" />
                   ) : (
@@ -95,9 +98,9 @@ export function LoginPage() {
                     />
                   )}
                 </Field>
-                {error ? <ErrorBox error={error} title="Verification failed" /> : null}
+                {error ? <ErrorBox error={error} title={t("Verification failed")} /> : null}
                 <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={busy} disabled={mfa.recovery ? mfa.code.length < 10 : mfa.code.length !== 6}>
-                  Verify
+                  {t("Verify")}
                 </Button>
               </div>
               <div className="mt-6 flex items-center justify-between text-xs">
@@ -109,7 +112,7 @@ export function LoginPage() {
                     setError(null);
                   }}
                 >
-                  {mfa.recovery ? "Use authenticator app" : "Use a recovery code"}
+                  {mfa.recovery ? t("Use authenticator app") : t("Use a recovery code")}
                 </button>
                 <button
                   type="button"
@@ -119,15 +122,15 @@ export function LoginPage() {
                     setError(null);
                   }}
                 >
-                  Back to sign in
+                  {t("Back to sign in")}
                 </button>
               </div>
             </form>
           ) : (
             <form onSubmit={submit} className="w-full max-w-[360px]">
-              <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? "Set up your instance" : "Sign in"}</h1>
+              <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? t("Set up your instance") : t("Sign in")}</h1>
               <p className="mt-2 text-[13px] leading-relaxed text-subtle">
-                {setup ? "Create the owner account. You can invite your team afterwards." : "Welcome back. Sign in to access your workspace."}
+                {setup ? t("Create the owner account. You can invite your team afterwards.") : t("Welcome back. Sign in to access your workspace.")}
               </p>
               {ssoList.length > 0 && (
                 <div className="mt-8 space-y-2">
@@ -138,45 +141,47 @@ export function LoginPage() {
                       className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-surface text-[13px] font-medium shadow-xs transition-colors hover:border-border-strong hover:bg-surface-2"
                     >
                       <ProviderMark kind={p.kind} name={p.name} className="size-5 text-[9px]" />
-                      Continue with {p.name}
+                      {t("Continue with {name}", { name: p.name })}
                     </a>
                   ))}
                 </div>
               )}
               {ssoList.length > 0 && passwordForm && (
                 <div className="my-6 flex items-center gap-3 text-2xs font-medium uppercase tracking-wider text-faint">
-                  <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+                  <span className="h-px flex-1 bg-border" /> {t("or")} <span className="h-px flex-1 bg-border" />
                 </div>
               )}
               {passwordForm ? (
                 <div className={ssoList.length > 0 ? "space-y-4" : "mt-8 space-y-4"}>
                   {setup && (
-                    <Field label="Full name">
+                    <Field label={t("Full name")}>
                       <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Cooper" autoFocus autoComplete="name" />
                     </Field>
                   )}
-                  <Field label={ldapList.length ? "Email or username" : "Work email"} hint={ldapList.length && !setup ? `Use your ${ldapList.map((d) => d.name).join(" / ")} account or a PortDock account.` : undefined}>
-                    <Input className="h-10" type={ldapList.length ? "text" : "email"} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={ldapList.length ? "jdoe or jane@company.com" : "jane@company.com"} autoFocus={!setup && ssoList.length === 0} required autoComplete="username" />
+                  <Field label={ldapList.length ? t("Email or username") : t("Work email")} hint={ldapList.length && !setup ? t("Use your {directory} account or a PortDock account.", { directory: ldapList.map((d) => d.name).join(" / ") }) : undefined}>
+                    <Input className="h-10" type={ldapList.length ? "text" : "email"} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={ldapList.length ? t("jdoe or jane@company.com") : "jane@company.com"} autoFocus={!setup && ssoList.length === 0} required autoComplete="username" />
                   </Field>
-                  <Field label="Password" hint={setup ? "Use at least 8 characters." : undefined}>
+                  <Field label={t("Password")} hint={setup ? t("Use at least 8 characters.") : undefined}>
                     <PasswordInput className="h-10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={setup ? 8 : undefined} autoComplete={setup ? "new-password" : "current-password"} />
                   </Field>
-                  {error ? <ErrorBox error={error} title={setup ? "Could not create account" : "Sign-in failed"} /> : null}
+                  {error ? <ErrorBox error={error} title={setup ? t("Could not create account") : t("Sign-in failed")} /> : null}
                   <Button type="submit" variant={ssoList.length > 0 ? "secondary" : "primary"} size="lg" className="w-full justify-center" loading={busy} trailing={!busy && <ArrowRight />}>
-                    {setup ? "Create owner account" : ssoList.length > 0 ? "Continue with email" : "Continue"}
+                    {setup ? t("Create owner account") : ssoList.length > 0 ? t("Continue with email") : t("Continue")}
                   </Button>
                 </div>
               ) : (
                 <div className="mt-4 space-y-4">
-                  {error ? <ErrorBox error={error} title="Sign-in failed" /> : null}
+                  {error ? <ErrorBox error={error} title={t("Sign-in failed")} /> : null}
                   <button type="button" onClick={() => setShowPassword(true)} className="text-xs text-muted underline-offset-2 hover:text-fg hover:underline">
-                    Owner sign-in with password
+                    {t("Owner sign-in with password")}
                   </button>
                 </div>
               )}
               {!setup && passwordForm && (
                 <p className="mt-6 text-xs leading-relaxed text-subtle">
-                  Forgot your password? Ask an administrator, or reset it on the server with <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">portdock -reset-password</code>.
+                  {tx("Forgot your password? Ask an administrator, or reset it on the server with {command}.", {
+                    command: <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">portdock -reset-password</code>,
+                  })}
                 </p>
               )}
             </form>
@@ -184,7 +189,7 @@ export function LoginPage() {
         </div>
         <div className="flex items-center justify-between text-xs text-faint">
           <span className="flex items-center gap-1.5">
-            <Lock className="size-3" /> Self-hosted · your data stays on your infrastructure
+            <Lock className="size-3" /> {t("Self-hosted · your data stays on your infrastructure")}
           </span>
           <span>v{data?.version}</span>
         </div>
@@ -195,10 +200,10 @@ export function LoginPage() {
         <div className="relative flex h-full flex-col justify-center px-16 py-12">
           <div className="max-w-[520px]">
             <div className="inline-flex h-6 items-center gap-2 rounded-full border border-border bg-surface px-2.5 text-xs font-medium text-muted shadow-xs">
-              <span className="size-1.5 rounded-full bg-success" /> Platform engineering, simplified
+              <span className="size-1.5 rounded-full bg-success" /> {t("Platform engineering, simplified")}
             </div>
             <h2 className="mt-5 text-[34px] font-semibold leading-[1.15] tracking-[-0.03em]">
-              Ship software on your own infrastructure — with the polish of a managed cloud.
+              {t("Ship software on your own infrastructure — with the polish of a managed cloud.")}
             </h2>
             <div className="mt-10 space-y-3">
               {highlights.map((h) => (
@@ -207,8 +212,8 @@ export function LoginPage() {
                     <h.icon className="size-4" />
                   </span>
                   <div>
-                    <div className="text-[13px] font-semibold">{h.title}</div>
-                    <div className="mt-0.5 text-[13px] leading-relaxed text-subtle">{h.text}</div>
+                    <div className="text-[13px] font-semibold">{t(h.title)}</div>
+                    <div className="mt-0.5 text-[13px] leading-relaxed text-subtle">{t(h.text)}</div>
                   </div>
                 </div>
               ))}

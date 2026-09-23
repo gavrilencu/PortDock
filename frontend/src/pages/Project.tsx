@@ -10,8 +10,11 @@ import { ResourceIcon } from "../components/shared";
 import { ProtectedBadge, RoleBadge } from "../components/access";
 import { EnvironmentSettingsModal, MembersModal } from "../components/projectAccess";
 import { domainURL, splitList, timeAgo } from "../lib/utils";
+import { t, tk } from "../lib/i18n";
 
 type Kind = "application" | "database" | "service";
+
+const kindLabel: Record<Kind, string> = { application: tk("Application"), database: tk("Database"), service: tk("Service") };
 
 export function ProjectPage() {
   const { id } = useParams();
@@ -57,7 +60,7 @@ export function ProjectPage() {
       qc.invalidateQueries({ queryKey: ["project", Number(id)] });
       qc.invalidateQueries({ queryKey: ["projects"] });
       setEdit(null);
-      toast.success("Project updated");
+      toast.success(t("Project updated"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -74,9 +77,9 @@ export function ProjectPage() {
   const items = useMemo(() => {
     if (!r) return [];
     const all = [
-      ...r.applications.map((a) => ({ kind: "application" as Kind, id: a.id, name: a.name, status: a.status, source: a.source_type === "image" ? a.docker_image : a.git_repository.replace(/^https?:\/\//, ""), detail: a.source_type === "image" ? "Docker image" : `${a.build_pack} · ${a.git_branch}`, domains: splitList(a.domains), updated: a.updated_at, to: `/applications/${a.id}` })),
+      ...r.applications.map((a) => ({ kind: "application" as Kind, id: a.id, name: a.name, status: a.status, source: a.source_type === "image" ? a.docker_image : a.git_repository.replace(/^https?:\/\//, ""), detail: a.source_type === "image" ? t("Docker image") : `${a.build_pack} · ${a.git_branch}`, domains: splitList(a.domains), updated: a.updated_at, to: `/applications/${a.id}` })),
       ...r.databases.map((d) => ({ kind: "database" as Kind, id: d.id, name: d.name, status: d.status, source: d.image, detail: d.engine, domains: [] as string[], updated: d.created_at, to: `/databases/${d.id}` })),
-      ...r.services.map((s) => ({ kind: "service" as Kind, id: s.id, name: s.name, status: s.status, source: s.template === "custom" ? "Docker Compose" : s.template, detail: "Service stack", domains: splitList(s.domain), updated: s.created_at, to: `/services/${s.id}` })),
+      ...r.services.map((s) => ({ kind: "service" as Kind, id: s.id, name: s.name, status: s.status, source: s.template === "custom" ? "Docker Compose" : s.template, detail: t("Service stack"), domains: splitList(s.domain), updated: s.created_at, to: `/services/${s.id}` })),
     ];
     return all.filter((i) => (kind === "all" || i.kind === kind) && `${i.name} ${i.source} ${i.domains.join(" ")}`.toLowerCase().includes(q.toLowerCase()));
   }, [r, kind, q]);
@@ -94,11 +97,11 @@ export function ProjectPage() {
       <PageHeader
         icon={<FolderKanban />}
         title={p.name}
-        subtitle={p.description || "No description"}
+        subtitle={p.description || t("No description")}
         meta={<RoleBadge role={p.role} />}
         breadcrumbs={
           <>
-            <Link to="/projects">Projects</Link>
+            <Link to="/projects">{t("Projects")}</Link>
             <span className="text-faint">/</span>
             <span className="text-fg">{p.name}</span>
           </>
@@ -107,35 +110,35 @@ export function ProjectPage() {
           <>
             {canManage && (
               <Button icon={<Users />} onClick={() => setMembersOpen(true)}>
-                Access
+                {t("Access")}
               </Button>
             )}
             {canManage && (
             <Menu
               trigger={
-                <Button size="icon" aria-label="Project actions">
+                <Button size="icon" aria-label={t("Project actions")}>
                   <MoreHorizontal />
                 </Button>
               }
             >
               <MenuItem icon={<Pencil />} onClick={() => setEdit({ name: p.name, description: p.description })}>
-                Edit project
+                {t("Edit project")}
               </MenuItem>
               <MenuItem icon={<Shield />} onClick={() => setEnvSettings(envId)}>
-                Protect “{env?.name}”
+                {t("Protect “{name}”", { name: env?.name ?? "" })}
               </MenuItem>
               <MenuItem icon={<Plus />} onClick={() => setNewEnv("")}>
-                New environment
+                {t("New environment")}
               </MenuItem>
               {envs.length > 1 && (
                 <MenuItem
                   icon={<Trash2 />}
                   danger
                   onClick={async () => {
-                    if (await confirm({ title: `Delete environment “${env?.name}”?`, description: "The environment must be empty.", danger: true, confirmText: "Delete environment" })) deleteEnv.mutate(envId);
+                    if (await confirm({ title: t("Delete environment “{name}”?", { name: env?.name ?? "" }), description: t("The environment must be empty."), danger: true, confirmText: t("Delete environment") })) deleteEnv.mutate(envId);
                   }}
                 >
-                  Delete environment
+                  {t("Delete environment")}
                 </MenuItem>
               )}
               <MenuSeparator />
@@ -143,17 +146,17 @@ export function ProjectPage() {
                 icon={<Trash2 />}
                 danger
                 onClick={async () => {
-                  if (await confirm({ title: `Delete project “${p.name}”?`, description: "All environments must be empty. This cannot be undone.", danger: true, confirmText: "Delete project", typeToConfirm: p.name })) deleteProject.mutate();
+                  if (await confirm({ title: t("Delete project “{name}”?", { name: p.name }), description: t("All environments must be empty. This cannot be undone."), danger: true, confirmText: t("Delete project"), typeToConfirm: p.name })) deleteProject.mutate();
                 }}
               >
-                Delete project
+                {t("Delete project")}
               </MenuItem>
             </Menu>
             )}
             {canWrite && (
               <Link to={`/projects/${p.id}/new?env=${envId}`}>
                 <Button variant="primary" icon={<Plus />}>
-                  Add resource
+                  {t("Add resource")}
                 </Button>
               </Link>
             )}
@@ -166,16 +169,16 @@ export function ProjectPage() {
         onChange={(v) => (v === "new" ? setNewEnv("") : setParams({ env: v }))}
         tabs={[
           ...envs.map((e) => ({ id: String(e.id), label: e.protected ? <span className="flex items-center gap-1.5">{e.name}<Lock className="size-3 text-warning" /></span> : e.name })),
-          ...(canManage ? [{ id: "new", label: <span className="flex items-center gap-1 text-faint"><Plus className="size-3.5" />Environment</span> }] : []),
+          ...(canManage ? [{ id: "new", label: <span className="flex items-center gap-1 text-faint"><Plus className="size-3.5" />{t("Environment")}</span> }] : []),
         ]}
       />
       {env?.protected && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
           <ProtectedBadge approvals={env.require_approval} />
-          {env.require_approval ? "Every deployment needs approval from a maintainer other than the requester." : "Only maintainers change this environment; developer deployments need approval."}
+          {env.require_approval ? t("Every deployment needs approval from a maintainer other than the requester.") : t("Only maintainers change this environment; developer deployments need approval.")}
           {canManage && (
             <button className="font-medium text-fg underline-offset-2 hover:underline" onClick={() => setEnvSettings(env.id)}>
-              Settings
+              {t("Settings")}
             </button>
           )}
         </div>
@@ -186,13 +189,13 @@ export function ProjectPage() {
       ) : total === 0 ? (
         <Empty
           icon={<ResourceIcon kind="application" />}
-          title={`${env?.name ?? "This environment"} is empty`}
-          description="Deploy an application from Git or a Docker image, provision a database, or launch a service from the catalog."
+          title={env?.name ? t("{name} is empty", { name: env.name }) : t("This environment is empty")}
+          description={t("Deploy an application from Git or a Docker image, provision a database, or launch a service from the catalog.")}
           action={
             canWrite && (
               <Link to={`/projects/${p.id}/new?env=${envId}`}>
                 <Button variant="primary" icon={<Plus />}>
-                  Add resource
+                  {t("Add resource")}
                 </Button>
               </Link>
             )
@@ -203,16 +206,16 @@ export function ProjectPage() {
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-              <Input className="pl-8" placeholder="Filter resources…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <Input className="pl-8" placeholder={t("Filter resources…")} value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <SegmentedControl
               value={kind}
               onChange={setKind}
               options={[
-                { value: "all", label: `All ${total}` },
-                { value: "application", label: `Apps ${r!.applications.length}` },
-                { value: "database", label: `Databases ${r!.databases.length}` },
-                { value: "service", label: `Services ${r!.services.length}` },
+                { value: "all", label: t("All {count}", { count: total }) },
+                { value: "application", label: t("Apps {count}", { count: r!.applications.length }) },
+                { value: "database", label: t("Databases {count}", { count: r!.databases.length }) },
+                { value: "service", label: t("Services {count}", { count: r!.services.length }) },
               ]}
             />
           </div>
@@ -220,11 +223,11 @@ export function ProjectPage() {
             <Table>
               <thead>
                 <tr>
-                  <th>Resource</th>
-                  <th className="w-32">Status</th>
-                  <th>Source</th>
-                  <th>Domains</th>
-                  <th className="w-28 !text-right">Updated</th>
+                  <th>{t("Resource")}</th>
+                  <th className="w-32">{t("Status")}</th>
+                  <th>{t("Source")}</th>
+                  <th>{t("Domains")}</th>
+                  <th className="w-28 !text-right">{t("Updated")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -237,8 +240,8 @@ export function ProjectPage() {
                         </span>
                         <div className="min-w-0">
                           <div className="truncate font-medium">{it.name}</div>
-                          <div className="truncate text-xs capitalize text-subtle">
-                            {it.kind} · {it.detail}
+                          <div className="truncate text-xs text-subtle">
+                            {t(kindLabel[it.kind])} · {it.detail}
                           </div>
                         </div>
                       </div>
@@ -265,7 +268,7 @@ export function ProjectPage() {
                 ))}
               </tbody>
             </Table>
-            {items.length === 0 && <div className="border-t border-border px-4 py-10 text-center text-[13px] text-subtle">No resources match your filters.</div>}
+            {items.length === 0 && <div className="border-t border-border px-4 py-10 text-center text-[13px] text-subtle">{t("No resources match your filters.")}</div>}
           </div>
         </>
       )}
@@ -273,19 +276,19 @@ export function ProjectPage() {
       <Modal
         open={newEnv !== null}
         onClose={() => setNewEnv(null)}
-        title="New environment"
-        description="Environments isolate resources and configuration, e.g. staging or qa."
+        title={t("New environment")}
+        description={t("Environments isolate resources and configuration, e.g. staging or qa.")}
         size="sm"
         footer={
           <>
-            <Button onClick={() => setNewEnv(null)}>Cancel</Button>
+            <Button onClick={() => setNewEnv(null)}>{t("Cancel")}</Button>
             <Button variant="primary" loading={createEnv.isPending} disabled={!newEnv} onClick={() => createEnv.mutate(newEnv!)}>
-              Create environment
+              {t("Create environment")}
             </Button>
           </>
         }
       >
-        <Field label="Environment name" required>
+        <Field label={t("Environment name")} required>
           <Input autoFocus value={newEnv ?? ""} onChange={(e) => setNewEnv(e.target.value)} placeholder="staging" />
         </Field>
       </Modal>
@@ -294,22 +297,22 @@ export function ProjectPage() {
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}
-        title="Edit project"
+        title={t("Edit project")}
         footer={
           <>
-            <Button onClick={() => setEdit(null)}>Cancel</Button>
+            <Button onClick={() => setEdit(null)}>{t("Cancel")}</Button>
             <Button variant="primary" loading={updateProject.isPending} onClick={() => updateProject.mutate()}>
-              Save changes
+              {t("Save changes")}
             </Button>
           </>
         }
       >
         {edit && (
           <div className="space-y-4">
-            <Field label="Project name" required>
+            <Field label={t("Project name")} required>
               <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
             </Field>
-            <Field label="Description">
+            <Field label={t("Description")}>
               <Input value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} />
             </Field>
           </div>

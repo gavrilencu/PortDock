@@ -13,6 +13,7 @@ export interface User {
   disabled: boolean;
   last_login_at: string;
   has_password: boolean;
+  locale: string;
 }
 
 export interface LicenseSummary {
