@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/portdock/portdock/internal/assistant"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -46,6 +47,7 @@ type Server struct {
 	updates *updateCache
 	monitor *monitor.Monitor
 	audit   *audit.Streamer
+	ai      *assistant.Client
 }
 
 type Deps struct {
@@ -68,8 +70,14 @@ func New(d Deps) *Server {
 	if d.Audit == nil {
 		d.Audit = audit.New(d.DB, d.Box)
 	}
-	return &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
-		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}}
+	s := &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
+		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New()}
+	s.ai.Referer = func() string { return s.engine.PublicURL(context.Background()) }
+	// An OpenRouter-compatible gateway (or a fake one in tests) can replace openrouter.ai.
+	if u := strings.TrimRight(config.Env("OPENROUTER_URL", ""), "/"); u != "" {
+		assistant.BaseURL = u
+	}
+	return s
 }
 
 // handlerFunc returns an error that is rendered as JSON.
@@ -380,6 +388,17 @@ func (s *Server) Handler() http.Handler {
 	// settings, users, tokens, notifications
 	a("GET /api/settings", s.getSettings)
 	admin("PATCH /api/settings", s.updateSettings)
+	// AI assistant
+	a("GET /api/chat/status", s.chatStatus)
+	admin("GET /api/chat/settings", s.getChatSettings)
+	admin("PUT /api/chat/settings", s.updateChatSettings)
+	admin("GET /api/chat/models", s.chatModels)
+	admin("POST /api/chat/test", s.testChat)
+	a("GET /api/chat/conversations", s.listChatConversations)
+	a("GET /api/chat/conversations/{id}", s.getChatConversation)
+	a("DELETE /api/chat/conversations/{id}", s.deleteChatConversation)
+	a("POST /api/chat/send", s.sendChat)
+
 	admin("GET /api/users", s.listUsers)
 	admin("POST /api/users", s.createUser)
 	admin("PATCH /api/users/{id}", s.updateUser)

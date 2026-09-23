@@ -63,7 +63,15 @@ jobs:
     needs: image
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+      # The description comes from docs/releases/<tag>.md when it exists;
+      # GitHub appends the generated list of changes.
+      - id: notes
+        run: |
+          f="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then cp "$f" release-notes.md; else : > release-notes.md; fi
       - uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

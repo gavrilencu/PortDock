@@ -123,6 +123,19 @@ Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/
 | `PORTDOCK_MAX_BUILDS` | `4` | Deploy-uri paralele |
 | `PORTDOCK_NETWORK` | `portdock` | Rețeaua Docker partajată cu Traefik |
 | `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS pentru dev / log-uri debug |
+| `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API-ul folosit de asistentul AI (un gateway compatibil OpenRouter, de exemplu în rețele fără acces direct) |
+
+## Asistent AI
+
+**Settings → AI assistant** activează un asistent de chat în colțul din dreapta jos al aplicației:
+
+- **Model:** orice model de pe [OpenRouter](https://openrouter.ai), ales din catalogul complet (cu căutare, context și preț per 1M de tokeni, filtru pentru modelele gratuite) sau scris manual (de exemplu `anthropic/claude-sonnet-4.5`).
+- **Cheia API** OpenRouter se salvează criptat; **Test connection** verifică cheia și modelul.
+- **Acces:** toți utilizatorii, doar administratorii sau doar utilizatorii bifați.
+- **Instrucțiuni** opționale adăugate la prompt-ul de sistem (convențiile echipei, tonul).
+- Fiecare utilizator are **istoricul** conversațiilor lui (vizibil doar lui). Răspunsurile apar pe măsură ce sunt generate, cu Stop, copiere și formatare Markdown; fereastra se poate minimiza și mări.
+
+Mesajele sunt trimise la OpenRouter și la furnizorul modelului ales: nu lipi secrete în chat.
 
 ## Domenii
 

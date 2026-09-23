@@ -37,6 +37,7 @@ import { useFiringAlerts } from "../pages/Alerts";
 import { SidebarUpdate } from "./updates";
 import { getLocale, isLocale, LOCALES, setLocale, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "./LanguagePicker";
+import { ChatWidget } from "./assistant/ChatWidget";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -384,6 +385,7 @@ export function AppLayout() {
             </main>
           </div>
         </div>
+        <ChatWidget />
       </CommandPaletteProvider>
     </UserContext.Provider>
   );

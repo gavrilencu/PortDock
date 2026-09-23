@@ -451,3 +451,24 @@ CREATE TABLE IF NOT EXISTS alert_events (
   acknowledged_by INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_alert_events_open ON alert_events(status, rule_id, scope, ref_id, server_id);
+
+-- AI assistant: each user's conversations with the configured OpenRouter model.
+CREATE TABLE IF NOT EXISTS chat_conversations (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_user ON chat_conversations(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id              INTEGER PRIMARY KEY,
+  conversation_id INTEGER NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL,                 -- user | assistant
+  content         TEXT NOT NULL DEFAULT '',
+  model           TEXT NOT NULL DEFAULT '',
+  error           INTEGER NOT NULL DEFAULT 0,    -- the reply was cut off by an error
+  created_at      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id, id);
