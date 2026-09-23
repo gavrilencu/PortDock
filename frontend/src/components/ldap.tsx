@@ -4,7 +4,6 @@ import { CircleCheck, Network, Pencil, Plus, PlugZap, Trash2, UserSearch, Users 
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
-import { UpgradeNotice, useLicense } from "./access";
 import { Badge, Button, Card, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Switch, Table, Textarea, useConfirm } from "./ui";
 
 type Directory = {
@@ -240,7 +239,6 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
 export function LDAPCard() {
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const { has } = useLicense();
   const q = useQuery({ queryKey: ["ldap"], queryFn: () => api.get<{ directories: Directory[]; presets: Preset[] }>("/ldap/directories") });
   const [edit, setEdit] = useState<Form | null>(null);
   const toggle = useMutation({
@@ -267,11 +265,6 @@ export function LDAPCard() {
         )
       }
     >
-      {!has("ldap") && (
-        <div className="border-b border-border p-4">
-          <UpgradeNotice feature="ldap">{t("LDAP and Active Directory sign-in are part of the")}</UpgradeNotice>
-        </div>
-      )}
       {directories.length === 0 ? (
         <div className="p-5">
           <Empty

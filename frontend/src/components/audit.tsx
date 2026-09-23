@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, KeyRound, Radio, Search, Send, Sparkles, Trash2 } from "lucide-react";
+import { Check, Download, Search, Send } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import { intlLocale, t, tk, tx } from "../lib/i18n";
+import { intlLocale, t, tk } from "../lib/i18n";
 import type { ActivityEntry } from "../lib/types";
 import { timeAgo } from "../lib/utils";
 import { useUser } from "./Layout";
-import { UpgradeNotice, useLicense } from "./access";
-import { Badge, Button, Card, Empty, Field, Input, Loading, Meter, PasswordInput, Table, Textarea, useConfirm } from "./ui";
+import { Badge, Button, Card, Empty, Field, Input, Loading, PasswordInput, Table } from "./ui";
 
 // ---------- Audit log ----------
 
@@ -31,13 +30,11 @@ const actionGroups = [
   { value: "sso.", label: tk("Single sign-on") },
   { value: "project.", label: tk("Projects & access") },
   { value: "settings.", label: tk("Settings") },
-  { value: "license.", label: tk("License") },
   { value: "terminal.", label: tk("Terminal sessions") },
 ];
 
 function AuditStreaming() {
   const qc = useQueryClient();
-  const { has } = useLicense();
   const q = useQuery({
     queryKey: ["audit-settings"],
     queryFn: () => api.get<{ webhook_url: string; webhook_secret_set: boolean; syslog: string; last_error: string; last_sent_at: string; dropped: number }>("/settings/audit"),
@@ -77,11 +74,6 @@ function AuditStreaming() {
       }
     >
       <div className="grid gap-4 p-5 md:grid-cols-2">
-        {!has("audit_streaming") && (
-          <div className="md:col-span-2">
-            <UpgradeNotice feature="audit_streaming">{t("Audit log streaming is part of the")}</UpgradeNotice>
-          </div>
-        )}
         <Field label={t("Webhook URL")} hint={t("JSON POST per event, signed with HMAC-SHA256 in X-PortDock-Signature.")}>
           <Input value={f.webhook_url} onChange={(e) => setF({ ...f, webhook_url: e.target.value })} placeholder="https://siem.example.com/hooks/portdock" />
         </Field>
@@ -110,7 +102,6 @@ function AuditStreaming() {
 export function AuditLog() {
   const user = useUser();
   const admin = user.role !== "member";
-  const { has } = useLicense();
   const [f, setF] = useState<Filters>({ q: "", action: "", from: "", to: "" });
   const [applied, setApplied] = useState<Filters>(f);
   const [page, setPage] = useState(0);
@@ -134,13 +125,13 @@ export function AuditLog() {
         actions={
           admin && (
             <div className="flex gap-2">
-              <a href={has("audit_export") ? exportURL("csv") : undefined}>
-                <Button size="sm" icon={<Download />} disabled={!has("audit_export")}>
+              <a href={exportURL("csv")}>
+                <Button size="sm" icon={<Download />}>
                   CSV
                 </Button>
               </a>
-              <a href={has("audit_export") ? exportURL("json") : undefined}>
-                <Button size="sm" icon={<Download />} disabled={!has("audit_export")}>
+              <a href={exportURL("json")}>
+                <Button size="sm" icon={<Download />}>
                   JSON
                 </Button>
               </a>
@@ -170,11 +161,6 @@ export function AuditLog() {
           <Input type="date" className="w-36" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })} title={t("To date")} />
           <Button type="submit">{t("Apply")}</Button>
         </form>
-        {admin && !has("audit_export") && (
-          <div className="border-b border-border p-4">
-            <UpgradeNotice feature="audit_export">{t("Exporting the audit log is part of the")}</UpgradeNotice>
-          </div>
-        )}
         {q.isLoading ? (
           <Loading />
         ) : !q.data?.entries.length ? (
@@ -227,196 +213,6 @@ export function AuditLog() {
         )}
       </Card>
       {admin && <AuditStreaming />}
-    </div>
-  );
-}
-
-// ---------- License ----------
-
-type LicenseState = {
-  state: {
-    plan: { id: string; name: string; max_servers: number; max_users: number; features: string[] };
-    source: "license" | "trial" | "community";
-    license?: { id: string; customer: string; email?: string; plan: string; issued_at: string; expires_at: string };
-    expires_at: string;
-    in_grace: boolean;
-    expired: boolean;
-    max_servers: number;
-    max_users: number;
-    features: string[];
-    message?: string;
-  };
-  usage: { servers: number; users: number };
-  trial_available: boolean;
-  plans: { id: string; name: string; max_servers: number; max_users: number; features: string[] }[];
-  feature_names: Record<string, string>;
-};
-
-export function LicenseSettings() {
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const q = useQuery({ queryKey: ["license"], queryFn: () => api.get<LicenseState>("/license") });
-  const [key, setKey] = useState("");
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ["license"] });
-    qc.invalidateQueries({ queryKey: ["auth-status"] });
-  };
-  const install = useMutation({
-    mutationFn: () => api.put("/license", { key }),
-    onSuccess: () => {
-      refresh();
-      setKey("");
-      toast.success(t("License installed"));
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const trial = useMutation({
-    mutationFn: () => api.post("/license/trial"),
-    onSuccess: () => {
-      refresh();
-      toast.success(t("Enterprise trial started — 30 days, all features"));
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const remove = useMutation({
-    mutationFn: () => api.del("/license"),
-    onSuccess: () => {
-      refresh();
-      toast.success(t("License removed"));
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  if (q.isLoading) return <Loading />;
-  const { state: st, usage, plans, feature_names, trial_available } = q.data!;
-  const limit = (n: number) => (n > 0 ? n : "∞");
-  const allFeatures = Object.keys(feature_names);
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <div className="flex flex-wrap items-start gap-5 p-5">
-          <span className="flex size-12 items-center justify-center rounded-xl border border-border bg-surface-2">
-            <Sparkles className="size-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-lg font-semibold tracking-[-0.02em]">{st.plan.name}</span>
-              <Badge tone={st.source === "license" ? "success" : st.source === "trial" ? "info" : "neutral"}>
-                {st.source === "license" ? t("Licensed") : st.source === "trial" ? t("Trial") : t("Free")}
-              </Badge>
-              {st.in_grace && <Badge tone="warning">{t("Grace period")}</Badge>}
-              {st.expired && <Badge tone="danger">{t("Expired")}</Badge>}
-            </div>
-            <div className="mt-1 text-[13px] text-muted">
-              {st.license ? (
-                <>
-                  {tx("Licensed to {customer} · {id} · valid until {date}", {
-                    customer: <span className="font-medium text-fg">{st.license.customer}</span>,
-                    id: st.license.id,
-                    date: new Date(st.license.expires_at).toLocaleDateString(intlLocale()),
-                  })}
-                </>
-              ) : st.source === "trial" ? (
-                <>{t("Trial ends {date}", { date: new Date(st.expires_at).toLocaleDateString(intlLocale()) })}</>
-              ) : (
-                t("Free for small teams. Upgrade for multi-server deployments, SSO, approvals and more.")
-              )}
-            </div>
-            {st.message && <div className="mt-2 text-xs text-warning">{st.message}</div>}
-          </div>
-          <div className="flex gap-2">
-            {trial_available && (
-              <Button variant="primary" icon={<Sparkles />} loading={trial.isPending} onClick={() => trial.mutate()}>
-                {t("Start 30-day Enterprise trial")}
-              </Button>
-            )}
-            {st.license && (
-              <Button
-                variant="danger"
-                icon={<Trash2 />}
-                onClick={async () => (await confirm({ title: t("Remove the license?"), description: t("The instance falls back to the Community plan. Nothing is deleted."), danger: true, confirmText: t("Remove") })) && remove.mutate()}
-              >
-                {t("Remove")}
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="grid gap-5 border-t border-border p-5 sm:grid-cols-2">
-          {[
-            { label: t("Servers"), used: usage.servers, max: st.max_servers },
-            { label: t("Active users"), used: usage.users, max: st.max_users },
-          ].map((u) => (
-            <div key={u.label}>
-              <div className="mb-1.5 flex justify-between text-[13px]">
-                <span className="text-muted">{u.label}</span>
-                <span className="font-medium tabular-nums">
-                  {u.used} / {limit(u.max)}
-                </span>
-              </div>
-              <Meter value={u.used} max={u.max > 0 ? u.max : Math.max(u.used, 1) * 4} />
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card title={t("Install a license key")} description={t("Keys are verified offline with PortDock's signing key — no connection to a license server is needed.")}>
-        <div className="space-y-3 p-5">
-          <Textarea rows={3} value={key} onChange={(e) => setKey(e.target.value)} placeholder="SY1.eyJpZCI6…" className="font-mono text-xs" />
-          <div className="flex justify-end">
-            <Button variant="primary" icon={<KeyRound />} disabled={!key.trim()} loading={install.isPending} onClick={() => install.mutate()}>
-              {t("Install license")}
-            </Button>
-          </div>
-        </div>
-      </Card>
-
-      <Card title={t("Plans")}>
-        <Table>
-          <thead>
-            <tr>
-              <th />
-              {plans.map((p) => (
-                <th key={p.id} className={p.id === st.plan.id ? "text-fg" : undefined}>
-                  {p.name} {p.id === st.plan.id && <Badge tone="accent">{t("current")}</Badge>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="text-muted">{t("Servers")}</td>
-              {plans.map((p) => (
-                <td key={p.id}>{limit(p.max_servers)}</td>
-              ))}
-            </tr>
-            <tr>
-              <td className="text-muted">{t("Users")}</td>
-              {plans.map((p) => (
-                <td key={p.id}>{limit(p.max_users)}</td>
-              ))}
-            </tr>
-            <tr>
-              <td className="text-muted">{t("Core platform (Git deploys, databases, backups, domains, metrics, alerts, 2FA)")}</td>
-              {plans.map((p) => (
-                <td key={p.id}>
-                  <Check className="size-4 text-success" />
-                </td>
-              ))}
-            </tr>
-            {allFeatures.map((f) => (
-              <tr key={f}>
-                <td className="text-muted">{feature_names[f]}</td>
-                {plans.map((p) => (
-                  <td key={p.id}>{(p.features ?? []).includes(f) ? <Check className="size-4 text-success" /> : <span className="text-faint">—</span>}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        <div className="flex items-center gap-2 border-t border-border px-5 py-3 text-xs text-muted">
-          <Radio className="size-3.5" /> {t("Downgrades never delete configuration or stop running workloads — only adding new paid features is blocked.")}
-        </div>
-      </Card>
     </div>
   );
 }

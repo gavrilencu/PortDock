@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpCircle, Ban, Bell, Boxes, FileKey2, Sparkles, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Boxes, FileKey2, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
@@ -12,14 +12,14 @@ import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Menu, Men
 import { SecuritySettings } from "../components/security";
 import { AuthenticationSettings } from "../components/sso";
 import { RegistriesSettings } from "../components/registries";
-import { AuditLog, LicenseSettings } from "../components/auditLicense";
+import { AuditLog } from "../components/audit";
 import { CertificatesSettings } from "../components/certificates";
 import { UpdateSettings } from "../components/updates";
 import { timeAgo } from "../lib/utils";
 import { isLocale, LOCALES, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "../components/LanguagePicker";
 
-type Tab = "general" | "profile" | "security" | "auth" | "registries" | "license" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
+type Tab = "general" | "profile" | "security" | "auth" | "registries" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -45,7 +45,6 @@ export function SettingsPage() {
         { id: "git", label: t("Git sources"), icon: <GitHubMark />, hidden: !admin },
         { id: "registries", label: t("Container registries"), icon: <Boxes />, hidden: !admin },
         { id: "certificates", label: t("Certificates"), icon: <FileKey2 />, hidden: !admin },
-        { id: "license", label: t("License"), icon: <Sparkles />, hidden: !admin },
         { id: "updates", label: t("Updates"), icon: <ArrowUpCircle />, hidden: !admin },
         { id: "notifications", label: t("Notifications"), icon: <Bell />, hidden: !admin },
         { id: "storage", label: t("Backup storage"), icon: <Cloud />, hidden: !admin },
@@ -89,7 +88,6 @@ export function SettingsPage() {
           {tab === "security" && <SecuritySettings />}
           {tab === "auth" && <AuthenticationSettings />}
           {tab === "registries" && <RegistriesSettings />}
-          {tab === "license" && <LicenseSettings />}
           {tab === "certificates" && <CertificatesSettings />}
           {tab === "updates" && <UpdateSettings />}
           {tab === "general" && <General />}

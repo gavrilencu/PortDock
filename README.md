@@ -73,10 +73,8 @@ Un singur binar (~20 MB) care conține API-ul, UI-ul, workerii de deploy, monito
 - Toate rutele API sunt verificate central după rol, inclusiv containerele de pe servere (log-uri, terminal, acțiuni). Listele, dashboard-ul și alertele arată doar resursele accesibile. Viewerii nu văd parolele bazelor de date.
 - **Audit log**: fiecare acțiune are IP-ul utilizatorului. Poți filtra după text, tip de acțiune și interval, și exporta în **CSV/JSON** (protejat împotriva injecției de formule în Excel). **Streaming către SIEM** (Splunk, Elastic, Sentinel, Datadog): webhook JSON semnat HMAC-SHA256 sau syslog RFC 5424 prin UDP/TCP.
 
-**Licențiere**
-- Planuri: **Community** (gratuit, 2 servere, 5 utilizatori), **Pro** (10 servere, 25 utilizatori, plus deploy pe mai multe servere, registry-uri, roluri pe proiect, export audit), **Enterprise** (fără limite, plus SSO, aprobări, streaming audit).
-- Cheile de licență sunt semnate Ed25519 și se verifică offline, fără server de licențe. Există un trial Enterprise de 30 de zile, o singură dată per instanță, și 14 zile de grație după expirare.
-- După downgrade sau expirare nu se șterge nimic și nu se oprește nimic. Se blochează doar adăugarea de funcții plătite noi, iar SSO-ul existent continuă să funcționeze.
+**Gratuit și open source**
+- Toate funcțiile sunt disponibile, fără planuri, chei de licență sau limite de servere și utilizatori.
 
 **Platformă**
 - Proiecte și medii (production, staging…), echipă cu roluri (owner/admin/member), tokenuri API, audit log.
@@ -150,7 +148,7 @@ Build prin oglindă, când Docker Hub limitează descărcările: `BASE_REGISTRY=
 
 ## LDAP / Active Directory
 
-**Settings → Authentication → LDAP & Active Directory** (Enterprise). Există presetări pentru Active Directory, OpenLDAP și FreeIPA:
+**Settings → Authentication → LDAP & Active Directory**. Există presetări pentru Active Directory, OpenLDAP și FreeIPA:
 - conexiune LDAPS sau StartTLS, cu CA propriu opțional;
 - un cont de serviciu caută utilizatorul, iar parola lui se verifică printr-un bind cu propriul DN;
 - conturile dezactivate în AD sunt refuzate;
@@ -185,21 +183,6 @@ Click pe un container deschide un panou cu:
 - **variabilele de mediu**: valorile sunt vizibile doar celor cu drept de modificare, iar secretele sunt ascunse până le afișezi;
 - **terminal**;
 - butoane pentru restart, stop și start.
-
-## Emiterea licențelor (vânzător)
-
-Instrumentul `portdock-license` nu se livrează clienților. Cheia privată de semnare e în `~/.portdock-license/private.key`. **Fă-i backup într-un loc sigur**: fără ea nu mai poți emite licențe, iar dacă ajunge la altcineva, acela poate emite licențe în numele tău.
-
-```bash
-cd backend
-go run ./cmd/portdock-license issue -key ~/.portdock-license/private.key \
-  -customer "Acme Bank" -email it@acme.example -plan enterprise -days 365   # -servers N / -users N pentru limite custom
-go run ./cmd/portdock-license inspect SY1....                               # vezi conținutul unei chei
-```
-
-Clientul instalează cheia din **Settings → License** sau din linia de comandă: `docker exec portdock portdock -install-license PD1....`
-
-Dacă generezi o pereche nouă de chei (`portdock-license keygen`), înlocuiește `publicKeyB64` din `backend/internal/license/license.go` sau setează-l la build: `-ldflags "-X github.com/portdock/portdock/internal/license.publicKeyB64=..."`.
 
 ## Single sign-on
 

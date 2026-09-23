@@ -57,7 +57,6 @@ func newTestEnv(t *testing.T) *testEnv {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	_ = db.SetSetting(t.Context(), "instance_url", ts.URL)
-	_ = db.SetSetting(t.Context(), "license_trial_started", store.Now()) // tests run with Enterprise features
 	return &testEnv{t: t, srv: ts, db: db}
 }
 

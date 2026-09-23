@@ -4,7 +4,6 @@ import { CircleCheck, Container as ContainerIcon, Pencil, Plus, PlugZap, Trash2 
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Registry, RegistryKind } from "../lib/types";
-import { UpgradeNotice, useLicense } from "./access";
 import { t } from "../lib/i18n";
 import { Button, Card, Empty, Field, Input, Loading, Modal, PasswordInput, Table, useConfirm } from "./ui";
 
@@ -124,7 +123,6 @@ function RegistryModal({ initial, kinds, onClose }: { initial: Form | null; kind
 }
 
 export function RegistriesSettings() {
-  const { has } = useLicense();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const q = useRegistries();
@@ -156,11 +154,6 @@ export function RegistriesSettings() {
         )
       }
     >
-      {!has("registries") && (
-        <div className="border-b border-border p-4">
-          <UpgradeNotice feature="registries">{t("Container registries are part of the")}</UpgradeNotice>
-        </div>
-      )}
       {registries.length === 0 ? (
         <div className="p-5">
           <Empty

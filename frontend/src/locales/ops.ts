@@ -1,4 +1,4 @@
-// Translations for components/auditLicense.tsx, components/updates.tsx, components/ldap.tsx,
+// Translations for components/audit.tsx, components/updates.tsx, components/ldap.tsx,
 // components/metrics.tsx and pages/Alerts.tsx.
 export const ro: Record<string, string> = {
   // ---------- Audit log ----------
@@ -12,7 +12,6 @@ export const ro: Record<string, string> = {
   "Single sign-on": "Single sign-on",
   "Projects & access": "Proiecte și acces",
   Settings: "Setări",
-  License: "Licență",
   "Terminal sessions": "Sesiuni de terminal",
   "Audit streaming saved": "Streamingul de audit a fost salvat",
   "Test event delivered": "Evenimentul de test a fost livrat",
@@ -21,7 +20,6 @@ export const ro: Record<string, string> = {
     "Fiecare eveniment de audit este transmis în timp real — către Splunk, Elastic, Microsoft Sentinel, Datadog sau orice colector syslog.",
   "Send test": "Trimite test",
   Save: "Salvează",
-  "Audit log streaming is part of the": "Streamingul jurnalului de audit face parte din planul",
   "Webhook URL": "URL webhook",
   "JSON POST per event, signed with HMAC-SHA256 in X-PortDock-Signature.": "Un POST JSON per eveniment, semnat cu HMAC-SHA256 în X-PortDock-Signature.",
   "Signing secret": "Secret de semnare",
@@ -37,7 +35,6 @@ export const ro: Record<string, string> = {
   "From date": "De la data",
   "To date": "Până la data",
   Apply: "Aplică",
-  "Exporting the audit log is part of the": "Exportul jurnalului de audit face parte din planul",
   "No matching events": "Niciun eveniment găsit",
   When: "Când",
   Who: "Cine",
@@ -48,35 +45,10 @@ export const ro: Record<string, string> = {
   Newer: "Mai noi",
   Older: "Mai vechi",
 
-  // ---------- License ----------
-  "License installed": "Licența a fost instalată",
-  "Enterprise trial started — 30 days, all features": "Perioada de probă Enterprise a început — 30 de zile, toate funcțiile",
-  "License removed": "Licența a fost eliminată",
-  Licensed: "Licențiat",
-  Trial: "Probă",
-  Free: "Gratuit",
-  "Grace period": "Perioadă de grație",
   Expired: "Expirat",
-  "Licensed to {customer} · {id} · valid until {date}": "Licențiat pentru {customer} · {id} · valabil până la {date}",
-  "Trial ends {date}": "Perioada de probă se încheie pe {date}",
-  "Free for small teams. Upgrade for multi-server deployments, SSO, approvals and more.":
-    "Gratuit pentru echipe mici. Treci la un plan superior pentru deploy pe mai multe servere, SSO, aprobări și altele.",
-  "Start 30-day Enterprise trial": "Începe proba Enterprise de 30 de zile",
-  "Remove the license?": "Elimini licența?",
-  "The instance falls back to the Community plan. Nothing is deleted.": "Instanța revine la planul Community. Nu se șterge nimic.",
   Remove: "Elimină",
   Servers: "Servere",
-  "Active users": "Utilizatori activi",
-  "Install a license key": "Instalează o cheie de licență",
-  "Keys are verified offline with PortDock's signing key — no connection to a license server is needed.":
-    "Cheile sunt verificate offline cu cheia de semnare PortDock — nu este necesară conexiunea la un server de licențe.",
-  "Install license": "Instalează licența",
-  Plans: "Planuri",
   current: "curent",
-  "Core platform (Git deploys, databases, backups, domains, metrics, alerts, 2FA)":
-    "Platforma de bază (deploy din Git, baze de date, backup-uri, domenii, metrici, alerte, 2FA)",
-  "Downgrades never delete configuration or stop running workloads — only adding new paid features is blocked.":
-    "Trecerea la un plan inferior nu șterge niciodată configurația și nu oprește ce rulează — doar adăugarea de noi funcții plătite este blocată.",
 
   // ---------- Updates ----------
   running: "rulează",
@@ -114,10 +86,6 @@ export const ro: Record<string, string> = {
   "latest release {version}": "ultima lansare {version}",
   "Check now": "Verifică acum",
   Preferences: "Preferințe",
-  "Updates come from the official releases at {link} — nothing to configure. PortDock checks every 6 hours.":
-    "Actualizările provin din lansările oficiale de la {link} — nu e nimic de configurat. PortDock verifică la fiecare 6 ore.",
-  "Updates come from the official releases at {link} (custom source) — nothing to configure. PortDock checks every 6 hours.":
-    "Actualizările provin din lansările de la {link} (sursă personalizată) — nu e nimic de configurat. PortDock verifică la fiecare 6 ore.",
   "This is a development build. Installations from a published release find their updates automatically.":
     "Acesta este un build de dezvoltare. Instalările dintr-o lansare publicată își găsesc actualizările automat.",
   Channel: "Canal",
@@ -203,7 +171,6 @@ export const ro: Record<string, string> = {
   "{n} group|{n} groups": "{n} grup|{n} grupuri|{n} de grupuri",
   "Sign in with directory accounts. Local accounts keep working as a fallback; 2FA policies still apply.":
     "Autentificare cu conturi din director. Conturile locale rămân funcționale ca rezervă; politicile 2FA se aplică în continuare.",
-  "LDAP and Active Directory sign-in are part of the": "Autentificarea LDAP și Active Directory face parte din planul",
   "No directories": "Niciun director",
   "Connect Microsoft Active Directory, OpenLDAP or FreeIPA.": "Conectează Microsoft Active Directory, OpenLDAP sau FreeIPA.",
   Directory: "Director",
@@ -320,7 +287,6 @@ export const ru: Record<string, string> = {
   "Single sign-on": "Единый вход (SSO)",
   "Projects & access": "Проекты и доступ",
   Settings: "Настройки",
-  License: "Лицензия",
   "Terminal sessions": "Сеансы терминала",
   "Audit streaming saved": "Трансляция аудита сохранена",
   "Test event delivered": "Тестовое событие доставлено",
@@ -329,7 +295,6 @@ export const ru: Record<string, string> = {
     "Каждое событие аудита пересылается в реальном времени — в Splunk, Elastic, Microsoft Sentinel, Datadog или любой сборщик syslog.",
   "Send test": "Отправить тест",
   Save: "Сохранить",
-  "Audit log streaming is part of the": "Трансляция журнала аудита входит в тариф",
   "Webhook URL": "URL вебхука",
   "JSON POST per event, signed with HMAC-SHA256 in X-PortDock-Signature.": "Один JSON POST на событие, подписанный HMAC-SHA256 в X-PortDock-Signature.",
   "Signing secret": "Секрет подписи",
@@ -345,7 +310,6 @@ export const ru: Record<string, string> = {
   "From date": "С даты",
   "To date": "По дату",
   Apply: "Применить",
-  "Exporting the audit log is part of the": "Экспорт журнала аудита входит в тариф",
   "No matching events": "Подходящих событий нет",
   When: "Когда",
   Who: "Кто",
@@ -356,35 +320,10 @@ export const ru: Record<string, string> = {
   Newer: "Новее",
   Older: "Старше",
 
-  // ---------- License ----------
-  "License installed": "Лицензия установлена",
-  "Enterprise trial started — 30 days, all features": "Пробный период Enterprise начат — 30 дней, все функции",
-  "License removed": "Лицензия удалена",
-  Licensed: "Лицензия",
-  Trial: "Пробный период",
-  Free: "Бесплатно",
-  "Grace period": "Льготный период",
   Expired: "Истёк",
-  "Licensed to {customer} · {id} · valid until {date}": "Лицензиат: {customer} · {id} · действует до {date}",
-  "Trial ends {date}": "Пробный период заканчивается {date}",
-  "Free for small teams. Upgrade for multi-server deployments, SSO, approvals and more.":
-    "Бесплатно для небольших команд. Перейдите на старший тариф для деплоя на несколько серверов, SSO, согласований и многого другого.",
-  "Start 30-day Enterprise trial": "Начать 30-дневный пробный период Enterprise",
-  "Remove the license?": "Удалить лицензию?",
-  "The instance falls back to the Community plan. Nothing is deleted.": "Экземпляр вернётся к тарифу Community. Ничего не будет удалено.",
   Remove: "Удалить",
   Servers: "Серверы",
-  "Active users": "Активные пользователи",
-  "Install a license key": "Установить лицензионный ключ",
-  "Keys are verified offline with PortDock's signing key — no connection to a license server is needed.":
-    "Ключи проверяются офлайн с помощью ключа подписи PortDock — подключение к серверу лицензий не требуется.",
-  "Install license": "Установить лицензию",
-  Plans: "Тарифы",
   current: "текущий",
-  "Core platform (Git deploys, databases, backups, domains, metrics, alerts, 2FA)":
-    "Базовая платформа (деплой из Git, базы данных, резервные копии, домены, метрики, оповещения, 2FA)",
-  "Downgrades never delete configuration or stop running workloads — only adding new paid features is blocked.":
-    "Переход на младший тариф никогда не удаляет конфигурацию и не останавливает работающие нагрузки — блокируется только добавление новых платных функций.",
 
   // ---------- Updates ----------
   running: "выполняется",
@@ -422,10 +361,6 @@ export const ru: Record<string, string> = {
   "latest release {version}": "последний выпуск {version}",
   "Check now": "Проверить сейчас",
   Preferences: "Параметры",
-  "Updates come from the official releases at {link} — nothing to configure. PortDock checks every 6 hours.":
-    "Обновления поступают из официальных выпусков на {link} — настраивать ничего не нужно. PortDock проверяет их каждые 6 часов.",
-  "Updates come from the official releases at {link} (custom source) — nothing to configure. PortDock checks every 6 hours.":
-    "Обновления поступают из выпусков на {link} (свой источник) — настраивать ничего не нужно. PortDock проверяет их каждые 6 часов.",
   "This is a development build. Installations from a published release find their updates automatically.":
     "Это сборка для разработки. Установки из опубликованного выпуска находят обновления автоматически.",
   Channel: "Канал",
@@ -511,7 +446,6 @@ export const ru: Record<string, string> = {
   "{n} group|{n} groups": "{n} группа|{n} группы|{n} групп",
   "Sign in with directory accounts. Local accounts keep working as a fallback; 2FA policies still apply.":
     "Вход с учётными записями каталога. Локальные учётные записи продолжают работать как запасной вариант; политики 2FA по-прежнему действуют.",
-  "LDAP and Active Directory sign-in are part of the": "Вход через LDAP и Active Directory входит в тариф",
   "No directories": "Нет каталогов",
   "Connect Microsoft Active Directory, OpenLDAP or FreeIPA.": "Подключите Microsoft Active Directory, OpenLDAP или FreeIPA.",
   Directory: "Каталог",

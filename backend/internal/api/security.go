@@ -14,7 +14,6 @@ import (
 
 	"github.com/portdock/portdock/internal/auth"
 	"github.com/portdock/portdock/internal/ldapauth"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/secrets"
 	"github.com/portdock/portdock/internal/sso"
 	"github.com/portdock/portdock/internal/store"
@@ -613,9 +612,6 @@ func (s *Server) ssoResolveUser(ctx context.Context, p store.SSOProvider, c sso.
 		case !p.AutoRegister:
 			return store.User{}, fmt.Errorf("there is no account for %s — ask an administrator to invite you", c.Email)
 		default:
-			if err := s.checkUserLimit(ctx); err != nil {
-				return store.User{}, fmt.Errorf("cannot create an account for %s: the user limit of the license is reached", c.Email)
-			}
 			name := c.Name
 			if name == "" {
 				name = strings.Split(c.Email, "@")[0]
@@ -785,9 +781,6 @@ func (s *Server) createSSOProvider(w http.ResponseWriter, r *http.Request) error
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	if err := s.requireFeature(r.Context(), license.FeatureSSO); err != nil {
-		return err
-	}
 	p := store.SSOProvider{Enabled: true, TrustEmail: true, Scopes: "openid email profile", GroupsClaim: "groups", DefaultRole: "member", CreatedAt: store.Now()}
 	if err := s.applySSOProvider(&p, in); err != nil {
 		return err
@@ -814,11 +807,6 @@ func (s *Server) updateSSOProvider(w http.ResponseWriter, r *http.Request) error
 	var in ssoProviderIn
 	if err := readJSON(r, &in); err != nil {
 		return err
-	}
-	if in.Enabled != nil && *in.Enabled && !p.Enabled {
-		if err := s.requireFeature(r.Context(), license.FeatureSSO); err != nil {
-			return err
-		}
 	}
 	if err := s.applySSOProvider(&p, in); err != nil {
 		return err

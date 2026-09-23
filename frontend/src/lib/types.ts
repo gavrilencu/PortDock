@@ -16,22 +16,11 @@ export interface User {
   locale: string;
 }
 
-export interface LicenseSummary {
-  plan: "community" | "pro" | "enterprise";
-  plan_name: string;
-  source: "license" | "trial" | "community";
-  features: string[];
-  message: string;
-  in_grace: boolean;
-  expired: boolean;
-}
-
 export interface AuthStatus {
   setup_required: boolean;
   version: string;
   user?: User;
   mfa_setup_required?: boolean;
-  license?: LicenseSummary;
 }
 
 export type ProjectRole = "admin" | "maintainer" | "developer" | "viewer" | "none";

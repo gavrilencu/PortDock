@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/ldapauth"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -58,9 +57,6 @@ func (s *Server) ldapResolveUser(ctx context.Context, d store.LDAPDirectory, id 
 	case !d.AutoRegister:
 		return store.User{}, fmt.Errorf("there is no PortDock account for %s — ask an administrator to invite you", id.Email)
 	default:
-		if err := s.checkUserLimit(ctx); err != nil {
-			return store.User{}, fmt.Errorf("cannot create an account for %s: the user limit of the license is reached", id.Email)
-		}
 		name := id.Name
 		if name == "" {
 			name = id.Username
@@ -211,9 +207,6 @@ func (s *Server) applyLDAP(d *store.LDAPDirectory, in ldapIn) error {
 }
 
 func (s *Server) createLDAP(w http.ResponseWriter, r *http.Request) error {
-	if err := s.requireFeature(r.Context(), license.FeatureLDAP); err != nil {
-		return err
-	}
 	var in ldapIn
 	if err := readJSON(r, &in); err != nil {
 		return err
@@ -248,11 +241,6 @@ func (s *Server) updateLDAP(w http.ResponseWriter, r *http.Request) error {
 	var in ldapIn
 	if err := readJSON(r, &in); err != nil {
 		return err
-	}
-	if in.Enabled != nil && *in.Enabled && !d.Enabled {
-		if err := s.requireFeature(r.Context(), license.FeatureLDAP); err != nil {
-			return err
-		}
 	}
 	if err := s.applyLDAP(&d, in); err != nil {
 		return err

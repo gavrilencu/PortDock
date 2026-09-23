@@ -134,9 +134,6 @@ export const ro: Record<string, string> = {
   "issuer must be a URL such as https://login.microsoftonline.com/<tenant-id>/v2.0":
     "issuer trebuie să fie un URL precum https://login.microsoftonline.com/<tenant-id>/v2.0",
 
-  // api: license
-  "a license is already installed": "o licență este deja instalată",
-  "the trial has already been used on this instance": "perioada de probă a fost deja folosită pe această instanță",
 
   // certificates (upload)
   "the private key is not PEM encoded": "cheia privată nu este codificată PEM",
@@ -189,10 +186,6 @@ export const ro: Record<string, string> = {
   "the directory requires an encrypted connection (use LDAPS or StartTLS)":
     "directorul necesită o conexiune criptată (folosește LDAPS sau StartTLS)",
 
-  // license
-  "this is not a PortDock license key": "aceasta nu este o cheie de licență PortDock",
-  "the license key signature is invalid": "semnătura cheii de licență este invalidă",
-  "license has no valid expiry date": "licența nu are o dată de expirare validă",
 
   // registry
   "the registry rejected these credentials": "registry-ul a respins aceste credențiale",
@@ -344,9 +337,6 @@ export const ru: Record<string, string> = {
   "issuer must be a URL such as https://login.microsoftonline.com/<tenant-id>/v2.0":
     "issuer должен быть URL-адресом, например https://login.microsoftonline.com/<tenant-id>/v2.0",
 
-  // api: license
-  "a license is already installed": "лицензия уже установлена",
-  "the trial has already been used on this instance": "пробный период на этом экземпляре уже использован",
 
   // certificates (upload)
   "the private key is not PEM encoded": "закрытый ключ не в формате PEM",
@@ -399,10 +389,6 @@ export const ru: Record<string, string> = {
   "the directory requires an encrypted connection (use LDAPS or StartTLS)":
     "каталог требует зашифрованного соединения (используйте LDAPS или StartTLS)",
 
-  // license
-  "this is not a PortDock license key": "это не ключ лицензии PortDock",
-  "the license key signature is invalid": "подпись ключа лицензии недействительна",
-  "license has no valid expiry date": "у лицензии нет корректной даты окончания",
 
   // registry
   "the registry rejected these credentials": "реестр отклонил эти учётные данные",

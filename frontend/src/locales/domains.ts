@@ -34,7 +34,6 @@ export const ro: Record<string, string> = {
     "{n} domeniu necesită atenție la DNS|{n} domenii necesită atenție la DNS|{n} de domenii necesită atenție la DNS",
   "All domains point to this server": "Toate domeniile indică spre acest server",
   "HTTPS settings updated": "Setările HTTPS au fost actualizate",
-  "Deployment queued": "Deploy pus în coadă",
   Domains: "Domenii",
   "{n} domain · traffic is served by Traefik with automatic Let's Encrypt certificates|{n} domains · traffic is served by Traefik with automatic Let's Encrypt certificates":
     "{n} domeniu · traficul este servit de Traefik cu certificate Let's Encrypt automate|{n} domenii · traficul este servit de Traefik cu certificate Let's Encrypt automate|{n} de domenii · traficul este servit de Traefik cu certificate Let's Encrypt automate",
@@ -44,8 +43,6 @@ export const ro: Record<string, string> = {
   "Generate a domain on the server's wildcard, sslip.io or *.localhost": "Generează un domeniu pe wildcard-ul serverului, sslip.io sau *.localhost",
   "Generate domain": "Generează domeniu",
   "Add domain": "Adaugă domeniu",
-  "Docker Compose applications pick up domain changes on the next deployment.": "Aplicațiile Docker Compose preiau modificările de domeniu la următorul deploy.",
-  "Redeploy now": "Redeploy acum",
   "Redirect HTTP to HTTPS": "Redirecționează HTTP către HTTPS",
   "Issue TLS certificates and permanently redirect plain HTTP requests on every domain.":
     "Emite certificate TLS și redirecționează permanent cererile HTTP simple pe fiecare domeniu.",
@@ -289,7 +286,6 @@ export const ro: Record<string, string> = {
   "Container registries": "Registry-uri de containere",
   "Push built images once and pull them on every server. Also used to pull private images.":
     "Trimite imaginile construite o singură dată și descarcă-le pe fiecare server. Folosit și pentru descărcarea imaginilor private.",
-  "Container registries are part of the": "Registry-urile de containere fac parte din planul",
   "No registries": "Niciun registry",
   "Connect Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay or any OCI registry.":
     "Conectează Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay sau orice registry OCI.",
@@ -336,7 +332,6 @@ export const ru: Record<string, string> = {
     "{n} домен требует проверки DNS|{n} домена требуют проверки DNS|{n} доменов требуют проверки DNS",
   "All domains point to this server": "Все домены указывают на этот сервер",
   "HTTPS settings updated": "Настройки HTTPS обновлены",
-  "Deployment queued": "Деплой поставлен в очередь",
   Domains: "Домены",
   "{n} domain · traffic is served by Traefik with automatic Let's Encrypt certificates|{n} domains · traffic is served by Traefik with automatic Let's Encrypt certificates":
     "{n} домен · трафик обслуживает Traefik с автоматическими сертификатами Let's Encrypt|{n} домена · трафик обслуживает Traefik с автоматическими сертификатами Let's Encrypt|{n} доменов · трафик обслуживает Traefik с автоматическими сертификатами Let's Encrypt",
@@ -346,8 +341,6 @@ export const ru: Record<string, string> = {
   "Generate a domain on the server's wildcard, sslip.io or *.localhost": "Сгенерировать домен на wildcard-домене сервера, sslip.io или *.localhost",
   "Generate domain": "Сгенерировать домен",
   "Add domain": "Добавить домен",
-  "Docker Compose applications pick up domain changes on the next deployment.": "Приложения Docker Compose применяют изменения доменов при следующем деплое.",
-  "Redeploy now": "Передеплоить сейчас",
   "Redirect HTTP to HTTPS": "Перенаправлять HTTP на HTTPS",
   "Issue TLS certificates and permanently redirect plain HTTP requests on every domain.":
     "Выпускать TLS-сертификаты и постоянно перенаправлять обычные HTTP-запросы на всех доменах.",
@@ -591,7 +584,6 @@ export const ru: Record<string, string> = {
   "Container registries": "Реестры контейнеров",
   "Push built images once and pull them on every server. Also used to pull private images.":
     "Отправляйте собранные образы один раз и загружайте их на каждом сервере. Также используется для загрузки приватных образов.",
-  "Container registries are part of the": "Реестры контейнеров входят в план",
   "No registries": "Нет реестров",
   "Connect Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay or any OCI registry.":
     "Подключите Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay или любой OCI-реестр.",

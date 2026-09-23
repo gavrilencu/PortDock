@@ -26,7 +26,6 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) error {
 	if u, sess, err := s.auth.AuthenticateSession(r); err == nil {
 		res["user"] = toUserOut(u)
 		res["mfa_setup_required"] = s.needsMFASetup(r.Context(), u, sess)
-		res["license"] = s.licenseSummary(r.Context())
 	}
 	return ok(w, res)
 }
@@ -191,9 +190,6 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	if in.Role != "admin" {
 		in.Role = "member"
 	}
-	if err := s.checkUserLimit(r.Context()); err != nil {
-		return err
-	}
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
 		return err
@@ -248,11 +244,6 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 	if in.Disabled != nil && *in.Disabled != u.Disabled {
 		if u.Role == "owner" || u.ID == auth.UserFrom(r.Context()).ID {
 			return badRequest("you cannot disable this account")
-		}
-		if !*in.Disabled {
-			if err := s.checkUserLimit(r.Context()); err != nil {
-				return err
-			}
 		}
 		u.Disabled = *in.Disabled
 		revoke = revoke || u.Disabled

@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
 import type { Settings, SSOPreset, SSOProvider } from "../lib/types";
-import { UpgradeNotice, useLicense } from "./access";
 import { LDAPCard } from "./ldap";
 import { Button, Card, CopyField, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Switch, Table, useConfirm } from "./ui";
 
@@ -213,7 +212,6 @@ function ProviderModal({ initial, presets, redirectBase, onClose }: { initial: F
 }
 
 function ProvidersCard() {
-  const { has } = useLicense();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const q = useQuery({
@@ -248,11 +246,6 @@ function ProvidersCard() {
         )
       }
     >
-      {!has("sso") && (
-        <div className="border-b border-border p-4">
-          <UpgradeNotice feature="sso">{t("Single sign-on is part of the")}</UpgradeNotice>
-        </div>
-      )}
       {providers.length === 0 ? (
         <div className="p-5">
           <Empty

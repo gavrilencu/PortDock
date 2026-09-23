@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/registry"
 	"github.com/portdock/portdock/internal/store"
 )
@@ -94,9 +93,6 @@ func (s *Server) applyRegistry(reg *store.Registry, in registryIn) error {
 func (s *Server) createRegistry(w http.ResponseWriter, r *http.Request) error {
 	var in registryIn
 	if err := readJSON(r, &in); err != nil {
-		return err
-	}
-	if err := s.requireFeature(r.Context(), license.FeatureRegistries); err != nil {
 		return err
 	}
 	reg := store.Registry{CreatedAt: store.Now()}

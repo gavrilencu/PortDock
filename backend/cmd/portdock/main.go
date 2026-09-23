@@ -23,7 +23,6 @@ import (
 	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/github"
-	"github.com/portdock/portdock/internal/license"
 	"github.com/portdock/portdock/internal/monitor"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/scheduler"
@@ -37,7 +36,6 @@ import (
 func main() {
 	resetPassword := flag.String("reset-password", "", "reset the password of the user with this email and exit")
 	disable2FA := flag.String("disable-2fa", "", "turn off two-factor authentication for the user with this email and exit")
-	installLicense := flag.String("install-license", "", "install a license key and exit")
 	selfUpdate := flag.String("self-update", "", "internal: replace the given PortDock container with this image (run by the updater container)")
 	flag.Parse()
 	if *selfUpdate != "" {
@@ -57,13 +55,13 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
-	if err := run(*resetPassword, *disable2FA, *installLicense); err != nil {
+	if err := run(*resetPassword, *disable2FA); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(resetPassword, disable2FA, installLicense string) error {
+func run(resetPassword, disable2FA string) error {
 	cfg := config.Load()
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
@@ -80,18 +78,6 @@ func run(resetPassword, disable2FA, installLicense string) error {
 
 	if resetPassword != "" {
 		return doResetPassword(db, resetPassword)
-	}
-	if installLicense != "" {
-		l, err := license.Parse(installLicense)
-		if err != nil {
-			return err
-		}
-		if err := db.SetSetting(context.Background(), "license_key", strings.Join(strings.Fields(installLicense), "")); err != nil {
-			return err
-		}
-		db.LogActivity(context.Background(), 0, "license.install", l.Customer+" · "+l.Plan+" (command line)")
-		fmt.Printf("Installed %s license for %s, valid until %s\n", l.Plan, l.Customer, l.ExpiresAt[:10])
-		return nil
 	}
 	if disable2FA != "" {
 		res, err := db.ExecContext(context.Background(),
