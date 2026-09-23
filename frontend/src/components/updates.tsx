@@ -6,6 +6,7 @@ import { api, ApiError } from "../lib/api";
 import { intlLocale, t, tk, tx } from "../lib/i18n";
 import { cn, timeAgo } from "../lib/utils";
 import { Badge, Button, Card, Field, Input, Loading, Modal, PasswordInput, Select, Switch } from "./ui";
+import { Markdown } from "./assistant/Markdown";
 
 export type Release = { tag: string; name: string; notes: string; url: string; published_at: string; prerelease: boolean };
 const statusLabel: Record<string, string> = { running: tk("running"), success: tk("success"), rolled_back: tk("rolled back"), failed: tk("failed") };
@@ -34,18 +35,17 @@ export function useUpdateInfo() {
   });
 }
 
-/** Minimal, safe rendering of release notes (headings, bullets, code, links as text). */
+/**
+ * Release notes, rendered with the assistant's safe Markdown renderer. The
+ * install instructions every release ends with are left out: this is shown to
+ * installations that are already running.
+ */
 function Notes({ text }: { text: string }) {
-  if (!text.trim()) return <p className="text-[13px] text-muted">{t("No release notes.")}</p>;
+  const notes = text.split(/\r?\n-{3,}\s*\r?\n+## Install on a server/)[0].trim();
+  if (!notes) return <p className="text-[13px] text-muted">{t("No release notes.")}</p>;
   return (
-    <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface-2/50 p-4 text-[13px] leading-relaxed">
-      {text.split("\n").map((line, i) => {
-        const l = line.trimEnd();
-        if (/^#{1,6}\s/.test(l)) return <div key={i} className="pt-2 font-semibold first:pt-0">{l.replace(/^#+\s*/, "")}</div>;
-        if (/^\s*[-*]\s/.test(l)) return <div key={i} className="flex gap-2 pl-1"><span className="text-faint">•</span><span>{l.replace(/^\s*[-*]\s/, "").replace(/\*\*/g, "")}</span></div>;
-        if (!l) return <div key={i} className="h-1" />;
-        return <div key={i} className="text-muted">{l.replace(/\*\*/g, "")}</div>;
-      })}
+    <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-surface-2/50 p-4 text-[13px] leading-relaxed">
+      <Markdown text={notes} />
     </div>
   );
 }

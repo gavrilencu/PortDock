@@ -378,7 +378,7 @@ export function AppLayout() {
             <Topbar onMenu={() => setMobile(true)} slotRef={setSlot} />
             <main className="min-h-0 flex-1 overflow-y-auto">
               <HeaderSlotProvider value={slot}>
-                <div className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
+                <div className="w-full px-4 py-6 md:px-6">
                   <Outlet />
                 </div>
               </HeaderSlotProvider>
