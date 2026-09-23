@@ -2,8 +2,10 @@
 # BASE_REGISTRY lets air-gapped or rate-limited environments pull base images
 # from a mirror, e.g. --build-arg BASE_REGISTRY=mirror.gcr.io/library
 ARG BASE_REGISTRY=docker.io/library
+# The UI and API stages run on the build machine's own architecture and
+# cross-compile, so multi-arch releases don't compile Go under QEMU emulation.
 # ---- UI ----
-FROM ${BASE_REGISTRY}/node:24-alpine AS ui
+FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/node:24-alpine AS ui
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -11,7 +13,7 @@ COPY frontend/ .
 RUN npm run build
 
 # ---- API (single static binary with the UI embedded) ----
-FROM ${BASE_REGISTRY}/golang:1.27-alpine AS api
+FROM --platform=$BUILDPLATFORM ${BASE_REGISTRY}/golang:1.27-alpine AS api
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
@@ -22,7 +24,8 @@ ARG VERSION=dev
 # GitHub repository (owner/name) the release was built from: instances update
 # from it automatically, without any configuration.
 ARG UPDATE_REPO=
-RUN CGO_ENABLED=0 go build -trimpath \
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpath \
     -ldflags="-s -w -X github.com/portdock/portdock/internal/api.Version=${VERSION} -X github.com/portdock/portdock/internal/api.DefaultUpdateRepo=${UPDATE_REPO}" \
     -o /out/portdock ./cmd/portdock
 
