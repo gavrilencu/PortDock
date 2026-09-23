@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -367,25 +368,104 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
 
 // ---------- Tabs ----------
 
-export function Tabs<T extends string>({ tabs, value, onChange, className }: { tabs: { id: T; label: ReactNode; icon?: ReactNode; hidden?: boolean; count?: number }[]; value: T; onChange: (id: T) => void; className?: string }) {
+type TabItem<T extends string> = { id: T; label: ReactNode; icon?: ReactNode; hidden?: boolean; count?: number };
+
+const TAB_GAP = 20; // gap-5
+
+const tabClass = (active: boolean) =>
+  cn(
+    "relative -mb-px flex h-10 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 text-[13px] font-medium transition-colors [&_svg]:size-4",
+    active ? "border-fg text-fg" : "border-transparent text-subtle hover:text-fg",
+  );
+
+function TabContent<T extends string>({ tab, active }: { tab: TabItem<T>; active: boolean }) {
   return (
-    <div className={cn("mb-6 flex gap-5 overflow-x-auto border-b border-border", className)}>
-      {tabs
-        .filter((t) => !t.hidden)
-        .map((t) => (
-          <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
-            className={cn(
-              "relative -mb-px flex h-10 items-center gap-2 whitespace-nowrap border-b-2 text-[13px] font-medium transition-colors [&_svg]:size-4",
-              value === t.id ? "border-fg text-fg" : "border-transparent text-subtle hover:text-fg",
-            )}
-          >
-            {t.icon && <span className={cn(value === t.id ? "text-fg" : "text-faint")}>{t.icon}</span>}
-            {t.label}
-            {t.count !== undefined && <span className="rounded bg-surface-2 px-1.5 text-2xs text-subtle">{t.count}</span>}
+    <>
+      {tab.icon && <span className={cn(active ? "text-fg" : "text-faint")}>{tab.icon}</span>}
+      {tab.label}
+      {tab.count !== undefined && <span className="rounded bg-surface-2 px-1.5 text-2xs text-subtle">{tab.count}</span>}
+    </>
+  );
+}
+
+/**
+ * A row of tabs that never scrolls: tabs that don't fit the width go into a
+ * "More" menu (the active tab always stays visible).
+ */
+export function Tabs<T extends string>({ tabs, value, onChange, className }: { tabs: TabItem<T>[]; value: T; onChange: (id: T) => void; className?: string }) {
+  const shown = tabs.filter((t) => !t.hidden);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(shown.length);
+  const layoutKey = shown.map((t) => `${t.id}:${t.count ?? ""}`).join("|");
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const measure = measureRef.current;
+    if (!row || !measure) return;
+    const calc = () => {
+      const widths = Array.from(measure.children, (c) => (c as HTMLElement).offsetWidth);
+      const more = widths.pop() ?? 0; // the last measured element is the "More" button
+      const avail = row.clientWidth;
+      let n = 0;
+      let used = 0;
+      for (let i = 0; i < widths.length; i++) {
+        used += widths[i] + (i > 0 ? TAB_GAP : 0);
+        const reserve = i < widths.length - 1 ? TAB_GAP + more : 0;
+        if (used + reserve > avail) break;
+        n = i + 1;
+      }
+      setFit(n);
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(row);
+    ro.observe(measure);
+    return () => ro.disconnect();
+  }, [layoutKey]);
+
+  let visible = shown.slice(0, fit);
+  const activeIndex = shown.findIndex((t) => t.id === value);
+  if (activeIndex >= fit && fit > 0) visible = [...shown.slice(0, fit - 1), shown[activeIndex]];
+  const overflow = shown.filter((t) => !visible.includes(t));
+  const activeInMenu = overflow.some((t) => t.id === value);
+
+  const moreButton = (active: boolean) => (
+    <span className={tabClass(active)}>
+      {t("More")}
+      <ChevronDown className="!size-3.5" />
+    </span>
+  );
+
+  return (
+    <div ref={rowRef} className={cn("relative mb-6 flex border-b border-border", className)}>
+      <div className="flex min-w-0 gap-5 overflow-x-clip">
+        {visible.map((tab) => (
+          <button key={tab.id} type="button" onClick={() => onChange(tab.id)} className={tabClass(value === tab.id)}>
+            <TabContent tab={tab} active={value === tab.id} />
           </button>
         ))}
+      </div>
+      {overflow.length > 0 && (
+        <Menu className={cn("shrink-0", visible.length > 0 && "ml-5")} trigger={<button type="button">{moreButton(activeInMenu)}</button>}>
+          {overflow.map((tab) => (
+            <MenuItem key={tab.id} icon={tab.icon} active={tab.id === value} onClick={() => onChange(tab.id)}>
+              {tab.label}
+              {tab.count !== undefined && <span className="ml-1.5 rounded bg-surface-2 px-1.5 text-2xs text-subtle">{tab.count}</span>}
+            </MenuItem>
+          ))}
+        </Menu>
+      )}
+      {/* Invisible copy used to measure every tab at its natural width; the
+          zero-size box keeps it from widening the page. */}
+      <div ref={measureRef} aria-hidden className="pointer-events-none invisible absolute left-0 top-0 flex h-0 w-0 gap-5 overflow-hidden">
+        {shown.map((tab) => (
+          <span key={tab.id} className={tabClass(false)}>
+            <TabContent tab={tab} active={false} />
+          </span>
+        ))}
+        {moreButton(false)}
+      </div>
     </div>
   );
 }
@@ -596,7 +676,7 @@ export function CopyField({ value, secret, label }: { value: string; secret?: bo
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div className={cn("scroll-subtle overflow-x-auto overflow-y-hidden", className)}>
       <table className="tabular w-full text-[13px] [&_tbody_tr]:border-t [&_tbody_tr]:border-border [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-surface-2/50 [&_td]:h-12 [&_td]:px-4 [&_td]:py-2 [&_th]:h-9 [&_th]:bg-surface-2/60 [&_th]:px-4 [&_th]:text-left [&_th]:text-2xs [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-subtle">
         {children}
       </table>

@@ -149,6 +149,14 @@ body {
   scrollbar-color: var(--border-strong) transparent;
 }
 
+/* Horizontal scrollers (wide tables) show their scrollbar only on hover. */
+.scroll-subtle {
+  scrollbar-color: transparent transparent;
+}
+.scroll-subtle:hover {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
 ::selection {
   background: var(--ring);
 }

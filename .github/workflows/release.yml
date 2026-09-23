@@ -64,12 +64,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # The description comes from docs/releases/<tag>.md when it exists;
+      # The description comes from docs/releases/<tag>.md when it exists, followed
+      # by the install instructions (docs/releases/_install.md) for this version;
       # GitHub appends the generated list of changes.
       - id: notes
+        env:
+          REPO: ${{ github.repository }}
         run: |
           f="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$f" ]; then cp "$f" release-notes.md; else : > release-notes.md; fi
+          image="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
+          echo >> release-notes.md
+          sed -e "s#{{VERSION}}#${GITHUB_REF_NAME}#g" -e "s#{{IMAGE}}#${image}#g" -e "s#{{REPO}}#${REPO}#g" docs/releases/_install.md >> release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
