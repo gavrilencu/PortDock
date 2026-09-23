@@ -1,0 +1,43 @@
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method,
+    credentials: "same-origin",
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    if (!location.pathname.startsWith("/login")) {
+      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+    }
+    throw new ApiError(401, "authentication required");
+  }
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    throw new ApiError(res.status, (data && data.error) || res.statusText);
+  }
+  return data as T;
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>("GET", path),
+  post: <T>(path: string, body: unknown = {}) => request<T>("POST", path, body),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
+  patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  del: <T = { ok: boolean }>(path: string) => request<T>("DELETE", path),
+};
+
+export function wsURL(path: string): string {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/api${path}`;
+}

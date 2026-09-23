@@ -1,0 +1,8 @@
+.data/
+bin/
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+# The embedded UI is generated at build time; keep only the placeholder.
+backend/web/dist/*
+!backend/web/dist/index.html
