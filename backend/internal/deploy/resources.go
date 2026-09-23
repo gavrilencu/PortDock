@@ -167,7 +167,7 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	for k, v := range eng.Env(db.Username, pass, db.DatabaseName) {
 		b.WriteString(" -e " + q(k+"="+v))
 	}
-	fmt.Fprintf(&b, " --health-cmd %s --health-interval 10s --health-timeout 5s --health-retries 10", q(eng.HealthCmd(db.Username, pass)))
+	fmt.Fprintf(&b, " --health-cmd %s --health-interval 10s --health-timeout 5s --health-retries 10", q(eng.HealthCmd(db.Username, pass, db.DatabaseName)))
 	fmt.Fprintf(&b, " --label %s=true --label %s=database --label %s=%s --log-opt max-size=10m --log-opt max-file=3",
 		docker.LabelManaged, docker.LabelKind, docker.LabelResource, q(db.UUID))
 	if db.CPULimit != "" {

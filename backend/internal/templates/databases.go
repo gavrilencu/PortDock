@@ -22,7 +22,7 @@ type Engine struct {
 
 	env       func(user, pass, db string) map[string]string
 	command   func(pass string) string
-	health    func(user, pass string) string
+	health    func(user, pass, db string) string
 	url       func(user, pass, host string, port int, db string) string
 	backupCmd func(user, pass, db string) string // runs inside the container, writes to stdout
 	restore   func(user, pass, db string) string // reads backup from stdin
@@ -35,7 +35,7 @@ func (e Engine) Command(pass string) string {
 	}
 	return e.command(pass)
 }
-func (e Engine) HealthCmd(user, pass string) string { return e.health(user, pass) }
+func (e Engine) HealthCmd(user, pass, db string) string { return e.health(user, pass, db) }
 func (e Engine) URL(user, pass, host string, port int, db string) string {
 	return e.url(user, pass, host, port, db)
 }
@@ -63,7 +63,7 @@ var Engines = map[string]Engine{
 		env: func(u, p, d string) map[string]string {
 			return map[string]string{"POSTGRES_USER": u, "POSTGRES_PASSWORD": p, "POSTGRES_DB": d}
 		},
-		health: func(u, p string) string { return "pg_isready -U " + q(u) },
+		health: func(u, p, d string) string { return "pg_isready -U " + q(u) + " -d " + q(d) },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("postgres://%s@%s:%d/%s", userinfo(u, p), h, port, d)
 		},
@@ -76,7 +76,7 @@ var Engines = map[string]Engine{
 		env: func(u, p, d string) map[string]string {
 			return map[string]string{"MYSQL_ROOT_PASSWORD": p, "MYSQL_USER": u, "MYSQL_PASSWORD": p, "MYSQL_DATABASE": d}
 		},
-		health: func(u, p string) string { return "mysqladmin ping -h 127.0.0.1 -uroot -p" + q(p) },
+		health: func(u, p, d string) string { return "mysqladmin ping -h 127.0.0.1 -uroot -p" + q(p) },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("mysql://%s@%s:%d/%s", userinfo(u, p), h, port, d)
 		},
@@ -91,7 +91,7 @@ var Engines = map[string]Engine{
 		env: func(u, p, d string) map[string]string {
 			return map[string]string{"MARIADB_ROOT_PASSWORD": p, "MARIADB_USER": u, "MARIADB_PASSWORD": p, "MARIADB_DATABASE": d}
 		},
-		health: func(u, p string) string { return "healthcheck.sh --connect --innodb_initialized" },
+		health: func(u, p, d string) string { return "healthcheck.sh --connect --innodb_initialized" },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("mysql://%s@%s:%d/%s", userinfo(u, p), h, port, d)
 		},
@@ -106,7 +106,7 @@ var Engines = map[string]Engine{
 		env: func(u, p, d string) map[string]string {
 			return map[string]string{"MONGO_INITDB_ROOT_USERNAME": u, "MONGO_INITDB_ROOT_PASSWORD": p, "MONGO_INITDB_DATABASE": d}
 		},
-		health: func(u, p string) string { return "mongosh --quiet --eval 'db.runCommand({ping:1})'" },
+		health: func(u, p, d string) string { return "mongosh --quiet --eval 'db.runCommand({ping:1})'" },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("mongodb://%s@%s:%d/%s?authSource=admin", userinfo(u, p), h, port, d)
 		},
@@ -122,7 +122,7 @@ var Engines = map[string]Engine{
 		DataPath: "/data", BackupExt: "rdb",
 		env:     func(u, p, d string) map[string]string { return map[string]string{"REDIS_PASSWORD": p} },
 		command: func(p string) string { return "redis-server --requirepass " + q(p) + " --appendonly yes" },
-		health:  func(u, p string) string { return "redis-cli -a " + q(p) + " --no-auth-warning ping" },
+		health:  func(u, p, d string) string { return "redis-cli -a " + q(p) + " --no-auth-warning ping" },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("redis://default:%s@%s:%d/0", url.QueryEscape(p), h, port)
 		},
@@ -135,7 +135,7 @@ var Engines = map[string]Engine{
 		DataPath: "/data", BackupExt: "rdb",
 		env:     func(u, p, d string) map[string]string { return map[string]string{"VALKEY_PASSWORD": p} },
 		command: func(p string) string { return "valkey-server --requirepass " + q(p) + " --appendonly yes" },
-		health:  func(u, p string) string { return "valkey-cli -a " + q(p) + " --no-auth-warning ping" },
+		health:  func(u, p, d string) string { return "valkey-cli -a " + q(p) + " --no-auth-warning ping" },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("redis://default:%s@%s:%d/0", url.QueryEscape(p), h, port)
 		},
@@ -149,7 +149,7 @@ var Engines = map[string]Engine{
 		env: func(u, p, d string) map[string]string {
 			return map[string]string{"CLICKHOUSE_USER": u, "CLICKHOUSE_PASSWORD": p, "CLICKHOUSE_DB": d, "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1"}
 		},
-		health: func(u, p string) string { return "wget -qO- http://127.0.0.1:8123/ping" },
+		health: func(u, p, d string) string { return "wget -qO- http://127.0.0.1:8123/ping" },
 		url: func(u, p, h string, port int, d string) string {
 			return fmt.Sprintf("http://%s@%s:%d/?database=%s", userinfo(u, p), h, port, d)
 		},
