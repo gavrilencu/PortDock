@@ -58,7 +58,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
       <LogoMark />
-      <span className="text-[15px] font-semibold tracking-[-0.02em]">Shipyard</span>
+      <span className="text-[15px] font-semibold tracking-[-0.02em]">PortDock</span>
     </div>
   );
 }
@@ -105,7 +105,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
           <LogoMark />
           {!collapsed && (
             <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">Shipyard</div>
+              <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">PortDock</div>
               <div className="truncate text-2xs text-subtle">Self-hosted platform</div>
             </div>
           )}
@@ -292,7 +292,7 @@ export function AppLayout() {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem("shipyard.sidebar") === "collapsed";
+      return localStorage.getItem("portdock.sidebar") === "collapsed";
     } catch {
       return false;
     }
@@ -302,7 +302,7 @@ export function AppLayout() {
   const toggle = () =>
     setCollapsed((c) => {
       try {
-        localStorage.setItem("shipyard.sidebar", c ? "expanded" : "collapsed");
+        localStorage.setItem("portdock.sidebar", c ? "expanded" : "collapsed");
       } catch {
         /* ignore */
       }

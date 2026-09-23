@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type ThemeMode = "system" | "light" | "dark";
 
-const KEY = "shipyard.theme";
+const KEY = "portdock.theme";
 
 function read(): ThemeMode {
   try {

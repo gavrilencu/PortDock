@@ -261,7 +261,7 @@ export function GitSourcesSettings() {
       >
         {local && (
           <div className="border-b border-border bg-warning-soft px-4 py-2.5 text-xs leading-relaxed text-warning">
-            The public URL of this instance is a localhost address, so GitHub cannot deliver push webhooks to it. Repository browsing and manual deploys work; set <code>SHIPYARD_PUBLIC_URL</code> to a public HTTPS address to enable automatic deployments.
+            The public URL of this instance is a localhost address, so GitHub cannot deliver push webhooks to it. Repository browsing and manual deploys work; set <code>PORTDOCK_PUBLIC_URL</code> to a public HTTPS address to enable automatic deployments.
           </div>
         )}
         {apps.isLoading ? (
@@ -274,7 +274,7 @@ export function GitSourcesSettings() {
               compact
               icon={<GitHubMark className="size-5" />}
               title="No GitHub App connected"
-              description="Shipyard creates a private GitHub App for your organization with read-only access to code and permission to post commit statuses."
+              description="PortDock creates a private GitHub App for your organization with read-only access to code and permission to post commit statuses."
               action={
                 <Button variant="primary" icon={<GitHubMark />} onClick={() => setConnect({ name: "", organization: "", enterprise_url: "", advanced: false })}>
                   Connect GitHub
@@ -320,7 +320,7 @@ export function GitSourcesSettings() {
                       variant="danger"
                       title="Disconnect"
                       onClick={async () => {
-                        if (await confirm({ title: `Disconnect ${a.name}?`, description: "Shipyard forgets the app credentials. Delete the app on GitHub separately if no longer needed.", danger: true, confirmText: "Disconnect" }))
+                        if (await confirm({ title: `Disconnect ${a.name}?`, description: "PortDock forgets the app credentials. Delete the app on GitHub separately if no longer needed.", danger: true, confirmText: "Disconnect" }))
                           del.mutate(a.id);
                       }}
                     >
@@ -335,7 +335,7 @@ export function GitSourcesSettings() {
                       <a href={a.install_url} target="_blank" rel="noreferrer" className="font-medium text-fg underline">
                         Install the app
                       </a>{" "}
-                      and choose which repositories Shipyard can access, then press Sync.
+                      and choose which repositories PortDock can access, then press Sync.
                     </div>
                   ) : (
                     a.installations.map((i) => (
@@ -373,7 +373,7 @@ export function GitSourcesSettings() {
                       <div className="text-xs text-muted">
                         {a.public_url
                           ? "Enable them to deploy automatically on every push and build pull request previews."
-                          : "This app was created while Shipyard had a private URL. Set SHIPYARD_PUBLIC_URL to a public HTTPS address, restart Shipyard, then enable webhooks here."}
+                          : "This app was created while PortDock had a private URL. Set PORTDOCK_PUBLIC_URL to a public HTTPS address, restart PortDock, then enable webhooks here."}
                       </div>
                     </div>
                     {a.public_url && (
@@ -406,7 +406,7 @@ export function GitSourcesSettings() {
         {connect && (
           <div className="space-y-4">
             <Field label="App name" hint="Must be unique on GitHub. Leave empty to generate one.">
-              <Input value={connect.name} onChange={(e) => setConnect({ ...connect, name: e.target.value })} placeholder="Acme Shipyard" autoFocus />
+              <Input value={connect.name} onChange={(e) => setConnect({ ...connect, name: e.target.value })} placeholder="Acme PortDock" autoFocus />
             </Field>
             <Field label="Organization" hint="Create the app under an organization instead of your personal account.">
               <Input value={connect.organization} onChange={(e) => setConnect({ ...connect, organization: e.target.value })} placeholder="acme-inc" />

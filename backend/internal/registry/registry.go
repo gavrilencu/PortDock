@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/store"
 )
 
 var httpClient = &http.Client{Timeout: 20 * time.Second}
@@ -156,7 +156,7 @@ func Ping(ctx context.Context, reg store.Registry, secret string) error {
 		}
 		if reg.Namespace != "" && reg.Kind != "ecr" {
 			// Asking for a scope makes GHCR/Docker Hub validate the account, not just issue an anonymous token.
-			qv.Set("scope", "repository:"+strings.Trim(reg.Namespace, "/")+"/shipyard-check:pull")
+			qv.Set("scope", "repository:"+strings.Trim(reg.Namespace, "/")+"/portdock-check:pull")
 		}
 		u.RawQuery = qv.Encode()
 		tr, err := get(ctx, u.String(), user, pass, "")

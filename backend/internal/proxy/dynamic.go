@@ -11,7 +11,7 @@ import (
 )
 
 // DynamicDir is where Traefik's file provider watches for routing files,
-// relative to the Shipyard data directory on each server.
+// relative to the PortDock data directory on each server.
 const DynamicDir = "proxy/dynamic"
 
 // DomainRoute is one host (plus optional path prefix) routed to a workload.
@@ -165,17 +165,17 @@ func RenderDynamic(r AppRoutes) []byte {
 		}
 	}
 	out, _ := yaml.Marshal(map[string]any{"http": map[string]any{"routers": routers, "services": services, "middlewares": mws}})
-	return append([]byte("# Managed by Shipyard. Manual edits are overwritten.\n"), out...)
+	return append([]byte("# Managed by PortDock. Manual edits are overwritten.\n"), out...)
 }
 
-// DashboardUpstream is the alias under which the Shipyard container joins the
+// DashboardUpstream is the alias under which the PortDock container joins the
 // proxy network when it serves its own dashboard domain.
-const DashboardUpstream = "shipyard-dashboard"
+const DashboardUpstream = "portdock-dashboard"
 
-// RenderDashboard routes the instance domain to the Shipyard container itself.
+// RenderDashboard routes the instance domain to the PortDock container itself.
 func RenderDashboard(host string, https bool, port int) []byte {
 	return RenderDynamic(AppRoutes{
-		Name:      "shipyard-dashboard",
+		Name:      "portdock-dashboard",
 		Upstreams: []string{DashboardUpstream},
 		Domains:   []DomainRoute{{Host: host, Port: port, HTTPS: https, Indexing: false}},
 	})
@@ -196,5 +196,5 @@ func RenderCustomCerts(files []CustomCertFile) []byte {
 		certs = append(certs, map[string]string{"certFile": f.CertFile, "keyFile": f.KeyFile})
 	}
 	out, _ := yaml.Marshal(map[string]any{"tls": map[string]any{"certificates": certs}})
-	return append([]byte("# Managed by Shipyard: uploaded certificates.\n"), out...)
+	return append([]byte("# Managed by PortDock: uploaded certificates.\n"), out...)
 }

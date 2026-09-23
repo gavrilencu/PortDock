@@ -21,7 +21,7 @@ type Step struct {
 }
 
 // State is persisted in <data>/update-state.json so progress survives the
-// restart of Shipyard itself.
+// restart of PortDock itself.
 type State struct {
 	ID         string `json:"id"`
 	Status     string `json:"status"` // running | success | rolled_back | failed
@@ -174,15 +174,15 @@ func toStrings(v any) []string {
 	return out
 }
 
-// ---- running Shipyard side ----
+// ---- running PortDock side ----
 
-// SelfContainer finds the container Shipyard runs in.
+// SelfContainer finds the container PortDock runs in.
 func SelfContainer(ctx context.Context, d *Docker) (Container, error) {
-	candidates := []string{os.Getenv("SHIPYARD_CONTAINER")}
+	candidates := []string{os.Getenv("PORTDOCK_CONTAINER"), os.Getenv("SHIPYARD_CONTAINER")}
 	if h, err := os.Hostname(); err == nil {
 		candidates = append(candidates, h)
 	}
-	candidates = append(candidates, "shipyard")
+	candidates = append(candidates, "portdock", "shipyard")
 	for _, id := range candidates {
 		if id == "" {
 			continue
@@ -192,7 +192,7 @@ func SelfContainer(ctx context.Context, d *Docker) (Container, error) {
 			return c, nil
 		}
 	}
-	return Container{}, errors.New("Shipyard is not running in a Docker container with the Docker socket mounted; update it by pulling the new image manually")
+	return Container{}, errors.New("PortDock is not running in a Docker container with the Docker socket mounted; update it by pulling the new image manually")
 }
 
 func (c Container) hasSocket() bool {
@@ -219,7 +219,7 @@ type Plan struct {
 	DataDir      string
 	From         string // current version
 	To           string // target tag
-	Image        string // full reference, e.g. ghcr.io/acme/shipyard:v1.3.0
+	Image        string // full reference, e.g. ghcr.io/acme/portdock:v1.3.0
 	RegistryUser string
 	RegistryPass string
 	// Backup copies the database before anything changes; it returns the backup path.
@@ -230,7 +230,7 @@ type Plan struct {
 // which replaces this container. It returns once the updater runs.
 func Launch(ctx context.Context, d *Docker, p Plan) (State, error) {
 	st := State{ID: fmt.Sprintf("upd-%d", time.Now().Unix()), Status: "running", From: p.From, To: p.To, Image: p.Image, StartedAt: time.Now().UTC().Format(time.RFC3339)}
-	st.Log(p.DataDir, "Updating Shipyard %s → %s", p.From, p.To)
+	st.Log(p.DataDir, "Updating PortDock %s → %s", p.From, p.To)
 	fail := func(err error) (State, error) {
 		st.Log(p.DataDir, "❌ %v", err)
 		st.finish(p.DataDir, "failed", err)
@@ -262,19 +262,19 @@ func Launch(ctx context.Context, d *Docker, p Plan) (State, error) {
 		return fail(fmt.Errorf("the data directory %s is not a mounted volume; refusing to update because data would be lost", p.DataDir))
 	}
 	// The updater runs the *current* (known-good) image: a broken release must
-	// never be responsible for replacing — or restoring — Shipyard.
+	// never be responsible for replacing — or restoring — PortDock.
 	body := map[string]any{
 		"Image": self.Image,
 		"Cmd":   []string{"-self-update", self.ID},
-		"Env":   []string{"SHIPYARD_DATA_DIR=" + p.DataDir, "SHIPYARD_UPDATE_IMAGE=" + p.Image},
+		"Env":   []string{"PORTDOCK_DATA_DIR=" + p.DataDir, "PORTDOCK_UPDATE_IMAGE=" + p.Image, "SHIPYARD_DATA_DIR=" + p.DataDir, "SHIPYARD_UPDATE_IMAGE=" + p.Image},
 		"Labels": map[string]string{
-			"shipyard.managed": "true", "shipyard.kind": "updater",
+			"portdock.managed": "true", "portdock.kind": "updater",
 		},
 		"HostConfig": map[string]any{
 			"Binds": []string{SocketPath + ":" + SocketPath, dataSrc + ":" + p.DataDir},
 		},
 	}
-	name := "shipyard-updater-" + fmt.Sprint(time.Now().Unix())
+	name := "portdock-updater-" + fmt.Sprint(time.Now().Unix())
 	id, err := d.Create(ctx, name, body)
 	if err != nil {
 		return fail(fmt.Errorf("create updater container: %w", err))
@@ -283,7 +283,7 @@ func Launch(ctx context.Context, d *Docker, p Plan) (State, error) {
 		_ = d.Remove(ctx, id)
 		return fail(fmt.Errorf("start updater container: %w", err))
 	}
-	st.Log(p.DataDir, "Updater started; Shipyard restarts in a few seconds")
+	st.Log(p.DataDir, "Updater started; PortDock restarts in a few seconds")
 	// Make sure the updater really runs (it stops this process when it does).
 	for i := 0; i < 5; i++ {
 		time.Sleep(2 * time.Second)
@@ -306,7 +306,7 @@ func CleanupUpdaters(ctx context.Context, d *Docker) {
 		ID    string `json:"Id"`
 		State string `json:"State"`
 	}
-	filters := `{"label":["shipyard.kind=updater"],"status":["exited","dead","created"]}`
+	filters := `{"label":["portdock.kind=updater"],"status":["exited","dead","created"]}`
 	if err := d.call(ctx, "GET", "/containers/json?all=1&filters="+url.QueryEscape(filters), nil, &list); err != nil {
 		return
 	}
@@ -330,7 +330,10 @@ func Swap(ctx context.Context, d *Docker, oldID, dataDir string) error {
 		return err
 	}
 	self, err := SelfContainer(ctx, d)
-	image := os.Getenv("SHIPYARD_UPDATE_IMAGE")
+	image := os.Getenv("PORTDOCK_UPDATE_IMAGE")
+	if image == "" {
+		image = os.Getenv("SHIPYARD_UPDATE_IMAGE")
+	}
 	if err == nil && image == "" {
 		image = self.Config.Image
 	}

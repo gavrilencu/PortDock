@@ -14,7 +14,7 @@ func generateEd25519() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	block, err := ssh.MarshalPrivateKey(priv, "shipyard")
+	block, err := ssh.MarshalPrivateKey(priv, "portdock")
 	if err != nil {
 		return "", "", err
 	}
@@ -22,5 +22,5 @@ func generateEd25519() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	return string(pem.EncodeToMemory(block)), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " shipyard", nil
+	return string(pem.EncodeToMemory(block)), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " portdock", nil
 }

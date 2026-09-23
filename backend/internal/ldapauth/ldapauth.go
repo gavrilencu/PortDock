@@ -69,7 +69,7 @@ var Presets = []Preset{
 	{Kind: "ad", Name: "Microsoft Active Directory", Port: 636, Security: "ldaps",
 		UserFilter: "(&(objectClass=user)(objectCategory=person)(|(sAMAccountName={username})(userPrincipalName={username})(mail={username})))",
 		EmailAttr:  "mail", NameAttr: "displayName", GroupsAttr: "memberOf", Nested: true,
-		BindHint: "CN=svc-shipyard,OU=Service Accounts,DC=corp,DC=example or svc-shipyard@corp.example", BaseHint: "DC=corp,DC=example"},
+		BindHint: "CN=svc-portdock,OU=Service Accounts,DC=corp,DC=example or svc-portdock@corp.example", BaseHint: "DC=corp,DC=example"},
 	{Kind: "openldap", Name: "OpenLDAP", Port: 389, Security: "starttls",
 		UserFilter: "(&(objectClass=inetOrgPerson)(|(uid={username})(mail={username})))",
 		EmailAttr:  "mail", NameAttr: "cn", GroupsAttr: "memberOf",
@@ -77,7 +77,7 @@ var Presets = []Preset{
 	{Kind: "freeipa", Name: "FreeIPA / Red Hat IdM", Port: 636, Security: "ldaps",
 		UserFilter: "(&(objectClass=person)(|(uid={username})(mail={username})))",
 		EmailAttr:  "mail", NameAttr: "cn", GroupsAttr: "memberOf",
-		BindHint: "uid=svc-shipyard,cn=sysaccounts,cn=etc,dc=example,dc=org", BaseHint: "cn=accounts,dc=example,dc=org"},
+		BindHint: "uid=svc-portdock,cn=sysaccounts,cn=etc,dc=example,dc=org", BaseHint: "cn=accounts,dc=example,dc=org"},
 	{Kind: "generic", Name: "Other LDAP directory", Port: 389, Security: "starttls",
 		UserFilter: "(|(uid={username})(mail={username}))", EmailAttr: "mail", NameAttr: "cn", GroupsAttr: "memberOf"},
 }

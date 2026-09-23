@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/store"
 )
 
 type projectDTO struct {

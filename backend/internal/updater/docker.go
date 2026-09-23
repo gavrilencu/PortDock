@@ -22,7 +22,7 @@ type Docker struct {
 	c *http.Client
 }
 
-// SocketPath is where the engine socket is mounted inside the Shipyard container.
+// SocketPath is where the engine socket is mounted inside the PortDock container.
 var SocketPath = "/var/run/docker.sock"
 
 func NewDocker() *Docker {

@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Suggestion is the recommended deployment configuration for a repository.

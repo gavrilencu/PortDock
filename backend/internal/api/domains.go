@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // ---- DNS verification ----
@@ -56,7 +56,7 @@ func (s *Server) serverIPs(ctx context.Context, srv store.Server) []net.IP {
 // checkDNS resolves host and compares it with the expected server addresses.
 func checkDNS(ctx context.Context, host string, expected []net.IP) (status, detail string) {
 	if strings.HasPrefix(host, "*.") {
-		host = "shipyard-dns-check." + strings.TrimPrefix(host, "*.")
+		host = "portdock-dns-check." + strings.TrimPrefix(host, "*.")
 	}
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return "local", "Resolves to this machine only (development). Use a real domain for other visitors."
@@ -197,7 +197,7 @@ func (s *Server) domainConflict(ctx context.Context, host, path string, exceptID
 		return errStatus(409, "%s%s is already used by application %q", host, path, name)
 	}
 	if iu, _ := url.Parse(s.db.Setting(ctx, "instance_url")); iu != nil && strings.EqualFold(iu.Hostname(), host) {
-		return errStatus(409, "%s is the domain of this Shipyard instance", host)
+		return errStatus(409, "%s is the domain of this PortDock instance", host)
 	}
 	return nil
 }

@@ -145,7 +145,7 @@ function ComposeEditor({ s, onDeploy }: { s: ServiceDetail; onDeploy: () => void
   return (
     <Card
       title="docker-compose.yml"
-      description="Shipyard adds routing labels and the proxy network automatically via an override file."
+      description="PortDock adds routing labels and the proxy network automatically via an override file."
       actions={
         <>
           <Button size="sm" icon={<Save className="size-3.5" />} loading={save.isPending} disabled={compose === s.compose} onClick={() => save.mutate()}>
@@ -189,7 +189,7 @@ function ServiceSettings({ s }: { s: ServiceDetail }) {
           <Field label="Name">
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-          <Field label="Domain" hint="Routed to the service declared in x-shipyard.">
+          <Field label="Domain" hint="Routed to the service declared in x-portdock.">
             <Input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} />
           </Field>
           <Field label="Description" className="md:col-span-2">

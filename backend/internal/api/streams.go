@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
 )
 
 type dockerContainer = docker.Container

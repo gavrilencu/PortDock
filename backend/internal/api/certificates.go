@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // ---- inventory ----
@@ -226,7 +226,7 @@ func (s *Server) uploadCustomCertificate(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	if err := s.engine.SyncCustomCertificates(r.Context()); err != nil {
-		w.Header().Set("X-Shipyard-Warning", err.Error())
+		w.Header().Set("X-PortDock-Warning", err.Error())
 	}
 	s.activity(r, "certificate.upload", c.Name+" ("+c.Domains+")")
 	c.CertPEM, c.KeyPEM = "", ""

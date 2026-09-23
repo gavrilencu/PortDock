@@ -66,7 +66,7 @@ export function LoginPage() {
       <div className="flex flex-col px-6 py-8 sm:px-12">
         <div className="flex items-center gap-2.5">
           <LogoMark />
-          <span className="text-[15px] font-semibold tracking-[-0.02em]">Shipyard</span>
+          <span className="text-[15px] font-semibold tracking-[-0.02em]">PortDock</span>
         </div>
         <div className="flex flex-1 items-center justify-center py-12">
           {mfa ? (
@@ -76,7 +76,7 @@ export function LoginPage() {
               </span>
               <h1 className="mt-5 text-2xl font-semibold tracking-[-0.025em]">Two-factor authentication</h1>
               <p className="mt-2 text-[13px] leading-relaxed text-subtle">
-                {mfa.recovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication." : "Open your authenticator app and enter the 6-digit code for Shipyard."}
+                {mfa.recovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication." : "Open your authenticator app and enter the 6-digit code for PortDock."}
               </p>
               <div className="mt-8 space-y-4">
                 <Field label={mfa.recovery ? "Recovery code" : "Authentication code"}>
@@ -155,7 +155,7 @@ export function LoginPage() {
                       <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Cooper" autoFocus autoComplete="name" />
                     </Field>
                   )}
-                  <Field label={ldapList.length ? "Email or username" : "Work email"} hint={ldapList.length && !setup ? `Use your ${ldapList.map((d) => d.name).join(" / ")} account or a Shipyard account.` : undefined}>
+                  <Field label={ldapList.length ? "Email or username" : "Work email"} hint={ldapList.length && !setup ? `Use your ${ldapList.map((d) => d.name).join(" / ")} account or a PortDock account.` : undefined}>
                     <Input className="h-10" type={ldapList.length ? "text" : "email"} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={ldapList.length ? "jdoe or jane@company.com" : "jane@company.com"} autoFocus={!setup && ssoList.length === 0} required autoComplete="username" />
                   </Field>
                   <Field label="Password" hint={setup ? "Use at least 8 characters." : undefined}>
@@ -176,7 +176,7 @@ export function LoginPage() {
               )}
               {!setup && passwordForm && (
                 <p className="mt-6 text-xs leading-relaxed text-subtle">
-                  Forgot your password? Ask an administrator, or reset it on the server with <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">shipyard -reset-password</code>.
+                  Forgot your password? Ask an administrator, or reset it on the server with <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">portdock -reset-password</code>.
                 </p>
               )}
             </form>

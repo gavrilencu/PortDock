@@ -1,4 +1,4 @@
-# Shipyard
+# PortDock
 
 PaaS self-hosted, alternativă la Coolify: deploy din Git cu push-to-deploy, preview-uri pentru PR-uri, rollback instant, baze de date cu backup programat, servicii one-click și management complet de containere pe serverele tale (local sau prin SSH).
 
@@ -64,7 +64,7 @@ Un singur binar (~20 MB) care conține API-ul, UI-ul, workerii de deploy, monito
 - Autentificarea cu parolă poate fi dezactivată (SSO obligatoriu); owner-ul păstrează un cont de urgență (break-glass).
 - **Sesiuni active** per utilizator (dispozitiv, IP, metodă de login), deconectare individuală sau de pe toate celelalte sesiuni. Adminii pot dezactiva conturi, reseta 2FA și închide sesiunile unui utilizator.
 - Protecție brute-force: blocare după 10 încercări eșuate în 15 minute (per IP și per cont). Toate evenimentele ajung în audit log.
-- Recuperare din linia de comandă: `docker exec shipyard shipyard -disable-2fa user@example.com`.
+- Recuperare din linia de comandă: `docker exec portdock portdock -disable-2fa user@example.com`.
 
 **Control acces & conformitate**
 - **Roluri pe proiect**: *viewer* (doar citire, fără secrete), *developer* (deploy și configurare pe mediile neprotejate), *maintainer* (acces total în proiect, membri, aprobări). Fiecare proiect are și un rol implicit pentru restul membrilor. Cu rolul implicit *none*, proiectul e privat: cine nu e membru nici nu-l vede. Owner-ii și adminii au acces total.
@@ -88,19 +88,19 @@ Un singur binar (~20 MB) care conține API-ul, UI-ul, workerii de deploy, monito
 Pe un server Linux (Ubuntu/Debian recomandat), ca root, cu porturile 80, 443 și 8000 libere:
 
 ```bash
-git clone <repo> shipyard && cd shipyard
-./install.sh https://shipyard.example.com   # sau fără argument: http://<ip>:8000
+git clone <repo> portdock && cd portdock
+./install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000
 ```
 
 Deschide URL-ul, creează contul de owner. Serverul local e adăugat automat; apasă **Servers → localhost → Run setup** ca să pornești Traefik.
 
-Resetare parolă: `docker exec shipyard shipyard -reset-password admin@example.com`
+Resetare parolă: `docker exec portdock portdock -reset-password admin@example.com`
 
 ### Servere remote
 
 1. **Servers → Add server** → generează o cheie SSH.
 2. Adaugă cheia publică în `~/.ssh/authorized_keys` pe server (user `root` recomandat).
-3. **Run setup** pe noul server — instalează Docker, rețeaua `shipyard` și Traefik.
+3. **Run setup** pe noul server — instalează Docker, rețeaua `portdock` și Traefik.
 4. Opțional: setează un *wildcard domain* (`*.apps.example.com` → IP server) pentru domenii automate și preview-uri.
 
 ## Dezvoltare
@@ -109,7 +109,7 @@ Resetare parolă: `docker exec shipyard shipyard -reset-password admin@example.c
 make dev-api   # backend pe :8000 (date în ./.data)
 make dev-ui    # Vite pe :5173, proxy /api → :8000
 make test      # go vet + go test + tsc
-make build     # binar în bin/shipyard, cu UI încorporat
+make build     # binar în bin/portdock, cu UI încorporat
 ```
 
 Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/WSL și Docker Desktop, sau rulează totul cu `docker compose up --build`.
@@ -118,31 +118,31 @@ Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/
 
 | Variabilă | Implicit | Descriere |
 |---|---|---|
-| `SHIPYARD_ADDR` | `:8000` | Adresa HTTP |
-| `SHIPYARD_DATA_DIR` | `/data/shipyard` | DB, cheia de criptare, build-uri, backup-uri. **În Docker, montează-l la aceeași cale ca pe host.** |
-| `SHIPYARD_PUBLIC_URL` | `http://localhost:8000` | URL-ul extern (pentru webhook-uri); `https://` activează cookie-uri Secure |
-| `SHIPYARD_SECRET_KEY` | generat în `secret.key` | Cheia AES pentru secrete (base64 32 bytes sau passphrase). **Fă backup la ea.** |
-| `SHIPYARD_MAX_BUILDS` | `4` | Deploy-uri paralele |
-| `SHIPYARD_NETWORK` | `shipyard` | Rețeaua Docker partajată cu Traefik |
-| `SHIPYARD_DEV` / `SHIPYARD_DEBUG` | – | CORS pentru dev / log-uri debug |
+| `PORTDOCK_ADDR` | `:8000` | Adresa HTTP |
+| `PORTDOCK_DATA_DIR` | `/data/portdock` | DB, cheia de criptare, build-uri, backup-uri. **În Docker, montează-l la aceeași cale ca pe host.** |
+| `PORTDOCK_PUBLIC_URL` | `http://localhost:8000` | URL-ul extern (pentru webhook-uri); `https://` activează cookie-uri Secure |
+| `PORTDOCK_SECRET_KEY` | generat în `secret.key` | Cheia AES pentru secrete (base64 32 bytes sau passphrase). **Fă backup la ea.** |
+| `PORTDOCK_MAX_BUILDS` | `4` | Deploy-uri paralele |
+| `PORTDOCK_NETWORK` | `portdock` | Rețeaua Docker partajată cu Traefik |
+| `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS pentru dev / log-uri debug |
 
 ## Domenii
 
 Fiecare aplicație are tab-ul **Domains**, cu un tabel similar celui din Coolify: domeniu, redirect HTTP→HTTPS, redirect spre www sau fără www, port intern per domeniu, indexare în motoarele de căutare (`X-Robots-Tag`), status DNS și acțiuni.
 
-- Modificările se aplică **în câteva secunde, fără redeploy**. Rutarea e generată ca fișiere Traefik (`/data/shipyard/proxy/dynamic`), nu ca label-uri pe containere.
+- Modificările se aplică **în câteva secunde, fără redeploy**. Rutarea e generată ca fișiere Traefik (`/data/portdock/proxy/dynamic`), nu ca label-uri pe containere.
 - La deploy, traficul se mută pe versiunea nouă **doar după health check**. Am verificat cu 120 de cereri continue în timpul unui redeploy: 0 erori.
 - **Check all DNS** compară A/AAAA cu IP-ul serverului și detectează Cloudflare proxy. **DNS records** arată exact înregistrările de creat.
 - Același domeniu nu poate fi folosit de două aplicații. Domeniile wildcard (`*.apps.example.com`) sunt suportate, dar certificatul wildcard cere o provocare DNS-01.
 
-**Settings → General**: URL-ul panoului (Shipyard se servește singur pe acel domeniu, prin Traefik, cu certificat Let's Encrypt), nume, redirect HTTPS, fus orar (folosit de backup-urile programate) și IPv4/IPv6 public (butonul Detect le află automat).
+**Settings → General**: URL-ul panoului (PortDock se servește singur pe acel domeniu, prin Traefik, cu certificat Let's Encrypt), nume, redirect HTTPS, fus orar (folosit de backup-urile programate) și IPv4/IPv6 public (butonul Detect le află automat).
 
 Build prin oglindă, când Docker Hub limitează descărcările: `BASE_REGISTRY=mirror.gcr.io/library docker compose build`.
 
 ## Certificate SSL
 
 - Certificatele Let's Encrypt se emit și se reînnoiesc automat, prin Traefik (reînnoirea are loc cu 30 de zile înainte de expirare). **Settings → Certificates** afișează fiecare domeniu cu starea certificatului, emitentul și zilele rămase.
-- **Supraveghere automată** la fiecare 6 ore. Dacă un certificat are sub 14 zile rămase (pragul se poate configura), Traefik n-a reușit reînnoirea, iar Shipyard forțează o emitere nouă: oprește proxy-ul câteva secunde, șterge certificatul vechi, pornește proxy-ul și verifică din nou după 3 minute. Rezultatul vine ca notificare (`certificate.expiring`, `certificate.renewed`, `certificate.failed`). Reînnoirea forțată se face cel mult o dată pe zi per domeniu, din cauza limitelor Let's Encrypt. Pentru fiecare domeniu există și butonul *Renew now*.
+- **Supraveghere automată** la fiecare 6 ore. Dacă un certificat are sub 14 zile rămase (pragul se poate configura), Traefik n-a reușit reînnoirea, iar PortDock forțează o emitere nouă: oprește proxy-ul câteva secunde, șterge certificatul vechi, pornește proxy-ul și verifică din nou după 3 minute. Rezultatul vine ca notificare (`certificate.expiring`, `certificate.renewed`, `certificate.failed`). Reînnoirea forțată se face cel mult o dată pe zi per domeniu, din cauza limitelor Let's Encrypt. Pentru fiecare domeniu există și butonul *Renew now*.
 - **DNS-01** pentru domenii wildcard și interne: Cloudflare, Route 53, Azure DNS, Google Cloud DNS, DigitalOcean, Hetzner, OVH, GoDaddy, RFC 2136 (Windows DNS/BIND/PowerDNS) sau orice provider suportat de lego. Credențialele sunt criptate și ajung pe server într-un fișier cu permisiuni 0600.
 - **Server ACME propriu** (step-ca, PKI internă) sau Let's Encrypt staging pentru teste.
 - **Certificate încărcate manual** (CA corporativ, EV/OV): lanțul și cheia sunt validate (cheia trebuie să corespundă certificatului, iar certificatul să nu fie expirat). Se distribuie pe toate proxy-urile, iar tu primești notificări la 30, 14, 7 și 3 zile înainte de expirare.
@@ -156,19 +156,19 @@ Build prin oglindă, când Docker Hub limitează descărcările: `BASE_REGISTRY=
 - conturile dezactivate în AD sunt refuzate;
 - grupurile imbricate din AD sunt rezolvate;
 - poți cere apartenența la anumite grupuri pentru acces și poți mapa grupurile de admin;
-- contul Shipyard se creează automat la prima logare.
+- contul PortDock se creează automat la prima logare.
 
 Utilizatorii se loghează cu username, UPN sau email. Politicile de 2FA se aplică și lor, iar conturile locale rămân disponibile ca rezervă. Butonul *Test* verifică conexiunea și arată pentru un utilizator emailul, grupurile și rolul rezultat.
 
-## Actualizări Shipyard
+## Actualizări PortDock
 
-Împingi un tag `vX.Y.Z` pe GitHub, iar workflow-ul `.github/workflows/release.yml` rulează testele, publică imaginea `ghcr.io/<owner>/<repo>:vX.Y.Z` și creează release-ul. Workflow-ul include în imagine și numele repository-ului, așa că **orice instalare dintr-un release știe singură de unde vin update-urile, fără nicio configurare**. Repository-ul fiind public, nu e nevoie de token nici pentru release-uri, nici pentru imagine. Shipyard verifică la fiecare 6 ore și afișează în meniu *Update available*, cu versiunea instalată, versiunea nouă și notele de release. Sursa se poate schimba doar din *Settings → Updates → Advanced* (pentru fork-uri sau mirror-uri).
+Împingi un tag `vX.Y.Z` pe GitHub, iar workflow-ul `.github/workflows/release.yml` rulează testele, publică imaginea `ghcr.io/<owner>/<repo>:vX.Y.Z` și creează release-ul. Workflow-ul include în imagine și numele repository-ului, așa că **orice instalare dintr-un release știe singură de unde vin update-urile, fără nicio configurare**. Repository-ul fiind public, nu e nevoie de token nici pentru release-uri, nici pentru imagine. PortDock verifică la fiecare 6 ore și afișează în meniu *Update available*, cu versiunea instalată, versiunea nouă și notele de release. Sursa se poate schimba doar din *Settings → Updates → Advanced* (pentru fork-uri sau mirror-uri).
 
 La *Update now*:
 1. Update-ul e refuzat dacă rulează deploy-uri.
-2. Se descarcă imaginea, iar baza de date și cheia de criptare se salvează în `/data/shipyard/backups/shipyard/`.
+2. Se descarcă imaginea, iar baza de date și cheia de criptare se salvează în `/data/portdock/backups/portdock/`.
 3. Un container *updater* pornește din **imaginea curentă, verificată**, apoi:
-   - oprește Shipyard;
+   - oprește PortDock;
    - creează containerul nou cu exact aceeași configurare (volume, porturi, rețele, env, restart policy);
    - așteaptă health check-ul.
 4. Dacă versiunea nouă nu pornește sau e nesănătoasă, **revine automat** la versiunea veche.
@@ -188,18 +188,18 @@ Click pe un container deschide un panou cu:
 
 ## Emiterea licențelor (vânzător)
 
-Instrumentul `shipyard-license` nu se livrează clienților. Cheia privată de semnare e în `~/.shipyard-license/private.key`. **Fă-i backup într-un loc sigur**: fără ea nu mai poți emite licențe, iar dacă ajunge la altcineva, acela poate emite licențe în numele tău.
+Instrumentul `portdock-license` nu se livrează clienților. Cheia privată de semnare e în `~/.portdock-license/private.key`. **Fă-i backup într-un loc sigur**: fără ea nu mai poți emite licențe, iar dacă ajunge la altcineva, acela poate emite licențe în numele tău.
 
 ```bash
 cd backend
-go run ./cmd/shipyard-license issue -key ~/.shipyard-license/private.key \
+go run ./cmd/portdock-license issue -key ~/.portdock-license/private.key \
   -customer "Acme Bank" -email it@acme.example -plan enterprise -days 365   # -servers N / -users N pentru limite custom
-go run ./cmd/shipyard-license inspect SY1....                               # vezi conținutul unei chei
+go run ./cmd/portdock-license inspect SY1....                               # vezi conținutul unei chei
 ```
 
-Clientul instalează cheia din **Settings → License** sau din linia de comandă: `docker exec shipyard shipyard -install-license SY1....`
+Clientul instalează cheia din **Settings → License** sau din linia de comandă: `docker exec portdock portdock -install-license SY1....`
 
-Dacă generezi o pereche nouă de chei (`shipyard-license keygen`), înlocuiește `publicKeyB64` din `backend/internal/license/license.go` sau setează-l la build: `-ldflags "-X github.com/shipyard/shipyard/internal/license.publicKeyB64=..."`.
+Dacă generezi o pereche nouă de chei (`portdock-license keygen`), înlocuiește `publicKeyB64` din `backend/internal/license/license.go` sau setează-l la build: `-ldflags "-X github.com/portdock/portdock/internal/license.publicKeyB64=..."`.
 
 ## Single sign-on
 
@@ -215,12 +215,12 @@ URL-ul panoului (Settings → General → URL) trebuie să fie cel pe care îl f
 
 ## Integrarea GitHub (GitHub App)
 
-1. **Settings → Git sources → Connect GitHub.** Shipyard creează prin *manifest flow* o aplicație GitHub privată cu permisiunile minime: Contents / Metadata / Pull requests (read) și Commit statuses (write). Opțional o poți crea sub o organizație sau pe **GitHub Enterprise Server**. Dacă organizația gestionează aplicațiile centralizat, folosește **Use existing app** (App ID + cheie privată + webhook secret).
+1. **Settings → Git sources → Connect GitHub.** PortDock creează prin *manifest flow* o aplicație GitHub privată cu permisiunile minime: Contents / Metadata / Pull requests (read) și Commit statuses (write). Opțional o poți crea sub o organizație sau pe **GitHub Enterprise Server**. Dacă organizația gestionează aplicațiile centralizat, folosește **Use existing app** (App ID + cheie privată + webhook secret).
 2. **Instalează aplicația** pe contul sau organizația dorită și alege repo-urile.
 3. **New resource → Git repository → GitHub:** cauți repo-ul, alegi branch-ul, iar tipul de deploy se detectează automat (Dockerfile, Compose, Node/Bun/Python/Go, static). Îl poți schimba, inclusiv pe **Shell script**: comenzi proprii de install/build/start pe orice imagine de bază.
-4. **Deploy automat:** fiecare push pe branch declanșează un deploy, iar PR-urile primesc preview-uri dacă le activezi. Statusul apare pe commit în GitHub ca `shipyard/deploy`.
+4. **Deploy automat:** fiecare push pe branch declanșează un deploy, iar PR-urile primesc preview-uri dacă le activezi. Statusul apare pe commit în GitHub ca `portdock/deploy`.
 
-Pentru ca GitHub să poată trimite webhook-uri, `SHIPYARD_PUBLIC_URL` trebuie să fie o adresă HTTPS publică. Pe localhost merg navigarea prin repo-uri și deploy-urile manuale.
+Pentru ca GitHub să poată trimite webhook-uri, `PORTDOCK_PUBLIC_URL` trebuie să fie o adresă HTTPS publică. Pe localhost merg navigarea prin repo-uri și deploy-urile manuale.
 
 ## CI/CD în practică
 
@@ -230,7 +230,7 @@ Pentru ca GitHub să poată trimite webhook-uri, `SHIPYARD_PUBLIC_URL` trebuie s
 
 ```yaml
 - run: npm ci && npm test
-- run: curl -fsS -X POST "${{ secrets.SHIPYARD_DEPLOY_HOOK }}&commit=${{ github.sha }}"
+- run: curl -fsS -X POST "${{ secrets.PORTDOCK_DEPLOY_HOOK }}&commit=${{ github.sha }}"
 ```
 
 **API**: `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer sy_…"`
@@ -239,7 +239,7 @@ Pentru ca GitHub să poată trimite webhook-uri, `SHIPYARD_PUBLIC_URL` trebuie s
 
 ```
 backend/
-  cmd/shipyard          entrypoint (server HTTP, workeri, monitor, scheduler)
+  cmd/portdock          entrypoint (server HTTP, workeri, monitor, scheduler)
   internal/api          REST, SSE (log-uri/evenimente), WebSocket (terminal), webhook-uri, UI embed
   internal/deploy       coada de deploy, pipeline (clone → build → health check → rollout),
                         builderi, compose, baze de date, backup, servicii, monitor
@@ -255,7 +255,7 @@ frontend/src
   lib/                  client API, tipuri, hook-uri SSE
 ```
 
-Toate operațiile pe servere trec prin `Executor` (local sau SSH) și CLI-ul Docker, așa că serverele locale și cele remote se comportă identic. Fiecare workload are label-uri `shipyard.*`, iar Traefik descoperă rutele din label-uri.
+Toate operațiile pe servere trec prin `Executor` (local sau SSH) și CLI-ul Docker, așa că serverele locale și cele remote se comportă identic. Fiecare workload are label-uri `portdock.*`, iar Traefik descoperă rutele din label-uri.
 
 ## Limitări cunoscute / următorii pași
 

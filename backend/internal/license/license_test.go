@@ -3,6 +3,7 @@ package license
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -71,5 +72,23 @@ func TestTrial(t *testing.T) {
 	}
 	if st := Resolve("", "", now); st.MaxServers != 2 || st.MaxUsers != 5 || len(st.Features) != 0 {
 		t.Fatalf("community %+v", st)
+	}
+}
+
+func TestLegacyPrefix(t *testing.T) {
+	priv := testKey(t)
+	key := issue(t, priv, License{Customer: "Old", Plan: "enterprise", ExpiresAt: time.Now().Add(time.Hour).Format(time.RFC3339)})
+	if !strings.HasPrefix(key, "PD1.") {
+		t.Fatal(key[:4])
+	}
+	// Re-sign the same payload the way pre-rename keys were built.
+	body := strings.Split(strings.TrimPrefix(key, "PD1."), ".")[0]
+	sig := ed25519.Sign(priv, []byte("SY1."+body))
+	old := "SY1." + body + "." + base64.RawURLEncoding.EncodeToString(sig)
+	if l, err := Parse(old); err != nil || l.Customer != "Old" {
+		t.Fatalf("legacy key rejected: %v", err)
+	}
+	if _, err := Parse("SY1." + body + "." + strings.Split(key, ".")[2]); err != ErrSignature {
+		t.Fatal("prefix is part of the signature")
 	}
 }

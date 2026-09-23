@@ -16,13 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 )
 
-// Certificates are issued and renewed by Traefik (ACME). Shipyard watches them:
+// Certificates are issued and renewed by Traefik (ACME). PortDock watches them:
 // it records the expiry of every domain, notifies before expiry and — when
 // Traefik failed to renew in time — forces a new issuance.
 

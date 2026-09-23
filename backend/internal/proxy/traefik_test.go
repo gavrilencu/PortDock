@@ -6,7 +6,7 @@ import (
 )
 
 func TestLabelsHTTPS(t *testing.T) {
-	l := Labels(Route{Name: "Abc123", Domains: []string{"https://app.example.com", "www.example.com/api/"}, Port: 3000, HTTPS: true, Network: "shipyard"})
+	l := Labels(Route{Name: "Abc123", Domains: []string{"https://app.example.com", "www.example.com/api/"}, Port: 3000, HTTPS: true, Network: "portdock"})
 	if l["traefik.enable"] != "true" {
 		t.Fatal("traefik not enabled")
 	}

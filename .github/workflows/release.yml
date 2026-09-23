@@ -1,4 +1,4 @@
-# Publishes a Shipyard release: push a tag like v1.4.0 and this workflow builds
+# Publishes a PortDock release: push a tag like v1.4.0 and this workflow builds
 # the multi-arch image ghcr.io/<owner>/<repo>:v1.4.0 (+ :latest for stable tags)
 # and creates the GitHub release. Running instances show "Update available".
 name: release

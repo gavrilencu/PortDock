@@ -12,8 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/updater"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/updater"
 )
 
 // DefaultUpdateRepo is the GitHub repository (owner/name) this build was released
@@ -33,7 +34,7 @@ func (s *Server) updateRepo(ctx context.Context) string {
 	if v := s.db.Setting(ctx, "update_repo"); v != "" {
 		return v
 	}
-	if v := os.Getenv("SHIPYARD_UPDATE_REPO"); v != "" {
+	if v := config.Env("UPDATE_REPO", ""); v != "" {
 		return v
 	}
 	return DefaultUpdateRepo
@@ -74,7 +75,7 @@ func (s *Server) checkUpdate(ctx context.Context, force bool) {
 	c.mu.Unlock()
 	if err == nil && updater.Compare(Version, rel.Tag) < 0 && s.db.Setting(ctx, "update_notified") != rel.Tag {
 		_ = s.db.SetSetting(ctx, "update_notified", rel.Tag)
-		s.notify.Send(notify.Event{Name: "update.available", Title: "Shipyard " + rel.Tag + " is available", Message: "You are running " + Version + ". Update from the sidebar or Settings → Updates.", URL: rel.URL, Success: true})
+		s.notify.Send(notify.Event{Name: "update.available", Title: "PortDock " + rel.Tag + " is available", Message: "You are running " + Version + ". Update from the sidebar or Settings → Updates.", URL: rel.URL, Success: true})
 	}
 }
 
@@ -104,7 +105,7 @@ func (s *Server) updateStatus(ctx context.Context, admin bool) map[string]any {
 	supported, reason := true, ""
 	d := updater.NewDocker()
 	if !d.Available(dctx) {
-		supported, reason = false, "Shipyard does not run in Docker with the Docker socket mounted."
+		supported, reason = false, "PortDock does not run in Docker with the Docker socket mounted."
 	} else if _, err := updater.SelfContainer(dctx, d); err != nil {
 		supported, reason = false, err.Error()
 	}
@@ -157,7 +158,7 @@ func (s *Server) updateUpdateSettings(w http.ResponseWriter, r *http.Request) er
 	if in.Image != nil {
 		v := strings.TrimSpace(*in.Image)
 		if strings.Contains(v, ":") && !strings.Contains(v[strings.LastIndex(v, "/")+1:], ":") || strings.ContainsAny(v, " @") {
-			return badRequest("image must be a repository without tag, e.g. ghcr.io/acme/shipyard")
+			return badRequest("image must be a repository without tag, e.g. ghcr.io/acme/portdock")
 		}
 		_ = s.db.SetSetting(ctx, "update_image", strings.TrimSuffix(v, ":latest"))
 	}
@@ -181,12 +182,12 @@ func (s *Server) updateUpdateSettings(w http.ResponseWriter, r *http.Request) er
 // backupBeforeUpdate writes a consistent copy of the database and the secret key.
 func (s *Server) backupBeforeUpdate(tag string) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		dir := filepath.Join(s.cfg.DataDir, "backups", "shipyard")
+		dir := filepath.Join(s.cfg.DataDir, "backups", "portdock")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", err
 		}
 		stamp := time.Now().UTC().Format("20060102-150405")
-		dbPath := filepath.Join(dir, fmt.Sprintf("shipyard-%s-before-%s-%s.db", Version, tag, stamp))
+		dbPath := filepath.Join(dir, fmt.Sprintf("portdock-%s-before-%s-%s.db", Version, tag, stamp))
 		if _, err := s.db.ExecContext(ctx, "VACUUM INTO ?", dbPath); err != nil {
 			return "", fmt.Errorf("database backup: %w", err)
 		}
@@ -198,7 +199,7 @@ func (s *Server) backupBeforeUpdate(tag string) func(ctx context.Context) (strin
 			}
 		}
 		// Keep the ten most recent pre-update backups.
-		if entries, err := filepath.Glob(filepath.Join(dir, "shipyard-*-before-*.db")); err == nil && len(entries) > 10 {
+		if entries, err := filepath.Glob(filepath.Join(dir, "portdock-*-before-*.db")); err == nil && len(entries) > 10 {
 			for _, old := range entries[:len(entries)-10] {
 				_ = os.Remove(old)
 				_ = os.Remove(old + ".secret.key")
@@ -235,7 +236,7 @@ func (s *Server) startUpdate(ctx context.Context, tag string, force bool, by str
 		defer cancel()
 		if _, err := updater.Launch(bg, updater.NewDocker(), plan); err != nil {
 			slog.Warn("update failed", "err", err)
-			s.notify.Send(notify.Event{Name: "update.failed", Title: "Shipyard update to " + tag + " failed", Message: err.Error()})
+			s.notify.Send(notify.Event{Name: "update.failed", Title: "PortDock update to " + tag + " failed", Message: err.Error()})
 			c.mu.Lock()
 			c.running = false
 			c.mu.Unlock()
@@ -278,7 +279,7 @@ func (s *Server) UpdateWatch(ctx context.Context) {
 	if st := updater.LoadState(s.cfg.DataDir); st.Status == "success" && st.To == Version && s.db.Setting(ctx, "update_reported") != st.ID {
 		_ = s.db.SetSetting(ctx, "update_reported", st.ID)
 		s.db.LogActivity(ctx, 0, "update.success", st.From+" → "+st.To)
-		s.notify.Send(notify.Event{Name: "update.success", Title: "Shipyard updated to " + st.To, Success: true})
+		s.notify.Send(notify.Event{Name: "update.success", Title: "PortDock updated to " + st.To, Success: true})
 	}
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()

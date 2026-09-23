@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/config"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/github"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
 )
 
 type Engine struct {
@@ -51,7 +51,7 @@ func New(cfg config.Config, db *store.DB, box *secrets.Box, pool *executor.Pool,
 // Start launches the workers and re-queues deployments interrupted by a restart.
 func (e *Engine) Start(ctx context.Context) {
 	_, _ = e.db.ExecContext(ctx, "UPDATE deployments SET status = 'failed', finished_at = ?, logs = logs || ? WHERE status = 'running'",
-		store.Now(), "\n[shipyard] Deployment interrupted by a Shipyard restart.\n")
+		store.Now(), "\n[portdock] Deployment interrupted by a PortDock restart.\n")
 	queued, _ := store.Select[store.Deployment](ctx, e.db, "SELECT id, uuid, application_id, status FROM deployments WHERE status = 'queued' ORDER BY id")
 	for i := 0; i < e.cfg.MaxConcurrentBuilds; i++ {
 		go e.worker(ctx)

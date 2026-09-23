@@ -8,7 +8,7 @@ import (
 )
 
 func TestRenderStablePlaceholders(t *testing.T) {
-	out := Render("a: ${SHIPYARD_PASSWORD_DB}\nb: ${SHIPYARD_PASSWORD_DB}\nc: ${SHIPYARD_URL}\nd: ${SHIPYARD_FQDN}", "https://n8n.example.com")
+	out := Render("a: ${PORTDOCK_PASSWORD_DB}\nb: ${PORTDOCK_PASSWORD_DB}\nc: ${PORTDOCK_URL}\nd: ${PORTDOCK_FQDN}", "https://n8n.example.com")
 	lines := strings.Split(out, "\n")
 	if lines[0][3:] != lines[1][3:] {
 		t.Error("same placeholder must render the same value")
@@ -16,7 +16,7 @@ func TestRenderStablePlaceholders(t *testing.T) {
 	if lines[2] != "c: https://n8n.example.com" || lines[3] != "d: n8n.example.com" {
 		t.Errorf("unexpected render: %q", out)
 	}
-	if strings.Contains(out, "${SHIPYARD") {
+	if strings.Contains(out, "${PORTDOCK") {
 		t.Error("unrendered placeholder left")
 	}
 }
@@ -27,7 +27,7 @@ func TestServiceTemplatesAreValidYAML(t *testing.T) {
 			X struct {
 				Service string `yaml:"service"`
 				Port    int    `yaml:"port"`
-			} `yaml:"x-shipyard"`
+			} `yaml:"x-portdock"`
 			Services map[string]any `yaml:"services"`
 		}
 		if err := yaml.Unmarshal([]byte(Render(tpl.Compose, "x.example.com")), &spec); err != nil {
@@ -35,7 +35,7 @@ func TestServiceTemplatesAreValidYAML(t *testing.T) {
 			continue
 		}
 		if _, ok := spec.Services[spec.X.Service]; !ok || spec.X.Port == 0 {
-			t.Errorf("%s: x-shipyard must reference an existing service and port", slug)
+			t.Errorf("%s: x-portdock must reference an existing service and port", slug)
 		}
 	}
 }
@@ -82,5 +82,12 @@ func TestImageCatalog(t *testing.T) {
 				t.Errorf("%s: env without key", img.ID)
 			}
 		}
+	}
+}
+
+func TestLegacyPlaceholders(t *testing.T) {
+	out := Render("a: ${SHIPYARD_PASSWORD_DB}\nb: ${PORTDOCK_PASSWORD_DB}\nc: ${SHIPYARD_FQDN}", "https://x.example.com")
+	if strings.Contains(out, "${") || !strings.Contains(out, "c: x.example.com") {
+		t.Fatal(out)
 	}
 }

@@ -2,15 +2,15 @@ package api
 
 import (
 	"context"
-	"github.com/shipyard/shipyard/internal/auth"
+	"github.com/portdock/portdock/internal/auth"
 	"net/http"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // ---- SSH keys ----

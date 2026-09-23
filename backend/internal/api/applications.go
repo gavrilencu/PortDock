@@ -3,18 +3,18 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/shipyard/shipyard/internal/auth"
+	"github.com/portdock/portdock/internal/auth"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/registry"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/registry"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 	"regexp"
 )
 
@@ -575,7 +575,7 @@ func (s *Server) appLogs(w http.ResponseWriter, r *http.Request) error {
 		switch {
 		case name != "" && (c.Name == name || c.ID == name):
 			pick = &cs[i]
-		case name == "" && pick == nil && c.State == "running" && (c.Labels["shipyard.pr"] == "0" || c.Labels["shipyard.pr"] == ""):
+		case name == "" && pick == nil && c.State == "running" && (c.Labels["portdock.pr"] == "0" || c.Labels["portdock.pr"] == ""):
 			pick = &cs[i]
 		}
 	}

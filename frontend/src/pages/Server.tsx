@@ -67,7 +67,7 @@ export function ServerPage() {
             {s.name} <StatusBadge status={s.status} />
           </span>
         }
-        subtitle={s.is_local ? "The machine running Shipyard" : `${s.user}@${s.host}:${s.port}`}
+        subtitle={s.is_local ? "The machine running PortDock" : `${s.user}@${s.host}:${s.port}`}
         breadcrumbs={
           <>
             <Link to="/servers" className="hover:text-fg">Servers</Link> / <span className="text-fg">{s.name}</span>
@@ -106,7 +106,7 @@ export function ServerPage() {
       {tab === "networks" && <Networks s={s} />}
       {tab === "terminal" && (
         <div className="space-y-3">
-          {s.is_local && <p className="text-sm text-muted">For the local server this opens a shell inside the Shipyard container (the Docker CLI there controls the host daemon).</p>}
+          {s.is_local && <p className="text-sm text-muted">For the local server this opens a shell inside the PortDock container (the Docker CLI there controls the host daemon).</p>}
           <Terminal path={`/servers/${id}/terminal`} />
         </div>
       )}
@@ -210,7 +210,7 @@ function Overview({ s }: { s: Server }) {
         </Card>
       </div>
       <AdminOnly>
-        <Card title="Server setup" description="Installs Docker (if missing), prepares directories, the shipyard network and the proxy. Safe to re-run.">
+        <Card title="Server setup" description="Installs Docker (if missing), prepares directories, the portdock network and the proxy. Safe to re-run.">
           <div className="space-y-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <Switch checked={nixpacks} onChange={setNixpacks} label="Also install Nixpacks" description="Needed only for the Nixpacks build pack." />
@@ -238,7 +238,7 @@ function Containers({ s }: { s: Server }) {
   const [filter, setFilter] = useState<"all" | "managed">("all");
   const cs = useQuery({ queryKey: ["containers", "server", s.id], queryFn: () => api.get<Container[]>(`/servers/${s.id}/containers`), refetchInterval: 10_000, retry: false });
   const stats = useQuery({ queryKey: ["stats", s.id], queryFn: () => api.get<ContainerStat[]>(`/servers/${s.id}/stats`), refetchInterval: 15_000, retry: false });
-  const list = useMemo(() => (cs.data ?? []).filter((c) => filter === "all" || c.labels["shipyard.managed"] === "true"), [cs.data, filter]);
+  const list = useMemo(() => (cs.data ?? []).filter((c) => filter === "all" || c.labels["portdock.managed"] === "true"), [cs.data, filter]);
   if (cs.isLoading) return <Loading />;
   if (cs.error) return <ErrorBox error={cs.error} />;
   return (
@@ -352,7 +352,7 @@ function Images({ s }: { s: Server }) {
           {data!.map((i) => (
             <tr key={i.id + i.tag}>
               <td className="font-mono text-xs">
-                {i.repository} {i.repository.startsWith("shipyard/") && <Badge>managed</Badge>}
+                {i.repository} {i.repository.startsWith("portdock/") && <Badge>managed</Badge>}
               </td>
               <td className="font-mono text-xs text-muted">{i.tag}</td>
               <td className="tabular-nums text-xs">{i.size}</td>
@@ -428,7 +428,7 @@ function Networks({ s }: { s: Server }) {
           {data!.map((n) => (
             <tr key={n.id}>
               <td className="font-medium">
-                {n.name} {n.name === "shipyard" && <Badge>proxy</Badge>}
+                {n.name} {n.name === "portdock" && <Badge>proxy</Badge>}
               </td>
               <td className="text-xs text-muted">{n.driver}</td>
               <td className="text-xs text-muted">{n.scope}</td>
@@ -518,7 +518,7 @@ function ServerSettings({ s }: { s: Server }) {
           </div>
         </div>
       </Card>
-      <Card title="Maintenance" description="Reclaim disk space. Shipyard also prunes build cache older than 72h daily.">
+      <Card title="Maintenance" description="Reclaim disk space. PortDock also prunes build cache older than 72h daily.">
         <div className="flex flex-wrap gap-2 p-5">
           <PruneButton serverId={s.id} scope="containers" label="Remove stopped containers" />
           <PruneButton serverId={s.id} scope="builder" label="Prune build cache" />
@@ -533,7 +533,7 @@ function ServerSettings({ s }: { s: Server }) {
       {!s.is_local && (
         <Card title="Danger zone" className="border-danger/30">
           <div className="flex items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted">Remove the server from Shipyard. Containers on the server are not touched.</p>
+            <p className="text-sm text-muted">Remove the server from PortDock. Containers on the server are not touched.</p>
             <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: `Remove ${s.name}?`, danger: true, confirmText: "Remove", typeToConfirm: s.name })) && del.mutate()}>
               Remove server
             </Button>

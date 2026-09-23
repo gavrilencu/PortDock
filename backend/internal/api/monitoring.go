@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/monitor"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/monitor"
+	"github.com/portdock/portdock/internal/store"
 )
 
 var scopeTables = map[string]string{"server": "servers", "application": "applications", "database": "databases", "service": "services"}

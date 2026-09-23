@@ -184,7 +184,7 @@ function Palette({ onClose, setTheme, onLogout }: { onClose: () => void; setThem
             </Kbd>{" "}
             open
           </span>
-          <span className="ml-auto">Shipyard command menu</span>
+          <span className="ml-auto">PortDock command menu</span>
         </div>
       </div>
     </div>,

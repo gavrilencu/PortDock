@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Project-level access control.
@@ -262,7 +262,7 @@ func filterBy[T any](items []T, keep func(T) bool) []T {
 }
 
 // authorizeContainer lets non-admins act only on containers of resources they
-// may access (resolved from the shipyard.* labels of the container).
+// may access (resolved from the portdock.* labels of the container).
 func (s *Server) authorizeContainer(r *http.Request, x executor.Executor, cid string, p perm) error {
 	if auth.UserFrom(r.Context()).IsAdmin() {
 		return nil
@@ -279,7 +279,7 @@ func (s *Server) authorizeContainer(r *http.Request, x executor.Executor, cid st
 	if json.Unmarshal(raw, &info) != nil || len(info) == 0 {
 		return errNoAccess
 	}
-	labels := info[0].Config.Labels
+	labels := docker.NormalizeLabels(info[0].Config.Labels)
 	kind, uuid := labels[docker.LabelKind], labels[docker.LabelResource]
 	table := map[string]string{"application": "applications", "database": "databases", "service": "services"}[kind]
 	if table == "" || uuid == "" {

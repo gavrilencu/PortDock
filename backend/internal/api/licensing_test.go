@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/license"
+	"github.com/portdock/portdock/internal/license"
 )
 
 func TestLicensingGates(t *testing.T) {

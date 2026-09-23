@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/secrets"
+	"github.com/portdock/portdock/internal/secrets"
 )
 
 // TOTP (RFC 6238): 30-second steps, 6 digits, HMAC-SHA1 — the parameters every

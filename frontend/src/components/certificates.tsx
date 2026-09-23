@@ -57,7 +57,7 @@ function Inventory() {
   return (
     <Card
       title="Certificates"
-      description={`Issued and renewed automatically. Shipyard checks every 6 hours and forces a new certificate when fewer than ${d.renew_days} days remain.`}
+      description={`Issued and renewed automatically. PortDock checks every 6 hours and forces a new certificate when fewer than ${d.renew_days} days remain.`}
       actions={
         <Button size="sm" icon={<RefreshCw />} loading={check.isPending} onClick={() => check.mutate()}>
           Check now
@@ -255,7 +255,7 @@ function ACMESettings() {
         <Field label="Contact email" hint="Receives expiry warnings from the certificate authority.">
           <Input value={f.acme_email ?? ""} onChange={(e) => setF({ ...f, acme_email: e.target.value })} placeholder="ops@example.com" />
         </Field>
-        <Field label="Renew when fewer than (days)" hint="Traefik renews at 30 days; below this threshold Shipyard forces a renewal and alerts.">
+        <Field label="Renew when fewer than (days)" hint="Traefik renews at 30 days; below this threshold PortDock forces a renewal and alerts.">
           <Input type="number" min={3} max={60} value={f.renew_days ?? 14} onChange={(e) => setF({ ...f, renew_days: Number(e.target.value) })} />
         </Field>
         <Field label="Certificate authority">

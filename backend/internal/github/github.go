@@ -1,4 +1,4 @@
-// Package github integrates Shipyard with GitHub Apps (github.com and GitHub
+// Package github integrates PortDock with GitHub Apps (github.com and GitHub
 // Enterprise Server): app creation via the manifest flow, installation tokens,
 // repository/branch discovery, and commit statuses.
 package github
@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 )
 
 const (
@@ -129,7 +129,7 @@ func (c *Client) do(ctx context.Context, method, rawURL, auth string, body, out 
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "Shipyard")
+	req.Header.Set("User-Agent", "PortDock")
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
@@ -497,7 +497,7 @@ func (c *Client) SetStatus(ctx context.Context, app store.GitHubApp, installatio
 		description = description[:137] + "..."
 	}
 	_, err := c.asInstallation(ctx, app, installationID, "POST", fmt.Sprintf("/repos/%s/statuses/%s", fullName, sha), map[string]string{
-		"state": state, "description": description, "target_url": targetURL, "context": "shipyard/deploy",
+		"state": state, "description": description, "target_url": targetURL, "context": "portdock/deploy",
 	}, nil)
 	return err
 }

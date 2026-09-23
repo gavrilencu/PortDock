@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/ldapauth"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/ldapauth"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/store"
 )
 
 func (s *Server) ldapConfig(d store.LDAPDirectory) ldapauth.Config {
@@ -47,16 +47,16 @@ func (s *Server) ldapLogin(ctx context.Context, username, password string) (stor
 	return store.User{}, store.LDAPDirectory{}, errNoDirectoryUser
 }
 
-// ldapResolveUser maps a directory identity to a Shipyard account (JIT provisioning, role sync).
+// ldapResolveUser maps a directory identity to a PortDock account (JIT provisioning, role sync).
 func (s *Server) ldapResolveUser(ctx context.Context, d store.LDAPDirectory, id ldapauth.Identity) (store.User, error) {
 	if req := splitCSV(d.RequiredGroups); len(req) > 0 && !ldapauth.GroupMatches(id.Groups, req) {
-		return store.User{}, fmt.Errorf("your directory account is not in a group allowed to use Shipyard")
+		return store.User{}, fmt.Errorf("your directory account is not in a group allowed to use PortDock")
 	}
 	u, err := store.Get[store.User](ctx, s.db, "SELECT * FROM users WHERE email = ?", id.Email)
 	switch {
 	case err == nil:
 	case !d.AutoRegister:
-		return store.User{}, fmt.Errorf("there is no Shipyard account for %s — ask an administrator to invite you", id.Email)
+		return store.User{}, fmt.Errorf("there is no PortDock account for %s — ask an administrator to invite you", id.Email)
 	default:
 		if err := s.checkUserLimit(ctx); err != nil {
 			return store.User{}, fmt.Errorf("cannot create an account for %s: the user limit of the license is reached", id.Email)

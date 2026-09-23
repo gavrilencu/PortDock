@@ -1,4 +1,4 @@
-// Command shipyard runs the Shipyard self-hosted PaaS: API, web UI, deployment
+// Command portdock runs the PortDock self-hosted PaaS: API, web UI, deployment
 // workers, status monitor and backup scheduler in a single binary.
 package main
 
@@ -16,35 +16,32 @@ import (
 	"time"
 	_ "time/tzdata" // timezones on minimal images and Windows
 
-	"github.com/shipyard/shipyard/internal/api"
-	"github.com/shipyard/shipyard/internal/audit"
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/config"
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/github"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/monitor"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/scheduler"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
-	"github.com/shipyard/shipyard/internal/updater"
-	"github.com/shipyard/shipyard/web"
+	"github.com/portdock/portdock/internal/api"
+	"github.com/portdock/portdock/internal/audit"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/monitor"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/scheduler"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
+	"github.com/portdock/portdock/internal/updater"
+	"github.com/portdock/portdock/web"
 )
 
 func main() {
 	resetPassword := flag.String("reset-password", "", "reset the password of the user with this email and exit")
 	disable2FA := flag.String("disable-2fa", "", "turn off two-factor authentication for the user with this email and exit")
 	installLicense := flag.String("install-license", "", "install a license key and exit")
-	selfUpdate := flag.String("self-update", "", "internal: replace the given Shipyard container with this image (run by the updater container)")
+	selfUpdate := flag.String("self-update", "", "internal: replace the given PortDock container with this image (run by the updater container)")
 	flag.Parse()
 	if *selfUpdate != "" {
-		dataDir := os.Getenv("SHIPYARD_DATA_DIR")
-		if dataDir == "" {
-			dataDir = "/data/shipyard"
-		}
+		dataDir := config.Load().DataDir
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 		if err := updater.Swap(ctx, updater.NewDocker(), *selfUpdate, dataDir); err != nil {
@@ -55,7 +52,7 @@ func main() {
 	}
 
 	level := slog.LevelInfo
-	if os.Getenv("SHIPYARD_DEBUG") == "1" {
+	if config.Env("DEBUG", "") == "1" {
 		level = slog.LevelDebug
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
@@ -71,11 +68,15 @@ func run(resetPassword, disable2FA, installLicense string) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
 	}
+	if err := cfg.MigrateLegacyFiles(); err != nil {
+		return fmt.Errorf("migrate database file: %w", err)
+	}
 	db, err := store.Open(cfg.DBPath())
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+	migrateInstallation(db, &cfg)
 
 	if resetPassword != "" {
 		return doResetPassword(db, resetPassword)
@@ -154,11 +155,11 @@ func run(resetPassword, disable2FA, installLicense string) error {
 		defer cancel()
 		_ = httpSrv.Shutdown(shutdown)
 	}()
-	slog.Info("Shipyard started", "addr", cfg.Addr, "data", cfg.DataDir, "url", cfg.PublicURL, "version", api.Version)
+	slog.Info("PortDock started", "addr", cfg.Addr, "data", cfg.DataDir, "url", cfg.PublicURL, "version", api.Version)
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	slog.Info("Shipyard stopped")
+	slog.Info("PortDock stopped")
 	return nil
 }
 
@@ -179,4 +180,26 @@ func doResetPassword(db *store.DB, email string) error {
 	_, _ = db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", u.ID)
 	fmt.Printf("New password for %s: %s\n", u.Email, pass)
 	return nil
+}
+
+// migrateInstallation keeps installations created before the rename working:
+// the proxy network name is kept, and stored paths follow a moved data directory.
+func migrateInstallation(db *store.DB, cfg *config.Config) {
+	ctx := context.Background()
+	if !cfg.NetworkFromEnv {
+		net := db.Setting(ctx, "proxy_network")
+		if net == "" {
+			net = cfg.ProxyNetwork
+			if _, err := executor.Output(ctx, executor.Local{}, "docker network inspect "+config.LegacyNetwork+" >/dev/null 2>&1"); err == nil {
+				net = config.LegacyNetwork // existing workloads are attached to it
+			}
+			_ = db.SetSetting(ctx, "proxy_network", net)
+		}
+		cfg.ProxyNetwork = net
+	}
+	if prev := db.Setting(ctx, "data_dir"); prev != "" && prev != cfg.DataDir {
+		_, _ = db.ExecContext(ctx, "UPDATE backup_runs SET file = replace(file, ?, ?) WHERE file LIKE ?", prev+"/", cfg.DataDir+"/", prev+"/%")
+		db.LogActivity(ctx, 0, "system.data_dir_moved", prev+" → "+cfg.DataDir)
+	}
+	_ = db.SetSetting(ctx, "data_dir", cfg.DataDir)
 }

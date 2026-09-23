@@ -32,7 +32,7 @@ export function ProjectsPage() {
   const [params, setParams] = useSearchParams();
   const { data, isLoading, error } = useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/projects") });
   const [q, setQ] = useState("");
-  const [mode, setMode] = useViewMode("shipyard.projects.view");
+  const [mode, setMode] = useViewMode("portdock.projects.view");
   const open = params.get("new") === "1";
   const setOpen = (v: boolean) => setParams(v ? { new: "1" } : {});
   const [form, setForm] = useState({ name: "", description: "" });

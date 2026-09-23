@@ -1,5 +1,5 @@
-// Package updater keeps Shipyard up to date: it discovers releases on GitHub and
-// replaces the running Shipyard container with a new image, rolling back
+// Package updater keeps PortDock up to date: it discovers releases on GitHub and
+// replaces the running PortDock container with a new image, rolling back
 // automatically when the new version doesn't become healthy.
 package updater
 
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Release is a published Shipyard version.
+// Release is a published PortDock version.
 type Release struct {
 	Tag         string `json:"tag"`
 	Name        string `json:"name"`
@@ -28,9 +28,9 @@ type Release struct {
 
 var httpClient = &http.Client{Timeout: 20 * time.Second}
 
-// apiBase is overridable for tests and GitHub Enterprise (SHIPYARD_UPDATE_API).
+// apiBase is overridable for tests and GitHub Enterprise (PORTDOCK_UPDATE_API).
 func apiBase() string {
-	if v := strings.TrimRight(os.Getenv("SHIPYARD_UPDATE_API"), "/"); v != "" {
+	if v := strings.TrimRight(firstEnv("PORTDOCK_UPDATE_API", "SHIPYARD_UPDATE_API"), "/"); v != "" {
 		return v
 	}
 	return "https://api.github.com"
@@ -51,7 +51,7 @@ func LatestRelease(ctx context.Context, repo, token string, prerelease bool) (Re
 		return Release{}, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "Shipyard-Updater")
+	req.Header.Set("User-Agent", "PortDock-Updater")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -182,4 +182,13 @@ func comparePre(a, b string) int {
 		return 1
 	}
 	return 0
+}
+
+func firstEnv(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
 }

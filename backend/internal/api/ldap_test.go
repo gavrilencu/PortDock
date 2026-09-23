@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shipyard/shipyard/internal/ldapauth"
+	"github.com/portdock/portdock/internal/ldapauth"
 )
 
-// Runs against a real directory: SHIPYARD_LDAP_TEST=127.0.0.1 with the OpenLDAP
-// fixture (osixia/openldap on 1389/1636, users alice/bob/eve, groups shipyard-users, platform-admins).
+// Runs against a real directory: PORTDOCK_LDAP_TEST=127.0.0.1 with the OpenLDAP
+// fixture (osixia/openldap on 1389/1636, users alice/bob/eve, groups portdock-users, platform-admins).
 func ldapHost(t *testing.T) string {
-	h := os.Getenv("SHIPYARD_LDAP_TEST")
+	h := os.Getenv("PORTDOCK_LDAP_TEST")
 	if h == "" {
-		t.Skip("SHIPYARD_LDAP_TEST not set")
+		t.Skip("PORTDOCK_LDAP_TEST not set")
 	}
 	return h
 }
@@ -34,7 +34,7 @@ func TestLDAPClient(t *testing.T) {
 	if err != nil || id.Email != "alice@example.org" || id.Name != "Alice Admin" || len(id.Groups) != 2 {
 		t.Fatalf("alice: %+v %v", id, err)
 	}
-	if !ldapauth.GroupMatches(id.Groups, []string{"platform-admins"}) || !ldapauth.GroupMatches(id.Groups, []string{"cn=shipyard-users,ou=groups,dc=example,dc=org"}) {
+	if !ldapauth.GroupMatches(id.Groups, []string{"platform-admins"}) || !ldapauth.GroupMatches(id.Groups, []string{"cn=portdock-users,ou=groups,dc=example,dc=org"}) {
 		t.Fatal("group matching by CN and DN")
 	}
 	if _, err := ldapauth.Authenticate(ctx, cfg, "alice@example.org", "alice-pw"); err != nil {
@@ -93,7 +93,7 @@ func TestLDAPLoginFlow(t *testing.T) {
 	dir := map[string]any{"name": "Example LDAP", "kind": "openldap", "host": host, "port": 1389, "security": "none",
 		"bind_dn": "cn=admin,dc=example,dc=org", "bind_password": "adminpw", "base_dn": "dc=example,dc=org",
 		"user_filter": "(&(objectClass=inetOrgPerson)(|(uid={username})(mail={username})))", "name_attr": "cn",
-		"required_groups": "shipyard-users", "admin_groups": "platform-admins", "auto_register": true}
+		"required_groups": "portdock-users", "admin_groups": "platform-admins", "auto_register": true}
 	res := e.expect(owner, "POST", "/api/ldap/test", mergeMap(dir, map[string]any{"username": "alice", "password": "alice-pw"}), 200)
 	if u := res["user"].(map[string]any); u["role"] != "admin" || u["allowed"] != true {
 		t.Fatalf("test user: %v", res)

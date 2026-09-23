@@ -58,7 +58,7 @@ func TestAppJWTVerifies(t *testing.T) {
 }
 
 func TestManifestAndURLs(t *testing.T) {
-	m := Manifest("Shipyard", "https://deploy.example.com/")
+	m := Manifest("PortDock", "https://deploy.example.com/")
 	if m["redirect_url"] != "https://deploy.example.com/api/github/callback" {
 		t.Errorf("redirect_url = %v", m["redirect_url"])
 	}
@@ -66,7 +66,7 @@ func TestManifestAndURLs(t *testing.T) {
 	if hook["active"] != true || hook["url"] != "https://deploy.example.com/api/webhooks/github-app" {
 		t.Errorf("hook = %v", hook)
 	}
-	for _, private := range []string{"http://localhost:8000", "http://192.168.1.10:8000", "http://shipyard.local", "http://myhost:8000"} {
+	for _, private := range []string{"http://localhost:8000", "http://192.168.1.10:8000", "http://portdock.local", "http://myhost:8000"} {
 		if _, ok := Manifest("x", private)["hook_attributes"]; ok {
 			t.Errorf("%s: GitHub rejects unreachable webhook URLs; the hook must be omitted", private)
 		}

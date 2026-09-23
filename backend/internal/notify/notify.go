@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 )
 
 type Event struct {
@@ -86,7 +86,7 @@ func (n *Notifier) SendTo(ctx context.Context, c store.NotificationChannel, ev E
 			fields = append(fields, map[string]any{"name": k, "value": v, "inline": true})
 		}
 		return n.postJSON(ctx, cfg["webhook_url"], map[string]any{
-			"username": "Shipyard",
+			"username": "PortDock",
 			"embeds": []map[string]any{{
 				"title": ev.Title, "description": ev.Message, "url": ev.URL, "color": color, "fields": fields,
 				"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -103,7 +103,8 @@ func (n *Notifier) SendTo(ctx context.Context, c store.NotificationChannel, ev E
 		if s := cfg["secret"]; s != "" {
 			m := hmac.New(sha256.New, []byte(s))
 			m.Write(body)
-			headers["X-Shipyard-Signature"] = "sha256=" + hex.EncodeToString(m.Sum(nil))
+			headers["X-PortDock-Signature"] = "sha256=" + hex.EncodeToString(m.Sum(nil))
+			headers["X-Shipyard-Signature"] = headers["X-PortDock-Signature"] // pre-rename receivers
 		}
 		return n.post(ctx, cfg["url"], body, headers)
 	case "email":
@@ -157,7 +158,7 @@ func sendMail(cfg map[string]string, subject, body string) error {
 	if from == "" {
 		from = cfg["username"]
 	}
-	msg := "From: " + from + "\r\nTo: " + strings.Join(to, ",") + "\r\nSubject: [Shipyard] " + subject +
+	msg := "From: " + from + "\r\nTo: " + strings.Join(to, ",") + "\r\nSubject: [PortDock] " + subject +
 		"\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" + body
 	return smtp.SendMail(host+":"+port, auth, from, to, []byte(msg))
 }

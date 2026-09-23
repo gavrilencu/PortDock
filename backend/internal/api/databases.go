@@ -7,12 +7,12 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/scheduler"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/templates"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/scheduler"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/templates"
 )
 
 func (s *Server) listEngines(w http.ResponseWriter, r *http.Request) error {
@@ -103,7 +103,7 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 	if eng.HasUser && db.Username == "" {
 		db.Username = map[string]string{"postgres": "postgres", "mongodb": "root", "clickhouse": "default"}[eng.ID]
 		if db.Username == "" {
-			db.Username = "shipyard"
+			db.Username = "portdock"
 		}
 	}
 	if eng.HasDatabase && db.DatabaseName == "" {

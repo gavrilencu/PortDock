@@ -1,5 +1,5 @@
 // Package executor runs shell commands on managed servers, either locally or
-// over SSH. Every Docker/Git operation in Shipyard goes through an Executor,
+// over SSH. Every Docker/Git operation in PortDock goes through an Executor,
 // which makes local and remote servers behave identically.
 package executor
 

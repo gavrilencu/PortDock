@@ -608,7 +608,7 @@ function ContainerPicker({ containers, value, onChange }: { containers: Containe
       {containers.map((c) => (
         <option key={c.id} value={c.name}>
           {c.server_name ? `${c.server_name} · ` : ""}
-          {c.name} ({c.state}){c.labels["shipyard.pr"] && c.labels["shipyard.pr"] !== "0" ? ` · PR #${c.labels["shipyard.pr"]}` : ""}
+          {c.name} ({c.state}){c.labels["portdock.pr"] && c.labels["portdock.pr"] !== "0" ? ` · PR #${c.labels["portdock.pr"]}` : ""}
         </option>
       ))}
     </Select>
@@ -761,8 +761,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # - run: npm ci && npm test
-      - name: Trigger Shipyard deployment
-        run: curl -fsS -X POST "\${{ secrets.SHIPYARD_DEPLOY_HOOK }}&commit=\${{ github.sha }}"`;
+      - name: Trigger PortDock deployment
+        run: curl -fsS -X POST "\${{ secrets.PORTDOCK_DEPLOY_HOOK }}&commit=\${{ github.sha }}"`;
 
   return (
     <div className="space-y-6">
@@ -794,7 +794,7 @@ jobs:
             </div>
             <div className="rounded-lg border border-border bg-surface-2/40 p-3">
               <div className="font-medium text-fg">Commit status</div>
-              <div className="mt-0.5 text-xs">Shows as “shipyard/deploy” on commits and pull requests.</div>
+              <div className="mt-0.5 text-xs">Shows as “portdock/deploy” on commits and pull requests.</div>
             </div>
           </div>
         </Card>

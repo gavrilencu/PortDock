@@ -18,15 +18,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/config"
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/executor"
-	gh "github.com/shipyard/shipyard/internal/github"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/executor"
+	gh "github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
 )
 
 type testEnv struct {
@@ -240,7 +240,7 @@ func newIdP(t *testing.T) *idp {
 		http.Redirect(w, r, q.Get("redirect_uri")+"?code=abc&state="+url.QueryEscape(q.Get("state")), http.StatusFound)
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		claims := map[string]any{"iss": p.URL, "aud": "shipyard", "exp": time.Now().Add(time.Hour).Unix(), "nonce": p.nonce}
+		claims := map[string]any{"iss": p.URL, "aud": "portdock", "exp": time.Now().Add(time.Hour).Unix(), "nonce": p.nonce}
 		for k, v := range p.claims {
 			claims[k] = v
 		}
@@ -282,7 +282,7 @@ func TestSSOLogin(t *testing.T) {
 	e.do(owner, "POST", "/api/auth/login", map[string]string{"email": "owner@corp.com", "password": "correct-horse"})
 	p := newIdP(t)
 
-	code, prov := e.do(owner, "POST", "/api/sso/providers", map[string]any{"name": "Corp SSO", "kind": "keycloak", "issuer": p.URL, "client_id": "shipyard",
+	code, prov := e.do(owner, "POST", "/api/sso/providers", map[string]any{"name": "Corp SSO", "kind": "keycloak", "issuer": p.URL, "client_id": "portdock",
 		"client_secret": "s3cret", "auto_register": true, "allowed_domains": "corp.com", "admin_groups": "platform-admins"})
 	if code != 200 || prov["slug"] != "corp-sso" || prov["client_secret_set"] != true {
 		t.Fatalf("create provider: %d %v", code, prov)
