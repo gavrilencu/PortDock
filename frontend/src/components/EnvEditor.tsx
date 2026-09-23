@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { EnvVar } from "../lib/types";
 import { Badge, Button, Card, Empty, Input, Loading, Switch, Tabs, Textarea, useConfirm } from "./ui";
 import { cn } from "../lib/utils";
+import { t } from "../lib/i18n";
 
 function toDotEnv(vars: EnvVar[]) {
   return vars
@@ -38,7 +39,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
     onSuccess: () => {
       setDraft({ key: "", value: "", is_build: false, is_secret: false });
       refresh();
-      toast.success("Variable added");
+      toast.success(t("Variable added"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -57,7 +58,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
     onSuccess: () => {
       refresh();
       setDev(false);
-      toast.success("Environment saved");
+      toast.success(t("Environment saved"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -72,22 +73,22 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
           value={scope}
           onChange={setScope}
           tabs={[
-            { id: "production", label: "Production" },
-            { id: "preview", label: "Preview deployments" },
+            { id: "production", label: t("Production") },
+            { id: "preview", label: t("Preview deployments") },
           ]}
         />
       )}
       <Card
-        title={isPreview ? "Preview variables" : "Environment variables"}
-        description={isPreview ? "Override production values for pull request previews." : "Encrypted at rest. Changes apply on the next deployment."}
+        title={isPreview ? t("Preview variables") : t("Environment variables")}
+        description={isPreview ? t("Override production values for pull request previews.") : t("Encrypted at rest. Changes apply on the next deployment.")}
         actions={
           dev ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setDev(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button size="sm" variant="primary" icon={<Save className="size-3.5" />} loading={saveBulk.isPending} onClick={() => saveBulk.mutate()}>
-                Save all
+                {t("Save all")}
               </Button>
             </>
           ) : (
@@ -99,7 +100,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                 setDev(true);
               }}
             >
-              Developer view
+              {t("Developer view")}
             </Button>
           )
         }
@@ -107,13 +108,13 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
         {dev ? (
           <div className="p-5">
             <Textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={16} placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"} />
-            <p className="mt-2 text-xs text-muted">Paste a .env file. Saving replaces all {isPreview ? "preview" : "production"} variables; build/secret flags are kept for existing keys.</p>
+            <p className="mt-2 text-xs text-muted">{isPreview ? t("Paste a .env file. Saving replaces all preview variables; build/secret flags are kept for existing keys.") : t("Paste a .env file. Saving replaces all production variables; build/secret flags are kept for existing keys.")}</p>
           </div>
         ) : (
           <div className="divide-y divide-border">
             {vars.length === 0 && (
               <div className="p-5">
-                <Empty icon={<KeyRound />} title="No variables yet" description="Add a variable below or paste a .env file in developer view." />
+                <Empty icon={<KeyRound />} title={t("No variables yet")} description={t("Add a variable below or paste a .env file in developer view.")} />
               </div>
             )}
             {vars.map((v) => {
@@ -131,8 +132,8 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                     />
                   </div>
                   <div className="flex items-center gap-1">
-                    {v.is_build && <Badge tone="info"><Hammer className="size-3" />build</Badge>}
-                    {v.is_secret && <Badge tone="warning"><Lock className="size-3" />secret</Badge>}
+                    {v.is_build && <Badge tone="info"><Hammer className="size-3" />{t("build")}</Badge>}
+                    {v.is_secret && <Badge tone="warning"><Lock className="size-3" />{t("secret")}</Badge>}
                     {edited !== undefined && edited !== v.value && (
                       <Button
                         size="sm"
@@ -144,7 +145,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                           )
                         }
                       >
-                        Save
+                        {t("Save")}
                       </Button>
                     )}
                     {v.is_secret && (
@@ -153,18 +154,18 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                       </Button>
                     )}
                     {supportsBuild && (
-                      <Button size="icon" variant="ghost" title="Toggle build-time" onClick={() => update.mutate({ id: v.id, body: { is_build: !v.is_build } })}>
+                      <Button size="icon" variant="ghost" title={t("Toggle build-time")} onClick={() => update.mutate({ id: v.id, body: { is_build: !v.is_build } })}>
                         <Hammer className={cn("size-4", v.is_build && "text-info")} />
                       </Button>
                     )}
-                    <Button size="icon" variant="ghost" title="Toggle secret" onClick={() => update.mutate({ id: v.id, body: { is_secret: !v.is_secret } })}>
+                    <Button size="icon" variant="ghost" title={t("Toggle secret")} onClick={() => update.mutate({ id: v.id, body: { is_secret: !v.is_secret } })}>
                       <Lock className={cn("size-4", v.is_secret && "text-warning")} />
                     </Button>
                     <Button
                       size="icon"
                       variant="ghost"
                       onClick={async () => {
-                        if (await confirm({ title: `Delete ${v.key}?`, danger: true, confirmText: "Delete" })) remove.mutate(v.id);
+                        if (await confirm({ title: t("Delete {key}?", { key: v.key }), danger: true, confirmText: t("Delete") })) remove.mutate(v.id);
                       }}
                     >
                       <Trash2 className="size-4 text-danger" />
@@ -181,11 +182,11 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
               }}
             >
               <Input className="w-56 font-mono text-[13px]" placeholder="KEY" value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} />
-              <Input className="min-w-48 flex-1 font-mono text-[13px]" placeholder="value" value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
-              {supportsBuild && <Switch checked={draft.is_build} onChange={(is_build) => setDraft({ ...draft, is_build })} label="Build" />}
-              <Switch checked={draft.is_secret} onChange={(is_secret) => setDraft({ ...draft, is_secret })} label="Secret" />
+              <Input className="min-w-48 flex-1 font-mono text-[13px]" placeholder={t("value")} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
+              {supportsBuild && <Switch checked={draft.is_build} onChange={(is_build) => setDraft({ ...draft, is_build })} label={t("Build")} />}
+              <Switch checked={draft.is_secret} onChange={(is_secret) => setDraft({ ...draft, is_secret })} label={t("Secret")} />
               <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={add.isPending} disabled={!draft.key}>
-                Add
+                {t("Add")}
               </Button>
             </form>
           </div>

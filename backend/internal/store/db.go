@@ -90,6 +90,7 @@ var migrations = []string{
 	`ALTER TABLE app_domains ADD COLUMN cert_expires_at TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE app_domains ADD COLUMN cert_checked_at TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE app_domains ADD COLUMN cert_error TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

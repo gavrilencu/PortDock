@@ -101,6 +101,9 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]bool{"ok": true})
 }
 
+// supportedLocales are the interface languages; "" means the default (English).
+var supportedLocales = map[string]bool{"": true, "en": true, "ro": true, "ru": true}
+
 func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, toUserOut(auth.UserFrom(r.Context())))
 }
@@ -112,9 +115,16 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) error {
 		Email           *string `json:"email"`
 		CurrentPassword string  `json:"current_password"`
 		NewPassword     string  `json:"new_password"`
+		Locale          *string `json:"locale"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
+	}
+	if in.Locale != nil {
+		if !supportedLocales[*in.Locale] {
+			return badRequest("unsupported language")
+		}
+		u.Locale = *in.Locale
 	}
 	if in.Name != nil {
 		u.Name = strings.TrimSpace(*in.Name)

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Registry, RegistryKind } from "../lib/types";
 import { UpgradeNotice, useLicense } from "./access";
+import { t } from "../lib/i18n";
 import { Button, Card, Empty, Field, Input, Loading, Modal, PasswordInput, Table, useConfirm } from "./ui";
 
 const kindColors: Record<string, string> = {
@@ -47,7 +48,7 @@ function RegistryModal({ initial, kinds, onClose }: { initial: Form | null; kind
     mutationFn: () => api.post("/registries/test", f),
     onSuccess: () => {
       setTested(true);
-      toast.success("Credentials are valid");
+      toast.success(t("Credentials are valid"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -55,7 +56,7 @@ function RegistryModal({ initial, kinds, onClose }: { initial: Form | null; kind
     mutationFn: () => (editing ? api.patch(`/registries/${f.id}`, f) : api.post("/registries", f)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["registries"] });
-      toast.success(editing ? "Registry updated" : "Registry added");
+      toast.success(editing ? t("Registry updated") : t("Registry added"));
       onClose();
     },
     onError: (e) => toast.error(e.message),
@@ -66,16 +67,16 @@ function RegistryModal({ initial, kinds, onClose }: { initial: Form | null; kind
       open={!!initial}
       onClose={onClose}
       size="lg"
-      title={editing ? `Edit ${f.name}` : kind ? `Add ${kind.name}` : "Add container registry"}
-      description={kind ? kind.hint : "Built images are pushed here and every server pulls from it — required for fast multi-server deployments."}
+      title={editing ? t("Edit {name}", { name: f.name ?? "" }) : kind ? t("Add {name}", { name: kind.name }) : t("Add container registry")}
+      description={kind ? kind.hint : t("Built images are pushed here and every server pulls from it — required for fast multi-server deployments.")}
       footer={
         kind && (
           <>
             <Button icon={tested ? <CircleCheck className="text-success" /> : <PlugZap />} loading={test.isPending} onClick={() => test.mutate()}>
-              Test connection
+              {t("Test connection")}
             </Button>
             <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-              {editing ? "Save changes" : "Add registry"}
+              {editing ? t("Save changes") : t("Add registry")}
             </Button>
           </>
         )
@@ -88,30 +89,30 @@ function RegistryModal({ initial, kinds, onClose }: { initial: Form | null; kind
               <RegistryMark kind={k.kind} />
               <div className="min-w-0">
                 <div className="text-[13px] font-medium">{k.name}</div>
-                <div className="truncate font-mono text-2xs text-muted">{k.host || "custom host"}</div>
+                <div className="truncate font-mono text-2xs text-muted">{k.host || t("custom host")}</div>
               </div>
             </button>
           ))}
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Registry host" hint={kind.kind === "ecr" ? "<account>.dkr.ecr.<region>.amazonaws.com" : "Without https://"}>
+          <Field label={t("Registry host")} hint={kind.kind === "ecr" ? "<account>.dkr.ecr.<region>.amazonaws.com" : t("Without https://")}>
             <Input value={f.host ?? ""} onChange={(e) => upd({ host: e.target.value })} disabled={!!kind.host && kind.kind !== "generic"} className="font-mono text-xs" placeholder="registry.example.com" />
           </Field>
-          <Field label="Namespace" hint="Prefix for image names: user, organization, project or group/project.">
-            <Input value={f.namespace ?? ""} onChange={(e) => upd({ namespace: e.target.value })} className="font-mono text-xs" placeholder={kind.kind === "ecr" ? "optional" : "acme"} />
+          <Field label={t("Namespace")} hint={t("Prefix for image names: user, organization, project or group/project.")}>
+            <Input value={f.namespace ?? ""} onChange={(e) => upd({ namespace: e.target.value })} className="font-mono text-xs" placeholder={kind.kind === "ecr" ? t("optional") : "acme"} />
           </Field>
           <Field label={kind.username_label}>
             <Input value={f.username ?? ""} onChange={(e) => upd({ username: e.target.value })} autoComplete="off" />
           </Field>
-          <Field label={kind.password_label} hint={editing && f.password_set ? "Leave empty to keep the stored secret." : "Stored encrypted; passed to docker login over stdin."}>
+          <Field label={kind.password_label} hint={editing && f.password_set ? t("Leave empty to keep the stored secret.") : t("Stored encrypted; passed to docker login over stdin.")}>
             <PasswordInput value={f.password ?? ""} onChange={(e) => upd({ password: e.target.value })} placeholder={editing && f.password_set ? "••••••••" : ""} autoComplete="new-password" />
           </Field>
-          <Field label="Display name" className="md:col-span-2">
+          <Field label={t("Display name")} className="md:col-span-2">
             <Input value={f.name ?? ""} onChange={(e) => upd({ name: e.target.value })} placeholder={kind.name} />
           </Field>
           <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted md:col-span-2">
-            Images will be pushed as{" "}
+            {t("Images will be pushed as")}{" "}
             <code className="font-mono text-fg">
               {(f.host || "host") + "/" + [f.namespace || (["dockerhub", "ghcr", "quay"].includes(kind.kind) ? (f.username || "").toLowerCase() : ""), "<app-name>"].filter(Boolean).join("/")}:&lt;commit&gt;
             </code>
@@ -132,32 +133,32 @@ export function RegistriesSettings() {
     mutationFn: (id: number) => api.del(`/registries/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["registries"] });
-      toast.success("Registry removed");
+      toast.success(t("Registry removed"));
     },
     onError: (e) => toast.error(e.message),
   });
   const test = useMutation({
     mutationFn: (id: number) => api.post(`/registries/${id}/test`),
-    onSuccess: () => toast.success("Connection successful"),
+    onSuccess: () => toast.success(t("Connection successful")),
     onError: (e) => toast.error(e.message),
   });
   if (q.isLoading) return <Loading />;
   const { registries, kinds } = q.data!;
   return (
     <Card
-      title="Container registries"
-      description="Push built images once and pull them on every server. Also used to pull private images."
+      title={t("Container registries")}
+      description={t("Push built images once and pull them on every server. Also used to pull private images.")}
       actions={
         registries.length > 0 && (
           <Button size="sm" variant="primary" icon={<Plus />} onClick={() => setEdit({})}>
-            Add registry
+            {t("Add registry")}
           </Button>
         )
       }
     >
       {!has("registries") && (
         <div className="border-b border-border p-4">
-          <UpgradeNotice feature="registries">Container registries are part of the</UpgradeNotice>
+          <UpgradeNotice feature="registries">{t("Container registries are part of the")}</UpgradeNotice>
         </div>
       )}
       {registries.length === 0 ? (
@@ -165,11 +166,11 @@ export function RegistriesSettings() {
           <Empty
             compact
             icon={<ContainerIcon />}
-            title="No registries"
-            description="Connect Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay or any OCI registry."
+            title={t("No registries")}
+            description={t("Connect Docker Hub, GitHub Container Registry, GitLab, Amazon ECR, Harbor, Quay or any OCI registry.")}
             action={
               <Button variant="primary" icon={<Plus />} onClick={() => setEdit({})}>
-                Add registry
+                {t("Add registry")}
               </Button>
             }
           />
@@ -178,9 +179,9 @@ export function RegistriesSettings() {
         <Table>
           <thead>
             <tr>
-              <th>Registry</th>
-              <th>Namespace</th>
-              <th>Applications</th>
+              <th>{t("Registry")}</th>
+              <th>{t("Namespace")}</th>
+              <th>{t("Applications")}</th>
               <th />
             </tr>
           </thead>
@@ -193,7 +194,7 @@ export function RegistriesSettings() {
                     <div className="min-w-0">
                       <div className="font-medium">{r.name}</div>
                       <div className="truncate font-mono text-2xs text-muted">
-                        {r.host} · {r.username || "anonymous"}
+                        {r.host} · {r.username || t("anonymous")}
                       </div>
                     </div>
                   </div>
@@ -203,16 +204,16 @@ export function RegistriesSettings() {
                 <td className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button size="sm" variant="ghost" loading={test.isPending && test.variables === r.id} onClick={() => test.mutate(r.id)}>
-                      Test
+                      {t("Test")}
                     </Button>
-                    <Button size="icon-sm" variant="ghost" title="Edit" onClick={() => setEdit({ ...r, password: "" })}>
+                    <Button size="icon-sm" variant="ghost" title={t("Edit")} onClick={() => setEdit({ ...r, password: "" })}>
                       <Pencil />
                     </Button>
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title="Remove"
-                      onClick={async () => (await confirm({ title: `Remove ${r.name}?`, description: "Images already pushed are not deleted from the registry.", danger: true, confirmText: "Remove" })) && del.mutate(r.id)}
+                      title={t("Remove")}
+                      onClick={async () => (await confirm({ title: t("Remove {name}?", { name: r.name }), description: t("Images already pushed are not deleted from the registry."), danger: true, confirmText: t("Remove") })) && del.mutate(r.id)}
                     >
                       <Trash2 className="text-danger" />
                     </Button>

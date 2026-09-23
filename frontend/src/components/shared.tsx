@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import type { Deployment, Server } from "../lib/types";
 import { duration, shortSha, timeAgo } from "../lib/utils";
 import { Badge, StatusBadge, Table } from "./ui";
+import { intlLocale, t, tk } from "../lib/i18n";
 
 export function useServers() {
   return useQuery({ queryKey: ["servers"], queryFn: () => api.get<Server[]>("/servers") });
@@ -16,12 +17,12 @@ export function ResourceIcon({ kind, className = "size-4" }: { kind: "applicatio
   return <Box className={className} />;
 }
 
-const triggerLabel: Record<string, string> = { manual: "Manual", webhook: "Git push", api: "API", rollback: "Rollback", schedule: "Schedule" };
+const triggerLabel: Record<string, string> = { manual: tk("Manual"), webhook: tk("Git push"), api: "API", rollback: tk("Rollback"), schedule: tk("Schedule") };
 
 function Commit({ d }: { d: Deployment }) {
   return (
     <div className="min-w-0">
-      <div className="truncate font-medium text-fg">{d.commit_message || (d.status === "queued" ? "Waiting for a build slot" : d.image ? d.image : "—")}</div>
+      <div className="truncate font-medium text-fg">{d.commit_message || (d.status === "queued" ? t("Waiting for a build slot") : d.image ? d.image : "—")}</div>
       <div className="mt-0.5 flex items-center gap-2 text-xs text-subtle">
         {d.commit_sha && <span className="font-mono">{shortSha(d.commit_sha)}</span>}
         {d.pr_number > 0 && (
@@ -32,7 +33,7 @@ function Commit({ d }: { d: Deployment }) {
         {d.rollback_of > 0 && (
           <Badge tone="warning">
             <Undo2 />
-            Rollback of #{d.rollback_of}
+            {t("Rollback of #{id}", { id: d.rollback_of })}
           </Badge>
         )}
       </div>
@@ -47,13 +48,13 @@ export function DeploymentsTable({ deployments, showApp = false }: { deployments
     <Table>
       <thead>
         <tr>
-          <th className="w-28">Status</th>
-          {showApp && <th>Application</th>}
-          <th>Commit</th>
-          <th className="w-40">Branch</th>
-          <th className="w-28">Trigger</th>
-          <th className="w-24 !text-right">Duration</th>
-          <th className="w-28 !text-right">Created</th>
+          <th className="w-28">{t("Status")}</th>
+          {showApp && <th>{t("Application")}</th>}
+          <th>{t("Commit")}</th>
+          <th className="w-40">{t("Branch")}</th>
+          <th className="w-28">{t("Trigger")}</th>
+          <th className="w-24 !text-right">{t("Duration")}</th>
+          <th className="w-28 !text-right">{t("Created")}</th>
         </tr>
       </thead>
       <tbody>
@@ -80,9 +81,9 @@ export function DeploymentsTable({ deployments, showApp = false }: { deployments
                 </span>
               )}
             </td>
-            <td className="text-muted">{triggerLabel[d.trigger] ?? d.trigger}</td>
+            <td className="text-muted">{triggerLabel[d.trigger] ? t(triggerLabel[d.trigger]) : d.trigger}</td>
             <td className="text-right text-muted">{d.started_at ? duration(d.started_at, d.finished_at || undefined) : "—"}</td>
-            <td className="text-right text-muted" title={new Date(d.created_at).toLocaleString()}>
+            <td className="text-right text-muted" title={new Date(d.created_at).toLocaleString(intlLocale())}>
               {timeAgo(d.created_at)}
             </td>
           </tr>

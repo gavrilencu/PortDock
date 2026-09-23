@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import type { Project } from "../lib/types";
 import { Badge, Button, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, SegmentedControl, Table } from "../components/ui";
 import { timeAgo } from "../lib/utils";
+import { t } from "../lib/i18n";
 
 function useViewMode(key: string) {
   const [mode, setMode] = useState<"grid" | "list">(() => {
@@ -41,7 +42,7 @@ export function ProjectsPage() {
     mutationFn: () => api.post<Project>("/projects", form),
     onSuccess: (p) => {
       qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success(`Project “${p.name}” created`);
+      toast.success(t("Project “{name}” created", { name: p.name }));
       nav(`/projects/${p.id}`);
     },
     onError: (e) => toast.error(e.message),
@@ -52,11 +53,11 @@ export function ProjectsPage() {
   return (
     <>
       <PageHeader
-        title="Projects"
-        subtitle="Group applications, databases and services into environments."
+        title={t("Projects")}
+        subtitle={t("Group applications, databases and services into environments.")}
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setOpen(true)}>
-            New project
+            {t("New project")}
           </Button>
         }
       />
@@ -67,11 +68,11 @@ export function ProjectsPage() {
       ) : data!.length === 0 ? (
         <Empty
           icon={<FolderKanban />}
-          title="Create your first project"
-          description="A project holds the resources of one product or team, separated into environments like production and staging."
+          title={t("Create your first project")}
+          description={t("A project holds the resources of one product or team, separated into environments like production and staging.")}
           action={
             <Button variant="primary" icon={<Plus />} onClick={() => setOpen(true)}>
-              New project
+              {t("New project")}
             </Button>
           }
         />
@@ -80,10 +81,10 @@ export function ProjectsPage() {
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-              <Input className="pl-8" placeholder="Filter projects…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <Input className="pl-8" placeholder={t("Filter projects…")} value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <span className="text-xs text-subtle">
-              {list.length} of {data!.length}
+              {t("{shown} of {total}", { shown: list.length, total: data!.length })}
             </span>
             <SegmentedControl
               className="ml-auto"
@@ -96,7 +97,7 @@ export function ProjectsPage() {
             />
           </div>
           {list.length === 0 ? (
-            <Empty compact title="No matching projects" description={`Nothing matches “${q}”.`} />
+            <Empty compact title={t("No matching projects")} description={t("Nothing matches “{query}”.", { query: q })} />
           ) : mode === "grid" ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {list.map((p) => (
@@ -105,7 +106,7 @@ export function ProjectsPage() {
                     <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-2 text-sm font-semibold uppercase text-muted">{p.name.slice(0, 2)}</div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold tracking-[-0.01em]">{p.name}</div>
-                      <p className="mt-0.5 line-clamp-2 min-h-9 text-[13px] leading-relaxed text-subtle">{p.description || "No description"}</p>
+                      <p className="mt-0.5 line-clamp-2 min-h-9 text-[13px] leading-relaxed text-subtle">{p.description || t("No description")}</p>
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-1.5">
@@ -117,9 +118,9 @@ export function ProjectsPage() {
                   </div>
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-subtle">
                     <span>
-                      {p.resources} resource{p.resources === 1 ? "" : "s"}
+                      {t("{n} resource|{n} resources", { n: p.resources })}
                     </span>
-                    <span>Created {timeAgo(p.created_at)}</span>
+                    <span>{t("Created {time}", { time: timeAgo(p.created_at) })}</span>
                   </div>
                 </Link>
               ))}
@@ -129,10 +130,10 @@ export function ProjectsPage() {
               <Table>
                 <thead>
                   <tr>
-                    <th>Project</th>
-                    <th>Environments</th>
-                    <th className="!text-right">Resources</th>
-                    <th className="!text-right">Created</th>
+                    <th>{t("Project")}</th>
+                    <th>{t("Environments")}</th>
+                    <th className="!text-right">{t("Resources")}</th>
+                    <th className="!text-right">{t("Created")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -140,7 +141,7 @@ export function ProjectsPage() {
                     <tr key={p.id} className="cursor-pointer" onClick={() => nav(`/projects/${p.id}`)}>
                       <td>
                         <div className="font-medium">{p.name}</div>
-                        <div className="max-w-md truncate text-xs text-subtle">{p.description || "No description"}</div>
+                        <div className="max-w-md truncate text-xs text-subtle">{p.description || t("No description")}</div>
                       </td>
                       <td>
                         <div className="flex flex-wrap gap-1.5">
@@ -162,13 +163,13 @@ export function ProjectsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Create project"
-        description="A production environment is created automatically. You can add staging or preview environments later."
+        title={t("Create project")}
+        description={t("A production environment is created automatically. You can add staging or preview environments later.")}
         footer={
           <>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => setOpen(false)}>{t("Cancel")}</Button>
             <Button variant="primary" loading={create.isPending} disabled={!form.name} onClick={() => create.mutate()}>
-              Create project
+              {t("Create project")}
             </Button>
           </>
         }
@@ -180,11 +181,11 @@ export function ProjectsPage() {
             if (form.name) create.mutate();
           }}
         >
-          <Field label="Project name" required>
-            <Input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Payments Platform" />
+          <Field label={t("Project name")} required>
+            <Input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("e.g. Payments Platform")} />
           </Field>
-          <Field label="Description" hint="Optional. Helps teammates understand what this project contains.">
-            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Checkout, billing and ledger services" />
+          <Field label={t("Description")} hint={t("Optional. Helps teammates understand what this project contains.")}>
+            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t("Checkout, billing and ledger services")} />
           </Field>
         </form>
       </Modal>

@@ -5,11 +5,12 @@ import { Eye, EyeOff, Globe, Network, Play, RotateCw, Search, Server as ServerIc
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Project } from "../lib/types";
-import { cn, timeAgo } from "../lib/utils";
+import { cn, formatUptime, timeAgo } from "../lib/utils";
 import { ContainerLogs } from "../components/ContainerTable";
 import { Terminal } from "../components/Terminal";
 import { ResourceIcon } from "../components/shared";
 import { Badge, Button, Empty, Input, Loading, PageHeader, Select, Tabs, useConfirm } from "../components/ui";
+import { intlLocale, t, tk } from "../lib/i18n";
 
 export type Phase = "healthy" | "running" | "starting" | "unhealthy" | "crashloop" | "restarting" | "failed" | "exited" | "paused" | "created";
 export type TopoContainer = {
@@ -54,23 +55,23 @@ export type TopoResource = {
 
 // Colours per phase / health (ArgoCD-like: green healthy, red broken, amber transitional, grey idle).
 const phaseStyle: Record<Phase, { dot: string; ring: string; label: string; text: string }> = {
-  healthy: { dot: "bg-success", ring: "border-success/50", label: "Healthy", text: "text-success" },
-  running: { dot: "bg-success", ring: "border-success/40", label: "Running", text: "text-success" },
-  starting: { dot: "bg-info", ring: "border-info/50", label: "Starting", text: "text-info" },
-  unhealthy: { dot: "bg-warning", ring: "border-warning/60", label: "Unhealthy", text: "text-warning" },
-  crashloop: { dot: "bg-danger", ring: "border-danger/70", label: "CrashLoop", text: "text-danger" },
-  restarting: { dot: "bg-warning", ring: "border-warning/60", label: "Restarting", text: "text-warning" },
-  failed: { dot: "bg-danger", ring: "border-danger/60", label: "Failed", text: "text-danger" },
-  exited: { dot: "bg-faint", ring: "border-border", label: "Exited", text: "text-muted" },
-  paused: { dot: "bg-warning", ring: "border-warning/50", label: "Paused", text: "text-warning" },
-  created: { dot: "bg-faint", ring: "border-border", label: "Created", text: "text-muted" },
+  healthy: { dot: "bg-success", ring: "border-success/50", label: tk("Healthy"), text: "text-success" },
+  running: { dot: "bg-success", ring: "border-success/40", label: tk("Running"), text: "text-success" },
+  starting: { dot: "bg-info", ring: "border-info/50", label: tk("Starting"), text: "text-info" },
+  unhealthy: { dot: "bg-warning", ring: "border-warning/60", label: tk("Unhealthy"), text: "text-warning" },
+  crashloop: { dot: "bg-danger", ring: "border-danger/70", label: tk("CrashLoop"), text: "text-danger" },
+  restarting: { dot: "bg-warning", ring: "border-warning/60", label: tk("Restarting"), text: "text-warning" },
+  failed: { dot: "bg-danger", ring: "border-danger/60", label: tk("Failed"), text: "text-danger" },
+  exited: { dot: "bg-faint", ring: "border-border", label: tk("Exited"), text: "text-muted" },
+  paused: { dot: "bg-warning", ring: "border-warning/50", label: tk("Paused"), text: "text-warning" },
+  created: { dot: "bg-faint", ring: "border-border", label: tk("Created"), text: "text-muted" },
 };
 const healthStyle: Record<TopoResource["health"], { bar: string; label: string; tone: "success" | "warning" | "danger" | "info" | "neutral"; edge: string }> = {
-  healthy: { bar: "bg-success", label: "Healthy", tone: "success", edge: "var(--success)" },
-  degraded: { bar: "bg-warning", label: "Degraded", tone: "warning", edge: "var(--warning)" },
-  down: { bar: "bg-danger", label: "Down", tone: "danger", edge: "var(--danger)" },
-  progressing: { bar: "bg-info", label: "Progressing", tone: "info", edge: "var(--info)" },
-  stopped: { bar: "bg-faint", label: "Stopped", tone: "neutral", edge: "var(--border-strong)" },
+  healthy: { bar: "bg-success", label: tk("Healthy"), tone: "success", edge: "var(--success)" },
+  degraded: { bar: "bg-warning", label: tk("Degraded"), tone: "warning", edge: "var(--warning)" },
+  down: { bar: "bg-danger", label: tk("Down"), tone: "danger", edge: "var(--danger)" },
+  progressing: { bar: "bg-info", label: tk("Progressing"), tone: "info", edge: "var(--info)" },
+  stopped: { bar: "bg-faint", label: tk("Stopped"), tone: "neutral", edge: "var(--border-strong)" },
 };
 const phaseEdge = (p: Phase) =>
   ({ healthy: "var(--success)", running: "var(--success)", starting: "var(--info)", unhealthy: "var(--warning)", crashloop: "var(--danger)", restarting: "var(--warning)", failed: "var(--danger)", paused: "var(--warning)" })[
@@ -80,7 +81,8 @@ const phaseEdge = (p: Phase) =>
 export function uptime(c: TopoContainer) {
   const since = c.state === "running" ? c.started_at : c.finished_at;
   if (!since || since.startsWith("0001")) return "";
-  return (c.state === "running" ? "up " : "") + timeAgo(since).replace(" ago", c.state === "running" ? "" : " ago");
+  if (c.state !== "running") return timeAgo(since);
+  return t("up {time}", { time: formatUptime(Math.max(0, (Date.now() - new Date(since).getTime()) / 1000)) });
 }
 
 // ---------- layout ----------
@@ -213,7 +215,7 @@ export function TopologyGraph({ resources, selected, onSelect }: { resources: To
                     {b.r.project} · {b.r.environment}
                   </span>
                 </span>
-                <Badge tone={hs.tone}>{hs.label}</Badge>
+                <Badge tone={hs.tone}>{t(hs.label)}</Badge>
               </Link>
               {b.servers.map((s) => (
                 <div
@@ -224,14 +226,14 @@ export function TopologyGraph({ resources, selected, onSelect }: { resources: To
                   <ServerIcon className="size-4 shrink-0 text-faint" />
                   <span className="min-w-0">
                     <span className="block truncate text-[12px] font-medium">{s.name}</span>
-                    <span className="block truncate font-mono text-2xs text-faint">{s.host || `${s.containers.length} container(s)`}</span>
+                    <span className="block truncate font-mono text-2xs text-faint">{s.host || t("{n} container|{n} containers", { n: s.containers.length })}</span>
                   </span>
                 </div>
               ))}
               {b.servers.map((s) =>
                 s.containers.length === 0 ? (
                   <div key={`empty-${s.id}`} className="absolute flex items-center rounded-lg border border-dashed border-border px-3 text-xs text-faint" style={{ left: L.x.container, top: s.y, width: W.container, height: NODE_H }}>
-                    No containers — not deployed
+                    {t("No containers — not deployed")}
                   </div>
                 ) : (
                   s.containers.map(({ c, y }) => {
@@ -254,13 +256,13 @@ export function TopologyGraph({ resources, selected, onSelect }: { resources: To
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-mono text-[11px] font-medium">{c.service || c.name}</span>
                           <span className="flex items-center gap-1.5 text-2xs">
-                            <span className={cn("font-medium", ps.text)}>{ps.label}</span>
+                            <span className={cn("font-medium", ps.text)}>{t(ps.label)}</span>
                             <span className="truncate text-faint">{uptime(c)}</span>
                             {c.pr && c.pr !== "0" && <span className="text-info">PR #{c.pr}</span>}
                           </span>
                         </span>
                         {c.restart_count > 0 && (
-                          <span className={cn("rounded px-1.5 text-2xs font-semibold tabular-nums", c.restart_count >= 3 ? "bg-danger-soft text-danger" : "bg-surface-2 text-muted")} title="Restarts">
+                          <span className={cn("rounded px-1.5 text-2xs font-semibold tabular-nums", c.restart_count >= 3 ? "bg-danger-soft text-danger" : "bg-surface-2 text-muted")} title={t("Restarts")}>
                             ↻{c.restart_count}
                           </span>
                         )}
@@ -290,24 +292,24 @@ function EnvTab({ c }: { c: TopoContainer }) {
   const items = (q.data?.env ?? []).filter((e) => e.key.toLowerCase().includes(filter.toLowerCase()));
   return (
     <div className="space-y-3">
-      {!q.data?.revealed && <p className="rounded-md border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted">Values are hidden: your role can view this resource but not its configuration.</p>}
-      <Input placeholder="Filter variables…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+      {!q.data?.revealed && <p className="rounded-md border border-border bg-surface-2/60 px-3 py-2 text-xs text-muted">{t("Values are hidden: your role can view this resource but not its configuration.")}</p>}
+      <Input placeholder={t("Filter variables…")} value={filter} onChange={(e) => setFilter(e.target.value)} />
       <div className="divide-y divide-border rounded-lg border border-border">
         {items.map((e) => {
           const hidden = e.masked || (e.secret && !show[e.key]);
           return (
             <div key={e.key} className="flex items-start gap-2 px-3 py-2">
               <code className="w-44 shrink-0 break-all pt-0.5 font-mono text-[11px] font-semibold">{e.key}</code>
-              <code className="min-w-0 flex-1 break-all pt-0.5 font-mono text-[11px] text-muted">{e.masked ? "••••••••" : hidden ? "••••••••••••" : e.value || <span className="text-faint">(empty)</span>}</code>
+              <code className="min-w-0 flex-1 break-all pt-0.5 font-mono text-[11px] text-muted">{e.masked ? "••••••••" : hidden ? "••••••••••••" : e.value || <span className="text-faint">{t("(empty)")}</span>}</code>
               {e.secret && !e.masked && (
-                <button className="text-faint hover:text-fg" onClick={() => setShow({ ...show, [e.key]: !show[e.key] })} title={hidden ? "Reveal" : "Hide"}>
+                <button className="text-faint hover:text-fg" onClick={() => setShow({ ...show, [e.key]: !show[e.key] })} title={hidden ? t("Reveal") : t("Hide")}>
                   {hidden ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
                 </button>
               )}
             </div>
           );
         })}
-        {items.length === 0 && <div className="px-3 py-4 text-center text-xs text-faint">No variables</div>}
+        {items.length === 0 && <div className="px-3 py-4 text-center text-xs text-faint">{t("No variables")}</div>}
       </div>
     </div>
   );
@@ -330,7 +332,7 @@ export function ContainerDrawer({ r, c, onClose }: { r: TopoResource; c: TopoCon
   const action = useMutation({
     mutationFn: (a: string) => api.post(`/servers/${c.server_id}/containers/${encodeURIComponent(c.id)}/${a}`),
     onSuccess: (_, a) => {
-      toast.success(`Container ${a === "stop" ? "stopped" : a === "start" ? "started" : "restarted"}`);
+      toast.success(a === "stop" ? t("Container stopped") : a === "start" ? t("Container started") : t("Container restarted"));
       qc.invalidateQueries({ queryKey: ["topology"] });
     },
     onError: (e) => toast.error(e.message),
@@ -343,30 +345,30 @@ export function ContainerDrawer({ r, c, onClose }: { r: TopoResource; c: TopoCon
         <div className="min-w-0 flex-1">
           <div className="truncate font-mono text-[13px] font-semibold">{c.name}</div>
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <span className={cn("font-medium", ps.text)}>{ps.label}</span>
+            <span className={cn("font-medium", ps.text)}>{t(ps.label)}</span>
             <span>·</span>
             <span>{r.name}</span>
             <span>·</span>
             <span>{c.server_name}</span>
-            {c.restart_count > 0 && <Badge tone={c.restart_count >= 3 ? "danger" : "neutral"}>{c.restart_count} restarts</Badge>}
+            {c.restart_count > 0 && <Badge tone={c.restart_count >= 3 ? "danger" : "neutral"}>{t("{n} restart|{n} restarts", { n: c.restart_count })}</Badge>}
           </div>
         </div>
-        <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label="Close">
+        <Button size="icon-sm" variant="ghost" onClick={onClose} aria-label={t("Close")}>
           <X />
         </Button>
       </div>
       {r.can_write && (
         <div className="flex gap-2 border-b border-border px-5 py-2.5">
           <Button size="sm" icon={<RotateCw />} loading={action.isPending && action.variables === "restart"} onClick={() => action.mutate("restart")}>
-            Restart
+            {t("Restart")}
           </Button>
           {running ? (
-            <Button size="sm" icon={<Square />} loading={action.isPending && action.variables === "stop"} onClick={async () => (await confirm({ title: `Stop ${c.name}?`, confirmText: "Stop" })) && action.mutate("stop")}>
-              Stop
+            <Button size="sm" icon={<Square />} loading={action.isPending && action.variables === "stop"} onClick={async () => (await confirm({ title: t("Stop {name}?", { name: c.name }), confirmText: t("Stop") })) && action.mutate("stop")}>
+              {t("Stop")}
             </Button>
           ) : (
             <Button size="sm" icon={<Play />} loading={action.isPending && action.variables === "start"} onClick={() => action.mutate("start")}>
-              Start
+              {t("Start")}
             </Button>
           )}
         </div>
@@ -376,10 +378,10 @@ export function ContainerDrawer({ r, c, onClose }: { r: TopoResource; c: TopoCon
           value={tab}
           onChange={setTab}
           tabs={[
-            { id: "summary", label: "Summary" },
-            { id: "logs", label: "Logs" },
-            { id: "env", label: "Env" },
-            { id: "terminal", label: "Terminal", icon: <SquareTerminal />, hidden: !r.can_write || !running },
+            { id: "summary", label: t("Summary") },
+            { id: "logs", label: t("Logs") },
+            { id: "env", label: t("Env") },
+            { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !r.can_write || !running },
           ]}
         />
       </div>
@@ -388,27 +390,32 @@ export function ContainerDrawer({ r, c, onClose }: { r: TopoResource; c: TopoCon
           <div className="divide-y divide-border">
             {(c.phase === "crashloop" || c.phase === "failed" || c.oom_killed || c.error) && (
               <div className="mb-3 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2.5 text-xs text-danger">
-                {c.oom_killed ? "Killed because it ran out of memory (OOM). Raise the memory limit." : c.error || `The process exited with code ${c.exit_code}${c.restart_count ? ` and was restarted ${c.restart_count} times` : ""}. Check the logs.`}
+                {c.oom_killed
+                  ? t("Killed because it ran out of memory (OOM). Raise the memory limit.")
+                  : c.error ||
+                    (c.restart_count
+                      ? t("The process exited with code {code} and was restarted {n} time. Check the logs.|The process exited with code {code} and was restarted {n} times. Check the logs.", { code: c.exit_code, n: c.restart_count })
+                      : t("The process exited with code {code}. Check the logs.", { code: c.exit_code }))}
               </div>
             )}
-            <Row k="Image" v={<code className="font-mono text-[11px]">{c.image}</code>} />
-            <Row k="State" v={`${c.state}${c.health ? ` · health: ${c.health}` : ""}`} />
-            <Row k="Exit code" v={c.state === "running" ? "—" : c.exit_code} />
-            <Row k="Restarts" v={c.restart_count} />
-            <Row k={running ? "Started" : "Finished"} v={running ? new Date(c.started_at).toLocaleString() : c.finished_at ? new Date(c.finished_at).toLocaleString() : "—"} />
-            <Row k="Created" v={new Date(c.created_at).toLocaleString()} />
-            <Row k="Ports" v={c.ports.length ? c.ports.join(", ") : "—"} />
+            <Row k={t("Image")} v={<code className="font-mono text-[11px]">{c.image}</code>} />
+            <Row k={t("State")} v={`${c.state}${c.health ? ` · ${t("health: {health}", { health: c.health })}` : ""}`} />
+            <Row k={t("Exit code")} v={c.state === "running" ? "—" : c.exit_code} />
+            <Row k={t("Restarts")} v={c.restart_count} />
+            <Row k={running ? t("Started") : t("Finished")} v={running ? new Date(c.started_at).toLocaleString(intlLocale()) : c.finished_at ? new Date(c.finished_at).toLocaleString(intlLocale()) : "—"} />
+            <Row k={t("Created")} v={new Date(c.created_at).toLocaleString(intlLocale())} />
+            <Row k={t("Ports")} v={c.ports.length ? c.ports.join(", ") : "—"} />
             <Row
-              k="Networks"
+              k={t("Networks")}
               v={Object.entries(c.networks).map(([n, ip]) => (
                 <div key={n} className="flex items-center gap-1.5">
                   <Network className="size-3 text-faint" /> {n} <span className="font-mono text-faint">{ip}</span>
                 </div>
               ))}
             />
-            {c.service && <Row k="Compose service" v={c.service} />}
-            {c.deployment && <Row k="Deployment" v={<code className="font-mono text-[11px]">{c.deployment}</code>} />}
-            <Row k="Container ID" v={<code className="font-mono text-[11px]">{c.id.slice(0, 12)}</code>} />
+            {c.service && <Row k={t("Compose service")} v={c.service} />}
+            {c.deployment && <Row k={t("Deployment")} v={<code className="font-mono text-[11px]">{c.deployment}</code>} />}
+            <Row k={t("Container ID")} v={<code className="font-mono text-[11px]">{c.id.slice(0, 12)}</code>} />
           </div>
         )}
         {tab === "logs" && <ContainerLogs key={c.id} url={`/servers/${c.server_id}/containers/${encodeURIComponent(c.id)}/logs?tail=500`} className="h-[calc(100vh-260px)]" />}
@@ -459,14 +466,14 @@ export function TopologyPage() {
   return (
     <>
       <PageHeader
-        title="Topology"
-        subtitle="Live map of every resource, the servers it runs on and its containers. Click a container for logs, environment and actions."
+        title={t("Topology")}
+        subtitle={t("Live map of every resource, the servers it runs on and its containers. Click a container for logs, environment and actions.")}
         meta={
           crash > 0 ? (
-            <Badge tone="danger">{crash} container(s) crashing</Badge>
+            <Badge tone="danger">{t("{n} container crashing|{n} containers crashing", { n: crash })}</Badge>
           ) : topo.data ? (
             <span className="flex items-center gap-1.5 text-xs text-muted">
-              <span className="pulse-dot relative inline-flex size-2 rounded-full bg-success" /> Live · refreshed {timeAgo(topo.data.generated_at)}
+              <span className="pulse-dot relative inline-flex size-2 rounded-full bg-success" /> {t("Live · refreshed {time}", { time: timeAgo(topo.data.generated_at) })}
             </span>
           ) : null
         }
@@ -474,10 +481,10 @@ export function TopologyPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-          <Input className="pl-8" placeholder="Filter resources or containers…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Input className="pl-8" placeholder={t("Filter resources or containers…")} value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <Select className="w-48" value={project} onChange={(e) => set("project", Number(e.target.value))}>
-          <option value={0}>All projects</option>
+          <option value={0}>{t("All projects")}</option>
           {projects.data?.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -486,7 +493,7 @@ export function TopologyPage() {
         </Select>
         {project > 0 && (
           <Select className="w-44" value={environment} onChange={(e) => set("environment", Number(e.target.value))}>
-            <option value={0}>All environments</option>
+            <option value={0}>{t("All environments")}</option>
             {envs.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.name}
@@ -502,7 +509,7 @@ export function TopologyPage() {
               className={cn("flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors", health === h ? "border-border-strong bg-surface-2" : "border-border hover:bg-surface-2/60")}
             >
               <span className={cn("size-2 rounded-full", healthStyle[h].bar)} />
-              {healthStyle[h].label}
+              {t(healthStyle[h].label)}
               <span className="tabular-nums text-muted">{counts[h] ?? 0}</span>
             </button>
           ))}
@@ -520,14 +527,14 @@ export function TopologyPage() {
       {topo.isLoading ? (
         <Loading />
       ) : list.length === 0 ? (
-        <Empty icon={<Network />} title="Nothing to show" description={all.length ? "No resource matches the filters." : "Deploy an application, database or service to see it here."} />
+        <Empty icon={<Network />} title={t("Nothing to show")} description={all.length ? t("No resource matches the filters.") : t("Deploy an application, database or service to see it here.")} />
       ) : (
         <TopologyGraph resources={list} selected={sel?.c.id} onSelect={(r, c) => setSel({ r, c })} />
       )}
       <div className="mt-3 flex flex-wrap gap-3 text-2xs text-muted">
         {(["healthy", "running", "starting", "unhealthy", "restarting", "crashloop", "failed", "exited"] as Phase[]).map((p) => (
           <span key={p} className="flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-full", phaseStyle[p].dot)} /> {phaseStyle[p].label}
+            <span className={cn("size-2 rounded-full", phaseStyle[p].dot)} /> {t(phaseStyle[p].label)}
           </span>
         ))}
       </div>

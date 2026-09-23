@@ -4,20 +4,21 @@ import { Lock, ShieldCheck, Sparkles } from "lucide-react";
 import type { Access, ProjectRole } from "../lib/types";
 import { useAuthStatus } from "./Layout";
 import { Badge } from "./ui";
+import { t, tk, tx } from "../lib/i18n";
 
 export const roleLabels: Record<ProjectRole, string> = {
-  admin: "Admin",
-  maintainer: "Maintainer",
-  developer: "Developer",
-  viewer: "Viewer",
-  none: "No access",
+  admin: tk("Admin"),
+  maintainer: tk("Maintainer"),
+  developer: tk("Developer"),
+  viewer: tk("Viewer"),
+  none: tk("No access"),
 };
 
 export const roleDescriptions: Record<Exclude<ProjectRole, "admin">, string> = {
-  maintainer: "Everything, including protected environments, members and approvals.",
-  developer: "Deploy and configure unprotected environments; request deployments to protected ones.",
-  viewer: "Read-only: resources, logs, deployments and metrics. No secrets.",
-  none: "Can't see the project.",
+  maintainer: tk("Everything, including protected environments, members and approvals."),
+  developer: tk("Deploy and configure unprotected environments; request deployments to protected ones."),
+  viewer: tk("Read-only: resources, logs, deployments and metrics. No secrets."),
+  none: tk("Can't see the project."),
 };
 
 /** Plan info from /auth/status. */
@@ -46,9 +47,9 @@ export function UpgradeNotice({ feature, children }: { feature: string; children
     <div className="flex items-start gap-2.5 rounded-lg border border-accent/25 bg-accent-soft px-3 py-2.5 text-[13px]">
       <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
       <div className="min-w-0 flex-1 text-muted">
-        {children ?? "This feature is part of the"} <span className="font-medium text-fg">{featurePlan[feature]}</span> plan.{" "}
+        {tx("{text} {plan} plan.", { text: children ?? t("This feature is part of the"), plan: <span className="font-medium text-fg">{featurePlan[feature]}</span> })}{" "}
         <Link to="/settings?tab=license" className="font-medium text-fg underline underline-offset-2">
-          Start a free trial or add a license
+          {t("Start a free trial or add a license")}
         </Link>
       </div>
     </div>
@@ -56,13 +57,13 @@ export function UpgradeNotice({ feature, children }: { feature: string; children
 }
 
 export function RoleBadge({ role }: { role: ProjectRole }) {
-  return <Badge tone={role === "admin" || role === "maintainer" ? "accent" : role === "viewer" ? "neutral" : "info"}>{roleLabels[role]}</Badge>;
+  return <Badge tone={role === "admin" || role === "maintainer" ? "accent" : role === "viewer" ? "neutral" : "info"}>{t(roleLabels[role])}</Badge>;
 }
 
 export function ProtectedBadge({ approvals }: { approvals?: boolean }) {
   return (
     <Badge tone="warning">
-      {approvals ? <ShieldCheck /> : <Lock />} {approvals ? "Approvals" : "Protected"}
+      {approvals ? <ShieldCheck /> : <Lock />} {approvals ? t("Approvals") : t("Protected")}
     </Badge>
   );
 }
@@ -72,10 +73,10 @@ export function AccessNotice({ access }: { access: Access }) {
   if (access.can_write) return null;
   const msg =
     access.role === "viewer"
-      ? "You have read-only access to this project."
+      ? t("You have read-only access to this project.")
       : access.protected
-        ? "This is a protected environment: only project maintainers can change it. You can still request deployments."
-        : "Your role does not allow changes here.";
+        ? t("This is a protected environment: only project maintainers can change it. You can still request deployments.")
+        : t("Your role does not allow changes here.");
   return (
     <div className="mb-5 flex items-center gap-2.5 rounded-lg border border-border bg-surface-2/60 px-4 py-2.5 text-[13px] text-muted">
       <Lock className="size-4 shrink-0 text-faint" /> {msg}

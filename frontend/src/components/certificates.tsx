@@ -5,6 +5,7 @@ import { FileKey2, RefreshCw, Save, ShieldCheck, Trash2, Upload } from "lucide-r
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { timeAgo } from "../lib/utils";
+import { intlLocale, t, tk } from "../lib/i18n";
 import { CertBadge } from "./Domains";
 import { Badge, Button, Card, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Table, Textarea, useConfirm } from "./ui";
 
@@ -35,7 +36,17 @@ type CertSettings = {
   acme_servers: { id: string; name: string }[];
 };
 
-const modeLabel: Record<string, string> = { auto: "Let's Encrypt", dns: "Let's Encrypt · DNS", custom: "Uploaded" };
+const modeLabel: Record<string, string> = { auto: "Let's Encrypt", dns: "Let's Encrypt · DNS", custom: tk("Uploaded") };
+const statusLabel: Record<string, string> = {
+  valid: tk("valid"),
+  expiring: tk("expiring"),
+  pending: tk("pending"),
+  local: tk("self-signed"),
+  expired: tk("expired"),
+  missing: tk("missing"),
+  error: tk("error"),
+  unchecked: tk("unchecked"),
+};
 
 function Inventory() {
   const qc = useQueryClient();
@@ -46,7 +57,7 @@ function Inventory() {
     onSuccess: (d) => {
       qc.setQueryData(["certificates"], d);
       const bad = d.domains.filter((x) => ["expired", "missing", "expiring"].includes(x.status)).length;
-      bad ? toast.warning(`${bad} certificate(s) need attention`) : toast.success("All certificates are healthy");
+      bad ? toast.warning(t("{n} certificate needs attention|{n} certificates need attention", { n: bad })) : toast.success(t("All certificates are healthy"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -56,35 +67,35 @@ function Inventory() {
   const counts = d.domains.reduce<Record<string, number>>((m, r) => ((m[r.status || "unchecked"] = (m[r.status || "unchecked"] ?? 0) + 1), m), {});
   return (
     <Card
-      title="Certificates"
-      description={`Issued and renewed automatically. PortDock checks every 6 hours and forces a new certificate when fewer than ${d.renew_days} days remain.`}
+      title={t("Certificates")}
+      description={t("Issued and renewed automatically. PortDock checks every 6 hours and forces a new certificate when fewer than {days} days remain.", { days: d.renew_days })}
       actions={
         <Button size="sm" icon={<RefreshCw />} loading={check.isPending} onClick={() => check.mutate()}>
-          Check now
+          {t("Check now")}
         </Button>
       }
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <Input className="max-w-xs" placeholder="Filter domains…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <Input className="max-w-xs" placeholder={t("Filter domains…")} value={filter} onChange={(e) => setFilter(e.target.value)} />
         {Object.entries(counts).map(([k, n]) => (
           <Badge key={k} tone={k === "valid" ? "success" : k === "expiring" ? "warning" : k === "expired" || k === "missing" ? "danger" : "neutral"}>
-            {n} {k}
+            {n} {statusLabel[k] ? t(statusLabel[k]) : k}
           </Badge>
         ))}
       </div>
       {rows.length === 0 ? (
         <div className="p-5">
-          <Empty compact icon={<ShieldCheck />} title="No HTTPS domains" description="Certificates appear here once applications have HTTPS domains." />
+          <Empty compact icon={<ShieldCheck />} title={t("No HTTPS domains")} description={t("Certificates appear here once applications have HTTPS domains.")} />
         </div>
       ) : (
         <Table>
           <thead>
             <tr>
-              <th>Domain</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th>Issuer</th>
-              <th>Checked</th>
+              <th>{t("Domain")}</th>
+              <th>{t("Source")}</th>
+              <th>{t("Status")}</th>
+              <th>{t("Issuer")}</th>
+              <th>{t("Checked")}</th>
             </tr>
           </thead>
           <tbody>
@@ -96,7 +107,7 @@ function Inventory() {
                     {r.application}
                   </Link>
                 </td>
-                <td className="text-xs text-muted">{modeLabel[r.mode] ?? r.mode}</td>
+                <td className="text-xs text-muted">{modeLabel[r.mode] ? t(modeLabel[r.mode]) : r.mode}</td>
                 <td>
                   <CertBadge d={{ https: true, cert_status: r.status as never, cert_expires_at: r.expires_at, cert_issuer: r.issuer, cert_error: r.detail }} />
                   {r.detail && r.status !== "valid" && <div className="mt-1 max-w-sm text-2xs text-muted">{r.detail}</div>}
@@ -122,7 +133,7 @@ function CustomCertificates() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["certificates"] });
       setForm(null);
-      toast.success("Certificate uploaded and deployed to every proxy");
+      toast.success(t("Certificate uploaded and deployed to every proxy"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -133,30 +144,30 @@ function CustomCertificates() {
   });
   const readFile = (key: "certificate" | "private_key") => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f && form) f.text().then((t) => setForm({ ...form, [key]: t }));
+    if (f && form) f.text().then((txt) => setForm({ ...form, [key]: txt }));
   };
   const custom = q.data?.custom ?? [];
   return (
     <Card
-      title="Uploaded certificates"
-      description="Your own certificates (corporate CA, EV, OV). Set a domain's certificate to “Uploaded certificate” to use them. You're notified 30, 14, 7 and 3 days before they expire."
+      title={t("Uploaded certificates")}
+      description={t("Your own certificates (corporate CA, EV, OV). Set a domain's certificate to “Uploaded certificate” to use them. You're notified 30, 14, 7 and 3 days before they expire.")}
       actions={
         <Button size="sm" variant="primary" icon={<Upload />} onClick={() => setForm({ name: "", certificate: "", private_key: "" })}>
-          Upload
+          {t("Upload")}
         </Button>
       }
     >
       {custom.length === 0 ? (
         <div className="p-5">
-          <Empty compact icon={<FileKey2 />} title="No uploaded certificates" />
+          <Empty compact icon={<FileKey2 />} title={t("No uploaded certificates")} />
         </div>
       ) : (
         <Table>
           <thead>
             <tr>
-              <th>Certificate</th>
-              <th>Covers</th>
-              <th>Expires</th>
+              <th>{t("Certificate")}</th>
+              <th>{t("Covers")}</th>
+              <th>{t("Expires")}</th>
               <th />
             </tr>
           </thead>
@@ -171,11 +182,11 @@ function CustomCertificates() {
                   </td>
                   <td className="max-w-72 text-xs text-muted">{c.domains.split(",").join(", ")}</td>
                   <td>
-                    <Badge tone={days < 7 ? "danger" : days < 30 ? "warning" : "success"}>{days} days</Badge>
-                    <div className="mt-0.5 text-2xs text-muted">{new Date(c.not_after).toLocaleDateString()}</div>
+                    <Badge tone={days < 7 ? "danger" : days < 30 ? "warning" : "success"}>{t("{n} day|{n} days", { n: days })}</Badge>
+                    <div className="mt-0.5 text-2xs text-muted">{new Date(c.not_after).toLocaleDateString(intlLocale())}</div>
                   </td>
                   <td className="text-right">
-                    <Button size="icon-sm" variant="ghost" title="Delete" onClick={async () => (await confirm({ title: `Delete ${c.name}?`, description: "Domains using it fall back to the proxy's default certificate.", danger: true, confirmText: "Delete" })) && del.mutate(c.id)}>
+                    <Button size="icon-sm" variant="ghost" title={t("Delete")} onClick={async () => (await confirm({ title: t("Delete {name}?", { name: c.name }), description: t("Domains using it fall back to the proxy's default certificate."), danger: true, confirmText: t("Delete") })) && del.mutate(c.id)}>
                       <Trash2 className="text-danger" />
                     </Button>
                   </td>
@@ -189,23 +200,23 @@ function CustomCertificates() {
         open={!!form}
         onClose={() => setForm(null)}
         size="lg"
-        title="Upload certificate"
-        description="PEM format. Include the intermediate certificates after the server certificate. The key is stored encrypted."
+        title={t("Upload certificate")}
+        description={t("PEM format. Include the intermediate certificates after the server certificate. The key is stored encrypted.")}
         footer={
           <Button variant="primary" loading={upload.isPending} disabled={!form?.certificate || !form?.private_key} onClick={() => upload.mutate()}>
-            Upload & deploy
+            {t("Upload & deploy")}
           </Button>
         }
       >
         {form && (
           <div className="space-y-4">
-            <Field label="Name">
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Corporate wildcard 2026" />
+            <Field label={t("Name")}>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("Corporate wildcard 2026")} />
             </Field>
-            <Field label="Certificate chain (PEM)" hint={<input type="file" accept=".pem,.crt,.cer" onChange={readFile("certificate")} className="text-xs" />}>
+            <Field label={t("Certificate chain (PEM)")} hint={<input type="file" accept=".pem,.crt,.cer" onChange={readFile("certificate")} className="text-xs" />}>
               <Textarea rows={6} className="font-mono text-2xs" value={form.certificate} onChange={(e) => setForm({ ...form, certificate: e.target.value })} placeholder="-----BEGIN CERTIFICATE-----" />
             </Field>
-            <Field label="Private key (PEM, unencrypted)" hint={<input type="file" accept=".pem,.key" onChange={readFile("private_key")} className="text-xs" />}>
+            <Field label={t("Private key (PEM, unencrypted)")} hint={<input type="file" accept=".pem,.key" onChange={readFile("private_key")} className="text-xs" />}>
               <Textarea rows={5} className="font-mono text-2xs" value={form.private_key} onChange={(e) => setForm({ ...form, private_key: e.target.value })} placeholder="-----BEGIN PRIVATE KEY-----" />
             </Field>
           </div>
@@ -232,7 +243,7 @@ function ACMESettings() {
     mutationFn: () => api.put<CertSettings>("/settings/certificates", f),
     onSuccess: (d) => {
       qc.setQueryData(["cert-settings"], d);
-      toast.success("Certificate settings saved", { description: "Proxies are reconfigured automatically (a few seconds of restart)." });
+      toast.success(t("Certificate settings saved"), { description: t("Proxies are reconfigured automatically (a few seconds of restart).") });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -243,22 +254,22 @@ function ACMESettings() {
   const envKeys = provider?.id === "other" ? Object.keys(env).concat("") : (provider?.env ?? []);
   return (
     <Card
-      title="Certificate authority"
-      description="How certificates are requested. Changing these settings reconfigures the proxy on every server."
+      title={t("Certificate authority")}
+      description={t("How certificates are requested. Changing these settings reconfigures the proxy on every server.")}
       actions={
         <Button size="sm" variant="primary" icon={<Save />} loading={save.isPending} onClick={() => save.mutate()}>
-          Save
+          {t("Save")}
         </Button>
       }
     >
       <div className="grid gap-5 p-5 md:grid-cols-2">
-        <Field label="Contact email" hint="Receives expiry warnings from the certificate authority.">
+        <Field label={t("Contact email")} hint={t("Receives expiry warnings from the certificate authority.")}>
           <Input value={f.acme_email ?? ""} onChange={(e) => setF({ ...f, acme_email: e.target.value })} placeholder="ops@example.com" />
         </Field>
-        <Field label="Renew when fewer than (days)" hint="Traefik renews at 30 days; below this threshold PortDock forces a renewal and alerts.">
+        <Field label={t("Renew when fewer than (days)")} hint={t("Traefik renews at 30 days; below this threshold PortDock forces a renewal and alerts.")}>
           <Input type="number" min={3} max={60} value={f.renew_days ?? 14} onChange={(e) => setF({ ...f, renew_days: Number(e.target.value) })} />
         </Field>
-        <Field label="Certificate authority">
+        <Field label={t("Certificate authority")}>
           <Select
             value={customCA ? "custom" : (f.acme_server ?? "")}
             onChange={(e) => {
@@ -275,20 +286,20 @@ function ACMESettings() {
                 {s.name}
               </option>
             ))}
-            <option value="custom">Custom ACME server (step-ca, internal PKI…)</option>
+            <option value="custom">{t("Custom ACME server (step-ca, internal PKI…)")}</option>
           </Select>
         </Field>
         {customCA && (
-          <Field label="ACME directory URL">
+          <Field label={t("ACME directory URL")}>
             <Input value={f.acme_server ?? ""} onChange={(e) => setF({ ...f, acme_server: e.target.value })} placeholder="https://ca.corp.example/acme/acme/directory" className="font-mono text-xs" />
           </Field>
         )}
       </div>
       <div className="border-t border-border p-5">
-        <div className="mb-1 text-[13px] font-semibold">DNS challenge</div>
-        <p className="mb-4 text-xs text-muted">Needed for wildcard certificates (*.apps.example.com) and for domains that aren't reachable from the internet. Credentials are stored encrypted and written to a 0600 file on each server.</p>
+        <div className="mb-1 text-[13px] font-semibold">{t("DNS challenge")}</div>
+        <p className="mb-4 text-xs text-muted">{t("Needed for wildcard certificates (*.apps.example.com) and for domains that aren't reachable from the internet. Credentials are stored encrypted and written to a 0600 file on each server.")}</p>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="DNS provider" hint={provider?.hint}>
+          <Field label={t("DNS provider")} hint={provider?.hint}>
             <Select
               value={other ? "other" : (f.dns_provider ?? "")}
               onChange={(e) => {
@@ -296,7 +307,7 @@ function ACMESettings() {
                 setF({ ...f, dns_provider: e.target.value === "other" ? "" : e.target.value, dns_env: {} });
               }}
             >
-              <option value="">Disabled</option>
+              <option value="">{t("Disabled")}</option>
               {d.providers.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -305,7 +316,7 @@ function ACMESettings() {
             </Select>
           </Field>
           {provider?.id === "other" && (
-            <Field label="Provider code" hint="As listed in the Traefik / lego documentation, e.g. ns1, linode, porkbun.">
+            <Field label={t("Provider code")} hint={t("As listed in the Traefik / lego documentation, e.g. ns1, linode, porkbun.")}>
               <Input value={f.dns_provider ?? ""} onChange={(e) => setF({ ...f, dns_provider: e.target.value })} className="font-mono text-xs" />
             </Field>
           )}
@@ -324,7 +335,7 @@ function ACMESettings() {
                     setF({ ...f, dns_env: next });
                   }}
                 />
-                <PasswordInput placeholder="value" value={env[k] ?? ""} disabled={!k} onChange={(e) => setF({ ...f, dns_env: { ...env, [k]: e.target.value } })} />
+                <PasswordInput placeholder={t("value")} value={env[k] ?? ""} disabled={!k} onChange={(e) => setF({ ...f, dns_env: { ...env, [k]: e.target.value } })} />
               </div>
             ) : (
               <Field key={k} label={<code className="text-xs">{k}</code>}>
@@ -337,7 +348,7 @@ function ACMESettings() {
             ),
           )}
           {(f.dns_provider || other) && (
-            <Field label="Propagation resolvers" hint="Optional. For internal zones use your own DNS servers, e.g. 10.0.0.10:53.">
+            <Field label={t("Propagation resolvers")} hint={t("Optional. For internal zones use your own DNS servers, e.g. 10.0.0.10:53.")}>
               <Input value={f.dns_resolvers ?? ""} onChange={(e) => setF({ ...f, dns_resolvers: e.target.value })} placeholder="1.1.1.1:53,8.8.8.8:53" className="font-mono text-xs" />
             </Field>
           )}

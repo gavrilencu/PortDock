@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Deployment } from "../lib/types";
 import { SegmentedControl, Table } from "./ui";
+import { intlLocale, t } from "../lib/i18n";
 
 interface Day {
   key: string;
@@ -22,8 +23,8 @@ export function bucketDeployments(deps: Deployment[], days = 14): Day[] {
     const key = d.toDateString();
     const day: Day = {
       key,
-      label: d.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
-      long: d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }),
+      label: d.toLocaleDateString(intlLocale(), { day: "numeric", month: "short" }),
+      long: d.toLocaleDateString(intlLocale(), { weekday: "short", day: "numeric", month: "short" }),
       success: 0,
       failed: 0,
     };
@@ -87,22 +88,22 @@ export function DeployActivityChart({ deployments }: { deployments: Deployment[]
         <div className="flex items-center gap-4 text-xs text-muted">
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-[3px]" style={{ background: "var(--chart-1)" }} />
-            Successful
+            {t("Successful")}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-[3px]" style={{ background: "var(--chart-critical)" }} />
-            Failed
+            {t("Failed")}
           </span>
           <span className="text-subtle">
-            {total} total · {total ? Math.round(((total - failed) / total) * 100) : 100}% success
+            {t("{total} total · {pct}% success", { total, pct: total ? Math.round(((total - failed) / total) * 100) : 100 })}
           </span>
         </div>
         <SegmentedControl
           value={view}
           onChange={setView}
           options={[
-            { value: "chart", label: "Chart" },
-            { value: "table", label: "Table" },
+            { value: "chart", label: t("Chart") },
+            { value: "table", label: t("Table") },
           ]}
         />
       </div>
@@ -112,9 +113,9 @@ export function DeployActivityChart({ deployments }: { deployments: Deployment[]
           <Table>
             <thead>
               <tr>
-                <th>Day</th>
-                <th className="!text-right">Successful</th>
-                <th className="!text-right">Failed</th>
+                <th>{t("Day")}</th>
+                <th className="!text-right">{t("Successful")}</th>
+                <th className="!text-right">{t("Failed")}</th>
               </tr>
             </thead>
             <tbody>
@@ -130,12 +131,12 @@ export function DeployActivityChart({ deployments }: { deployments: Deployment[]
         </div>
       ) : (
         <div ref={wrap} className="relative" onMouseLeave={() => setHover(null)}>
-          <svg width={width} height={H} role="img" aria-label={`Deployments per day over the last 14 days: ${total} total, ${failed} failed`} className="block overflow-visible">
-            {ticks.map((t) => (
-              <g key={t}>
-                <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--chart-grid)" strokeWidth={1} shapeRendering="crispEdges" />
-                <text x={PAD.left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-[var(--fg-faint)] text-[11px] tabular-nums">
-                  {Number.isInteger(t) ? t : t.toFixed(1)}
+          <svg width={width} height={H} role="img" aria-label={t("Deployments per day over the last 14 days: {total} total, {failed} failed", { total, failed })} className="block overflow-visible">
+            {ticks.map((tick) => (
+              <g key={tick}>
+                <line x1={PAD.left} x2={width - PAD.right} y1={y(tick)} y2={y(tick)} stroke="var(--chart-grid)" strokeWidth={1} shapeRendering="crispEdges" />
+                <text x={PAD.left - 8} y={y(tick)} dy="0.32em" textAnchor="end" className="fill-[var(--fg-faint)] text-[11px] tabular-nums">
+                  {Number.isInteger(tick) ? tick : tick.toFixed(1)}
                 </text>
               </g>
             ))}
@@ -172,14 +173,14 @@ export function DeployActivityChart({ deployments }: { deployments: Deployment[]
               <div className="flex items-center justify-between gap-6 text-muted">
                 <span className="flex items-center gap-1.5">
                   <span className="size-2 rounded-sm" style={{ background: "var(--chart-1)" }} />
-                  Successful
+                  {t("Successful")}
                 </span>
                 <span className="tabular-nums text-fg">{days[hover].success}</span>
               </div>
               <div className="mt-1 flex items-center justify-between gap-6 text-muted">
                 <span className="flex items-center gap-1.5">
                   <span className="size-2 rounded-sm" style={{ background: "var(--chart-critical)" }} />
-                  Failed
+                  {t("Failed")}
                 </span>
                 <span className="tabular-nums text-fg">{days[hover].failed}</span>
               </div>

@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity } from "lucide-react";
 import { api } from "../lib/api";
+import { intlLocale, t, tk } from "../lib/i18n";
 import { formatBytes } from "../lib/utils";
 import { Card, Empty, SegmentedControl, Skeleton } from "./ui";
 
@@ -22,11 +23,11 @@ export interface MetricPoint {
 
 export type MetricRange = "1h" | "6h" | "24h" | "7d" | "30d";
 export const ranges: { value: MetricRange; label: string }[] = [
-  { value: "1h", label: "1H" },
-  { value: "6h", label: "6H" },
-  { value: "24h", label: "24H" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
+  { value: "1h", label: tk("1H") },
+  { value: "6h", label: tk("6H") },
+  { value: "24h", label: tk("24H") },
+  { value: "7d", label: tk("7D") },
+  { value: "30d", label: tk("30D") },
 ];
 
 export type Series = { key: string; label: string; color: string; values: (number | null)[]; dashed?: boolean };
@@ -52,8 +53,8 @@ function niceMax(v: number) {
 
 function timeLabel(t: number, span: number) {
   const d = new Date(t * 1000);
-  if (span > 2 * 86400) return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (span > 2 * 86400) return d.toLocaleDateString(intlLocale(), { month: "short", day: "numeric" });
+  return d.toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Dependency-free SVG line/area chart with crosshair tooltip. */
@@ -185,7 +186,7 @@ export function LineChart({
           className="pointer-events-none absolute top-1 z-10 min-w-36 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs shadow-pop"
           style={x(times[hover]) > width / 2 ? { right: width - x(times[hover]) + 10 } : { left: x(times[hover]) + 10 }}
         >
-          <div className="mb-1 text-2xs text-subtle">{new Date(times[hover] * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+          <div className="mb-1 text-2xs text-subtle">{new Date(times[hover] * 1000).toLocaleString(intlLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
           {series.map((s) => (
             <div key={s.key} className="flex items-center gap-2">
               <span className="size-2 rounded-full" style={{ background: s.color }} />
@@ -216,7 +217,7 @@ function ChartCard({ title, value, children }: { title: string; value?: string; 
 }
 
 /** Metrics dashboard for a server or resource. */
-export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server" | "application" | "database" | "service"; id: number; title?: string }) {
+export function MetricsPanel({ scope, id, title }: { scope: "server" | "application" | "database" | "service"; id: number; title?: string }) {
   const [range, setRange] = useState<MetricRange>(() => {
     try {
       return (localStorage.getItem("portdock.metrics.range") as MetricRange) || "6h";
@@ -264,9 +265,9 @@ export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server"
 
   return (
     <Card
-      title={title}
-      description={isServer ? "Sampled every minute. CPU and memory are for the whole machine." : "Sampled every minute, summed across replicas and servers. CPU: 100% = one core."}
-      actions={<SegmentedControl value={range} onChange={pick} options={ranges} />}
+      title={title ?? t("Metrics")}
+      description={isServer ? t("Sampled every minute. CPU and memory are for the whole machine.") : t("Sampled every minute, summed across replicas and servers. CPU: 100% = one core.")}
+      actions={<SegmentedControl value={range} onChange={pick} options={ranges.map((r) => ({ ...r, label: t(r.label) }))} />}
     >
       <div className="p-4">
         {q.isLoading ? (
@@ -276,7 +277,7 @@ export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server"
             ))}
           </div>
         ) : pts.length === 0 ? (
-          <Empty compact icon={<Activity />} title="No data yet" description="Metrics appear a minute after the resource starts running." />
+          <Empty compact icon={<Activity />} title={t("No data yet")} description={t("Metrics appear a minute after the resource starts running.")} />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             <ChartCard title="CPU" value={last ? pct(last.cpu) : undefined}>
@@ -285,53 +286,53 @@ export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server"
                 format={pct}
                 max={isServer ? 100 : undefined}
                 series={[
-                  { key: "cpu", label: hourly ? "Average" : "CPU", color: "var(--chart-1)", values: col((p) => p.cpu) },
-                  ...(hourly ? [{ key: "max", label: "Peak", color: "var(--chart-3)", values: col((p) => p.cpu_max), dashed: true }] : []),
+                  { key: "cpu", label: hourly ? t("Average") : "CPU", color: "var(--chart-1)", values: col((p) => p.cpu) },
+                  ...(hourly ? [{ key: "max", label: t("Peak"), color: "var(--chart-3)", values: col((p) => p.cpu_max), dashed: true }] : []),
                 ]}
               />
             </ChartCard>
-            <ChartCard title="Memory" value={last ? `${bytes(last.mem)}${memTotal ? ` / ${bytes(memTotal)}` : ""}` : undefined}>
+            <ChartCard title={t("Memory")} value={last ? `${bytes(last.mem)}${memTotal ? ` / ${bytes(memTotal)}` : ""}` : undefined}>
               {memTotal > 0 ? (
-                <LineChart times={times} format={pct} max={100} series={[{ key: "mem", label: "Used", color: "var(--chart-2)", values: col(memPct) }]} />
+                <LineChart times={times} format={pct} max={100} series={[{ key: "mem", label: t("Used"), color: "var(--chart-2)", values: col(memPct) }]} />
               ) : (
-                <LineChart times={times} format={bytes} series={[{ key: "mem", label: "Used", color: "var(--chart-2)", values: col((p) => p.mem) }]} />
+                <LineChart times={times} format={bytes} series={[{ key: "mem", label: t("Used"), color: "var(--chart-2)", values: col((p) => p.mem) }]} />
               )}
             </ChartCard>
-            <ChartCard title="Network" value={last ? `↓ ${rate(last.rx)}  ↑ ${rate(last.tx)}` : undefined}>
+            <ChartCard title={t("Network")} value={last ? `↓ ${rate(last.rx)}  ↑ ${rate(last.tx)}` : undefined}>
               <LineChart
                 times={times}
                 format={rate}
                 series={[
-                  { key: "rx", label: "Inbound", color: "var(--chart-1)", values: col((p) => p.rx) },
-                  { key: "tx", label: "Outbound", color: "var(--chart-3)", values: col((p) => p.tx) },
+                  { key: "rx", label: t("Inbound"), color: "var(--chart-1)", values: col((p) => p.rx) },
+                  { key: "tx", label: t("Outbound"), color: "var(--chart-3)", values: col((p) => p.tx) },
                 ]}
               />
             </ChartCard>
             {isServer ? (
-              <ChartCard title="Disk" value={last && last.disk_total ? `${bytes(last.disk)} / ${bytes(last.disk_total)}` : undefined}>
+              <ChartCard title={t("Disk")} value={last && last.disk_total ? `${bytes(last.disk)} / ${bytes(last.disk_total)}` : undefined}>
                 <LineChart
                   times={times}
                   format={pct}
                   max={100}
                   threshold={85}
-                  series={[{ key: "disk", label: "Used", color: "var(--chart-3)", values: col((p) => (p.disk_total ? (p.disk / p.disk_total) * 100 : 0)) }]}
+                  series={[{ key: "disk", label: t("Used"), color: "var(--chart-3)", values: col((p) => (p.disk_total ? (p.disk / p.disk_total) * 100 : 0)) }]}
                 />
               </ChartCard>
             ) : (
-              <ChartCard title="Availability & restarts" value={last ? (last.up >= 1 ? "Healthy" : "Degraded") : undefined}>
+              <ChartCard title={t("Availability & restarts")} value={last ? (last.up >= 1 ? t("Healthy") : t("Degraded")) : undefined}>
                 <LineChart
                   times={times}
                   format={(v) => (v >= 1 || v === 0 ? v.toFixed(0) : v.toFixed(1))}
                   series={[
-                    { key: "up", label: "Healthy (1 = all running)", color: "var(--chart-2)", values: col((p) => p.up) },
-                    { key: "restarts", label: "Restarts", color: "var(--chart-critical)", values: col((p) => p.restarts) },
+                    { key: "up", label: t("Healthy (1 = all running)"), color: "var(--chart-2)", values: col((p) => p.up) },
+                    { key: "restarts", label: t("Restarts"), color: "var(--chart-critical)", values: col((p) => p.restarts) },
                   ]}
                 />
               </ChartCard>
             )}
             {isServer && (
-              <ChartCard title="Load average (1 min)" value={last ? last.load.toFixed(2) : undefined}>
-                <LineChart times={times} format={(v) => v.toFixed(1)} series={[{ key: "load", label: "Load", color: "var(--chart-1)", values: col((p) => p.load) }]} />
+              <ChartCard title={t("Load average (1 min)")} value={last ? last.load.toFixed(2) : undefined}>
+                <LineChart times={times} format={(v) => v.toFixed(1)} series={[{ key: "load", label: t("Load"), color: "var(--chart-1)", values: col((p) => p.load) }]} />
               </ChartCard>
             )}
           </div>

@@ -5,26 +5,27 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { ApplicationDetail, AppDomain, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect, CertMode } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
+import { intlLocale, t, tk, tx } from "../lib/i18n";
 import { Badge, Button, Card, CopyButton, Empty, Field, Input, Loading, Menu, MenuItem, Modal, Select, Switch, Table, useConfirm } from "./ui";
 
 const dnsTone: Record<DNSStatus, { label: string; tone: "success" | "warning" | "danger" | "info" | "neutral" }> = {
-  ok: { label: "Verified", tone: "success" },
-  local: { label: "Local", tone: "info" },
-  proxied: { label: "Proxied", tone: "info" },
-  mismatch: { label: "Wrong IP", tone: "warning" },
-  unresolved: { label: "Not found", tone: "danger" },
-  unknown: { label: "Not checked", tone: "neutral" },
+  ok: { label: tk("Verified"), tone: "success" },
+  local: { label: tk("Local"), tone: "info" },
+  proxied: { label: tk("Proxied"), tone: "info" },
+  mismatch: { label: tk("Wrong IP"), tone: "warning" },
+  unresolved: { label: tk("Not found"), tone: "danger" },
+  unknown: { label: tk("Not checked"), tone: "neutral" },
 };
 
-const wwwLabel: Record<WWWRedirect, string> = { none: "Disabled", "to-www": "→ www", "to-apex": "→ non-www" };
+const wwwLabel: Record<WWWRedirect, string> = { none: tk("Disabled"), "to-www": "→ www", "to-apex": tk("→ non-www") };
 
 export function DNSBadge({ d }: { d: Pick<AppDomain, "dns_status" | "dns_detail" | "dns_checked_at"> }) {
-  const t = dnsTone[d.dns_status] ?? dnsTone.unknown;
+  const s = dnsTone[d.dns_status] ?? dnsTone.unknown;
   return (
-    <span title={d.dns_detail ? `${d.dns_detail}${d.dns_checked_at ? ` · checked ${timeAgo(d.dns_checked_at)}` : ""}` : undefined}>
-      <Badge tone={t.tone} className="cursor-help">
+    <span title={d.dns_detail ? `${d.dns_detail}${d.dns_checked_at ? ` · ${t("checked {time}", { time: timeAgo(d.dns_checked_at) })}` : ""}` : undefined}>
+      <Badge tone={s.tone} className="cursor-help">
         <span className="size-1.5 rounded-full bg-current" />
-        {t.label}
+        {t(s.label)}
       </Badge>
     </span>
   );
@@ -58,26 +59,26 @@ const certTone: Record<string, "success" | "warning" | "danger" | "info" | "neut
   error: "danger",
 };
 const certText: Record<string, string> = {
-  valid: "Valid",
-  expiring: "Expiring",
-  pending: "Issuing…",
-  local: "Self-signed",
-  expired: "Expired",
-  missing: "Not issued",
-  error: "Error",
+  valid: tk("Valid"),
+  expiring: tk("Expiring"),
+  pending: tk("Issuing…"),
+  local: tk("Self-signed"),
+  expired: tk("Expired"),
+  missing: tk("Not issued"),
+  error: tk("Error"),
 };
 
 export function CertBadge({ d }: { d: Pick<AppDomain, "https" | "cert_status" | "cert_expires_at" | "cert_issuer" | "cert_error"> }) {
-  if (!d.https) return <span className="text-xs text-faint">HTTP only</span>;
-  if (!d.cert_status) return <span className="text-xs text-faint">Not checked</span>;
+  if (!d.https) return <span className="text-xs text-faint">{t("HTTP only")}</span>;
+  if (!d.cert_status) return <span className="text-xs text-faint">{t("Not checked")}</span>;
   const days = d.cert_expires_at ? Math.floor((new Date(d.cert_expires_at).getTime() - Date.now()) / 86_400_000) : null;
-  const title = [d.cert_issuer, d.cert_expires_at && `Expires ${new Date(d.cert_expires_at).toLocaleDateString()}`, d.cert_error].filter(Boolean).join("\n");
+  const title = [d.cert_issuer, d.cert_expires_at && t("Expires {date}", { date: new Date(d.cert_expires_at).toLocaleDateString(intlLocale()) }), d.cert_error].filter(Boolean).join("\n");
   return (
     <span className="inline-flex flex-col gap-0.5" title={title}>
       <Badge tone={certTone[d.cert_status] ?? "neutral"}>
-        <ShieldCheck /> {certText[d.cert_status] ?? d.cert_status}
+        <ShieldCheck /> {certText[d.cert_status] ? t(certText[d.cert_status]) : d.cert_status}
       </Badge>
-      {days !== null && d.cert_status !== "local" && <span className="text-2xs text-muted">{days >= 0 ? `${days} days left` : `${-days} days ago`}</span>}
+      {days !== null && d.cert_status !== "local" && <span className="text-2xs text-muted">{days >= 0 ? t("{n} day left|{n} days left", { n: days }) : t("{n} day ago|{n} days ago", { n: -days })}</span>}
     </span>
   );
 }
@@ -105,7 +106,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     onSuccess: (r, f) => {
       onResult(r);
       setForm(null);
-      toast.success(f.id ? "Domain updated" : "Domain added", { description: r.requires_deploy ? "Redeploy to apply the change." : "Routing was updated — no redeploy needed." });
+      toast.success(f.id ? t("Domain updated") : t("Domain added"), { description: r.requires_deploy ? t("Redeploy to apply the change.") : t("Routing was updated — no redeploy needed.") });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -113,7 +114,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     mutationFn: (id: number) => api.post(`/domains/${id}/renew`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["domains", app.id] });
-      toast.success("A new certificate is being requested", { description: "The proxy restarts for a few seconds; the certificate usually arrives within a minute." });
+      toast.success(t("A new certificate is being requested"), { description: t("The proxy restarts for a few seconds; the certificate usually arrives within a minute.") });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -121,7 +122,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     mutationFn: (id: number) => api.del<DomainsResponse>(`/domains/${id}`),
     onSuccess: (r) => {
       onResult(r);
-      toast.success("Domain removed");
+      toast.success(t("Domain removed"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -130,7 +131,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     onSuccess: (r) => {
       qc.setQueryData(["domains", app.id], r);
       const bad = r.domains.filter((d) => d.dns_status !== "ok" && d.dns_status !== "proxied").length;
-      bad ? toast.warning(`${bad} domain(s) need DNS attention`) : toast.success("All domains point to this server");
+      bad ? toast.warning(t("{n} domain needs DNS attention|{n} domains need DNS attention", { n: bad })) : toast.success(t("All domains point to this server"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -149,13 +150,13 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     mutationFn: (enabled: boolean) => api.post<DomainsResponse>(`/applications/${app.id}/domains/https`, { enabled }),
     onSuccess: (r) => {
       onResult(r);
-      toast.success("HTTPS settings updated");
+      toast.success(t("HTTPS settings updated"));
     },
     onError: (e) => toast.error(e.message),
   });
   const deploy = useMutation({
     mutationFn: () => api.post(`/applications/${app.id}/deploy`),
-    onSuccess: () => toast.success("Deployment queued"),
+    onSuccess: () => toast.success(t("Deployment queued")),
   });
 
   const list = useMemo(() => (data?.domains ?? []).filter((d) => (d.host + d.path).includes(q.toLowerCase())), [data, q]);
@@ -178,27 +179,27 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.01em]">Domains</h2>
+          <h2 className="text-lg font-semibold tracking-[-0.01em]">{t("Domains")}</h2>
           <p className="text-[13px] text-subtle">
-            {domains.length} domain{domains.length === 1 ? "" : "s"} · traffic is served by Traefik with automatic Let's Encrypt certificates
+            {t("{n} domain · traffic is served by Traefik with automatic Let's Encrypt certificates|{n} domains · traffic is served by Traefik with automatic Let's Encrypt certificates", { n: domains.length })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-60">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-            <Input className="pl-8" placeholder="Search domains" value={q} onChange={(e) => setQ(e.target.value)} />
+            <Input className="pl-8" placeholder={t("Search domains")} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <Button icon={<RefreshCw />} loading={checkAll.isPending} disabled={!domains.length} onClick={() => checkAll.mutate()}>
-            Check all DNS
+            {t("Check all DNS")}
           </Button>
           <Button icon={<Globe />} disabled={!domains.length} onClick={() => setShowRecords(true)}>
-            DNS records
+            {t("DNS records")}
           </Button>
-          <Button icon={<Globe />} onClick={openGenerated} title="Generate a domain on the server's wildcard, sslip.io or *.localhost">
-            Generate domain
+          <Button icon={<Globe />} onClick={openGenerated} title={t("Generate a domain on the server's wildcard, sslip.io or *.localhost")}>
+            {t("Generate domain")}
           </Button>
           <Button variant="primary" icon={<Plus />} onClick={openNew}>
-            Add domain
+            {t("Add domain")}
           </Button>
         </div>
       </div>
@@ -206,9 +207,9 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
       {data!.requires_deploy && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-info/25 bg-info-soft px-4 py-2.5 text-[13px]">
           <Rocket className="size-4 text-info" />
-          <span className="flex-1 text-muted">Docker Compose applications pick up domain changes on the next deployment.</span>
+          <span className="flex-1 text-muted">{t("Docker Compose applications pick up domain changes on the next deployment.")}</span>
           <Button size="sm" onClick={() => deploy.mutate()} loading={deploy.isPending}>
-            Redeploy now
+            {t("Redeploy now")}
           </Button>
         </div>
       )}
@@ -216,14 +217,14 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
       {domains.length > 0 && (
         <div className="flex items-center justify-end gap-3">
           <span className="flex items-center gap-1.5 text-[13px] text-muted">
-            Redirect HTTP to HTTPS
-            <span title="Issue TLS certificates and permanently redirect plain HTTP requests on every domain.">
+            {t("Redirect HTTP to HTTPS")}
+            <span title={t("Issue TLS certificates and permanently redirect plain HTTP requests on every domain.")}>
               <CircleHelp className="size-3.5 text-faint" />
             </span>
           </span>
           <Select className="w-36" value={allHTTPS ? "on" : "off"} onChange={(e) => setHTTPS.mutate(e.target.value === "on")}>
-            <option value="on">Enabled</option>
-            <option value="off">Disabled</option>
+            <option value="on">{t("Enabled")}</option>
+            <option value="off">{t("Disabled")}</option>
           </Select>
         </div>
       )}
@@ -234,15 +235,15 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
             <Empty
               compact
               icon={<Globe />}
-              title="No domains yet"
-              description="Add a domain to expose this application over HTTPS. Point its DNS A/AAAA record to the server first."
+              title={t("No domains yet")}
+              description={t("Add a domain to expose this application over HTTPS. Point its DNS A/AAAA record to the server first.")}
               action={
                 <div className="flex gap-2">
                   <Button icon={<Globe />} onClick={openGenerated}>
-                    Generate domain
+                    {t("Generate domain")}
                   </Button>
                   <Button variant="primary" icon={<Plus />} onClick={openNew}>
-                    Add domain
+                    {t("Add domain")}
                   </Button>
                 </div>
               }
@@ -252,14 +253,14 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
           <Table>
             <thead>
               <tr>
-                <th>Domain</th>
-                <th>Protocol redirect</th>
-                <th>Domain redirect</th>
-                <th className="!text-right">Internal port</th>
-                <th className="!text-center">Search indexing</th>
-                <th>DNS status</th>
-                <th>Certificate</th>
-                <th className="!text-right">Actions</th>
+                <th>{t("Domain")}</th>
+                <th>{t("Protocol redirect")}</th>
+                <th>{t("Domain redirect")}</th>
+                <th className="!text-right">{t("Internal port")}</th>
+                <th className="!text-center">{t("Search indexing")}</th>
+                <th>{t("DNS status")}</th>
+                <th>{t("Certificate")}</th>
+                <th className="!text-right">{t("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -277,10 +278,10 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                         HTTP <ArrowRight className="size-3" /> HTTPS
                       </span>
                     ) : (
-                      "None"
+                      t("None")
                     )}
                   </td>
-                  <td className="text-muted">{wwwLabel[d.www_redirect]}</td>
+                  <td className="text-muted">{t(wwwLabel[d.www_redirect])}</td>
                   <td className="text-right tabular-nums">{d.port || app.port}</td>
                   <td className="text-center">{d.indexing ? <Check className="mx-auto size-4 text-success" /> : <X className="mx-auto size-4 text-faint" />}</td>
                   <td>
@@ -295,23 +296,23 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                         <Button
                           size="icon-sm"
                           variant="ghost"
-                          title="Renew certificate now"
+                          title={t("Renew certificate now")}
                           loading={renew.isPending && renew.variables === d.id}
                           onClick={async () => {
-                            if (await confirm({ title: `Renew the certificate of ${d.host}?`, description: "The proxy on the server restarts for a few seconds to request a fresh certificate. Renewals are automatic — use this only if a certificate is stuck.", confirmText: "Renew now" }))
+                            if (await confirm({ title: t("Renew the certificate of {host}?", { host: d.host }), description: t("The proxy on the server restarts for a few seconds to request a fresh certificate. Renewals are automatic — use this only if a certificate is stuck."), confirmText: t("Renew now") }))
                               renew.mutate(d.id);
                           }}
                         >
                           <ShieldCheck />
                         </Button>
                       )}
-                      <Button size="icon-sm" variant="ghost" title="Re-check DNS" loading={checking === d.id} onClick={() => checkOne(d)}>
+                      <Button size="icon-sm" variant="ghost" title={t("Re-check DNS")} loading={checking === d.id} onClick={() => checkOne(d)}>
                         <RefreshCw />
                       </Button>
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Edit"
+                        title={t("Edit")}
                         onClick={() => setForm({ id: d.id, domain: domainURL(d), port: d.port ? String(d.port) : "", https: d.https, www_redirect: d.www_redirect, indexing: d.indexing, cert_mode: (d.cert_mode || "auto") as CertMode })}
                       >
                         <Pencil />
@@ -319,9 +320,9 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Remove"
+                        title={t("Remove")}
                         onClick={async () => {
-                          if (await confirm({ title: `Remove ${d.host}${d.path}?`, description: "Traffic to this domain stops reaching the application immediately.", danger: true, confirmText: "Remove domain" }))
+                          if (await confirm({ title: t("Remove {domain}?", { domain: d.host + d.path }), description: t("Traffic to this domain stops reaching the application immediately."), danger: true, confirmText: t("Remove domain") }))
                             remove.mutate(d.id);
                         }}
                       >
@@ -338,10 +339,11 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
 
       {domains.some((d) => d.dns_status === "mismatch" || d.dns_status === "unresolved") && (
         <div className="rounded-lg border border-warning/25 bg-warning-soft px-4 py-3 text-[13px] text-muted">
-          Some domains don't point to this server yet. Certificates can only be issued once DNS resolves to{" "}
-          <span className="font-mono text-fg">{data!.server_addresses.join(", ") || "the server's public IP"}</span>.{" "}
+          {tx("Some domains don't point to this server yet. Certificates can only be issued once DNS resolves to {addresses}.", {
+            addresses: <span className="font-mono text-fg">{data!.server_addresses.join(", ") || t("the server's public IP")}</span>,
+          })}{" "}
           <button className="font-medium text-fg underline" onClick={() => setShowRecords(true)}>
-            Show required DNS records
+            {t("Show required DNS records")}
           </button>
         </div>
       )}
@@ -359,13 +361,13 @@ function DomainModal({ form, onChange, onSave, saving, appPort }: { form: Domain
     <Modal
       open={!!form}
       onClose={() => onChange(null)}
-      title={form?.id ? "Edit domain" : "Add domain"}
-      description="Changes reach the proxy within seconds — no redeploy needed."
+      title={form?.id ? t("Edit domain") : t("Add domain")}
+      description={t("Changes reach the proxy within seconds — no redeploy needed.")}
       footer={
         <>
-          <Button onClick={() => onChange(null)}>Cancel</Button>
+          <Button onClick={() => onChange(null)}>{t("Cancel")}</Button>
           <Button variant="primary" loading={saving} disabled={!form?.domain.trim()} onClick={onSave}>
-            {form?.id ? "Save changes" : "Add domain"}
+            {form?.id ? t("Save changes") : t("Add domain")}
           </Button>
         </>
       }
@@ -378,33 +380,33 @@ function DomainModal({ form, onChange, onSave, saving, appPort }: { form: Domain
             onSave();
           }}
         >
-          <Field label="Domain" required hint="A hostname, optionally with a path prefix, e.g. https://app.example.com or example.com/api">
+          <Field label={t("Domain")} required hint={t("A hostname, optionally with a path prefix, e.g. https://app.example.com or example.com/api")}>
             <Input autoFocus value={form.domain} onChange={(e) => set({ domain: e.target.value })} placeholder="https://app.example.com" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Internal port" hint={`Container port that receives the traffic. Default: ${appPort}.`}>
+            <Field label={t("Internal port")} hint={t("Container port that receives the traffic. Default: {port}.", { port: appPort })}>
               <Input type="number" value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder={String(appPort)} />
             </Field>
-            <Field label="Domain redirect" hint="Serve both the apex and www names, redirecting one to the other.">
+            <Field label={t("Domain redirect")} hint={t("Serve both the apex and www names, redirecting one to the other.")}>
               <Select value={form.www_redirect} onChange={(e) => set({ www_redirect: e.target.value as WWWRedirect })}>
-                <option value="none">Disabled</option>
+                <option value="none">{t("Disabled")}</option>
                 <option value="to-www">{host} → www.{host}</option>
                 <option value="to-apex">www.{host} → {host}</option>
               </Select>
             </Field>
           </div>
           <div className="space-y-4 rounded-lg border border-border bg-surface-2/40 p-4">
-            <Switch checked={form.https} onChange={(v) => set({ https: v })} label="HTTPS" description="Issue a Let's Encrypt certificate and redirect HTTP → HTTPS." />
+            <Switch checked={form.https} onChange={(v) => set({ https: v })} label="HTTPS" description={t("Issue a Let's Encrypt certificate and redirect HTTP → HTTPS.")} />
             {form.https && (
-              <Field label="Certificate" hint={form.cert_mode === "dns" ? "Uses the DNS provider from Settings → Certificates. Required for wildcard and internal-only domains." : form.cert_mode === "custom" ? "Served from a certificate uploaded in Settings → Certificates." : "Let's Encrypt over HTTP-01; the domain must be reachable from the internet on port 80."}>
+              <Field label={t("Certificate")} hint={form.cert_mode === "dns" ? t("Uses the DNS provider from Settings → Certificates. Required for wildcard and internal-only domains.") : form.cert_mode === "custom" ? t("Served from a certificate uploaded in Settings → Certificates.") : t("Let's Encrypt over HTTP-01; the domain must be reachable from the internet on port 80.")}>
                 <Select value={form.cert_mode} onChange={(e) => set({ cert_mode: e.target.value as CertMode })}>
-                  <option value="auto">Let's Encrypt — automatic</option>
-                  <option value="dns">Let's Encrypt — DNS challenge</option>
-                  <option value="custom">Uploaded certificate</option>
+                  <option value="auto">{t("Let's Encrypt — automatic")}</option>
+                  <option value="dns">{t("Let's Encrypt — DNS challenge")}</option>
+                  <option value="custom">{t("Uploaded certificate")}</option>
                 </Select>
               </Field>
             )}
-            <Switch checked={form.indexing} onChange={(v) => set({ indexing: v })} label="Allow search engine indexing" description="When off, responses carry X-Robots-Tag: noindex, nofollow." />
+            <Switch checked={form.indexing} onChange={(v) => set({ indexing: v })} label={t("Allow search engine indexing")} description={t("When off, responses carry X-Robots-Tag: noindex, nofollow.")} />
           </div>
         </form>
       )}
@@ -419,21 +421,23 @@ function DNSRecordsModal({ appId, open, onClose }: { appId: number; open: boolea
     enabled: open,
   });
   return (
-    <Modal open={open} onClose={onClose} title="DNS records" description="Create these records at your DNS provider (registrar, Cloudflare, Route 53…)." size="lg">
+    <Modal open={open} onClose={onClose} title={t("DNS records")} description={t("Create these records at your DNS provider (registrar, Cloudflare, Route 53…).")} size="lg">
       {isLoading ? (
         <Loading rows={2} />
       ) : !data?.server_addresses ? (
         <p className="text-[13px] text-muted">
-          The server's public IP is unknown. Set it in <span className="font-medium text-fg">Settings → General → Network addresses</span> to generate the records.
+          {tx("The server's public IP is unknown. Set it in {path} to generate the records.", {
+            path: <span className="font-medium text-fg">{t("Settings → General → Network addresses")}</span>,
+          })}
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border">
           <Table>
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Name</th>
-                <th>Value</th>
+                <th>{t("Type")}</th>
+                <th>{t("Name")}</th>
+                <th>{t("Value")}</th>
                 <th />
               </tr>
             </thead>
@@ -467,7 +471,7 @@ export function DomainLinks({ appId, extra = [] }: { appId: number; extra?: stri
     <Menu
       trigger={
         <Button icon={<Globe />} trailing={<span className="text-2xs text-subtle">{count}</span>}>
-          Links
+          {t("Links")}
         </Button>
       }
     >
@@ -529,9 +533,9 @@ export function AccessCallout({ app }: { app: ApplicationDetail }) {
       qc.invalidateQueries({ queryKey: ["application", app.id] });
       if (r.routing_warning) toast.warning(r.routing_warning);
       else
-        toast.success("Domain added", {
-          description: s.kind === "localhost" ? `Open ${s.domain} in your browser (*.localhost resolves to this machine).` : `Open ${s.domain}`,
-          action: { label: "Open", onClick: () => window.open(s.domain, "_blank") },
+        toast.success(t("Domain added"), {
+          description: s.kind === "localhost" ? t("Open {url} in your browser (*.localhost resolves to this machine).", { url: s.domain }) : t("Open {url}", { url: s.domain }),
+          action: { label: t("Open"), onClick: () => window.open(s.domain, "_blank") },
         });
     },
     onError: (e) => toast.error(e.message),
@@ -543,7 +547,7 @@ export function AccessCallout({ app }: { app: ApplicationDetail }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["application", app.id] });
-      toast.success(`Redeploying with port ${app.port} published`, { description: `Available at http://${app.server_host}:${app.port} once the deployment finishes.` });
+      toast.success(t("Redeploying with port {port} published", { port: app.port }), { description: t("Available at {url} once the deployment finishes.", { url: `http://${app.server_host}:${app.port}` }) });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -553,18 +557,24 @@ export function AccessCallout({ app }: { app: ApplicationDetail }) {
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-warning/30 bg-warning-soft px-5 py-4">
       <Globe className="size-5 shrink-0 text-warning" />
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold">Not reachable from your browser yet</div>
+        <div className="text-[13px] font-semibold">{t("Not reachable from your browser yet")}</div>
         <p className="mt-0.5 text-xs leading-relaxed text-muted">
-          The container only listens inside the Docker network at <code className="font-mono text-fg">http://{app.uuid}:{app.port}</code>. Add a domain to route it through
-          the proxy, or publish port {app.port} directly on the server.
+          {tx("The container only listens inside the Docker network at {address}. Add a domain to route it through the proxy, or publish port {port} directly on the server.", {
+            address: (
+              <code className="font-mono text-fg">
+                http://{app.uuid}:{app.port}
+              </code>
+            ),
+            port: app.port,
+          })}
         </p>
       </div>
       <div className="flex gap-2">
         <Button size="sm" onClick={() => publish.mutate()} loading={publish.isPending}>
-          Publish port {app.port}
+          {t("Publish port {port}", { port: app.port })}
         </Button>
         <Button size="sm" variant="primary" icon={<Globe />} onClick={() => generate.mutate()} loading={generate.isPending}>
-          Generate domain
+          {t("Generate domain")}
         </Button>
       </div>
     </div>

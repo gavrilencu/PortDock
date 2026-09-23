@@ -3,6 +3,7 @@ import { Box, Boxes, Code2, Container, FileCode, Globe, Sparkles, SquareTerminal
 import { BUILD_PACKS, buildPack } from "../lib/buildpacks";
 import type { BuildPack, BuildSuggestion } from "../lib/types";
 import { cn } from "../lib/utils";
+import { t } from "../lib/i18n";
 import { Badge, Field, Input } from "./ui";
 
 export interface BuildValues {
@@ -46,7 +47,7 @@ export function BuildSettings<T extends BuildValues>({ value, onChange, suggesti
     <div className="space-y-5">
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-[13px] font-medium">Deployment type</span>
+          <span className="text-[13px] font-medium">{t("Deployment type")}</span>
           {suggestion && (
             <span className="flex items-center gap-1.5 text-xs text-subtle">
               <Sparkles className="size-3.5" /> {suggestion.reason}
@@ -61,65 +62,65 @@ export function BuildSettings<T extends BuildValues>({ value, onChange, suggesti
                 type="button"
                 key={b.id}
                 onClick={() => choose(b.id)}
-                title={b.description}
+                title={t(b.description)}
                 className={cn(
                   "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors [&_svg]:size-4",
                   active ? "border-fg bg-surface-2 ring-1 ring-fg" : "border-border bg-surface hover:border-border-strong",
                 )}
               >
                 <span className={cn(active ? "text-fg" : "text-faint")}>{icons[b.id] ?? <FileCode />}</span>
-                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{b.label}</span>
-                {suggestion?.build_pack === b.id && <Badge tone="accent">Suggested</Badge>}
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{t(b.label)}</span>
+                {suggestion?.build_pack === b.id && <Badge tone="accent">{t("Suggested")}</Badge>}
               </button>
             );
           })}
         </div>
-        <p className="mt-2 text-xs text-subtle">{info.description}</p>
+        <p className="mt-2 text-xs text-subtle">{t(info.description)}</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {has("dockerfile_path") && (
-          <Field label="Dockerfile path" hint="Relative to the base directory.">
+          <Field label={t("Dockerfile path")} hint={t("Relative to the base directory.")}>
             <Input value={value.dockerfile_path} onChange={(e) => onChange({ dockerfile_path: e.target.value })} />
           </Field>
         )}
         {has("compose") && (
           <>
-            <Field label="Compose file" hint="Relative to the base directory.">
+            <Field label={t("Compose file")} hint={t("Relative to the base directory.")}>
               <Input value={value.compose_path} onChange={(e) => onChange({ compose_path: e.target.value })} />
             </Field>
-            <Field label="Exposed service" hint="Receives the domain. Defaults to the first service.">
+            <Field label={t("Exposed service")} hint={t("Receives the domain. Defaults to the first service.")}>
               <Input value={value.compose_service} onChange={(e) => onChange({ compose_service: e.target.value })} placeholder="web" />
             </Field>
           </>
         )}
         {has("base_image") && (
-          <Field label="Base image" hint="Any Docker image; your commands run inside it.">
+          <Field label={t("Base image")} hint={t("Any Docker image; your commands run inside it.")}>
             <Input value={value.docker_image} onChange={(e) => onChange({ docker_image: e.target.value })} placeholder="debian:bookworm-slim" />
           </Field>
         )}
         {has("install") && (
-          <Field label="Install command" hint={value.build_pack === "shell" ? "Runs once during the image build." : "Leave empty to use the default."}>
-            <Input className="font-mono text-xs" value={value.install_command} onChange={(e) => onChange({ install_command: e.target.value })} placeholder={info.placeholders?.install ?? "auto"} />
+          <Field label={t("Install command")} hint={value.build_pack === "shell" ? t("Runs once during the image build.") : t("Leave empty to use the default.")}>
+            <Input className="font-mono text-xs" value={value.install_command} onChange={(e) => onChange({ install_command: e.target.value })} placeholder={info.placeholders?.install ?? t("auto")} />
           </Field>
         )}
         {has("build") && (
-          <Field label="Build command" hint="Leave empty to use the default.">
-            <Input className="font-mono text-xs" value={value.build_command} onChange={(e) => onChange({ build_command: e.target.value })} placeholder={info.placeholders?.build ?? "auto"} />
+          <Field label={t("Build command")} hint={t("Leave empty to use the default.")}>
+            <Input className="font-mono text-xs" value={value.build_command} onChange={(e) => onChange({ build_command: e.target.value })} placeholder={info.placeholders?.build ?? t("auto")} />
           </Field>
         )}
         {has("start") && (
-          <Field label="Start command" required={info.startRequired} hint={info.startRequired ? "The long-running process of your application." : "Overrides the default start command."}>
-            <Input className="font-mono text-xs" value={value.start_command} onChange={(e) => onChange({ start_command: e.target.value })} placeholder={info.placeholders?.start ?? "auto"} />
+          <Field label={t("Start command")} required={info.startRequired} hint={info.startRequired ? t("The long-running process of your application.") : t("Overrides the default start command.")}>
+            <Input className="font-mono text-xs" value={value.start_command} onChange={(e) => onChange({ start_command: e.target.value })} placeholder={info.placeholders?.start ?? t("auto")} />
           </Field>
         )}
         {has("publish") && (
-          <Field label="Output directory" hint="Folder with the built static files.">
+          <Field label={t("Output directory")} hint={t("Folder with the built static files.")}>
             <Input value={value.publish_directory} onChange={(e) => onChange({ publish_directory: e.target.value })} placeholder="dist" />
           </Field>
         )}
         {has("port") && (
-          <Field label="Port" hint="The port your application listens on inside the container.">
+          <Field label={t("Port")} hint={t("The port your application listens on inside the container.")}>
             <Input type="number" value={value.port} onChange={(e) => onChange({ port: Number(e.target.value) })} />
           </Field>
         )}

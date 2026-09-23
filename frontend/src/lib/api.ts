@@ -1,3 +1,5 @@
+import { t, tMaybe } from "./i18n";
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -19,12 +21,13 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     if (!location.pathname.startsWith("/login")) {
       location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
     }
-    throw new ApiError(401, "authentication required");
+    throw new ApiError(401, t("authentication required"));
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    throw new ApiError(res.status, (data && data.error) || res.statusText);
+    // Server messages are English; known ones are shown in the interface language.
+    throw new ApiError(res.status, tMaybe((data && data.error) || res.statusText));
   }
   return data as T;
 }

@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { Environment, ProjectRole } from "../lib/types";
 import { roleDescriptions, roleLabels, UpgradeNotice, useLicense } from "./access";
 import { Avatar, Badge, Button, Empty, Loading, Modal, Select, Switch } from "./ui";
+import { t } from "../lib/i18n";
 
 type Member = { user_id: number; name: string; email: string; user_role: string; role: ProjectRole };
 type Candidate = { id: number; name: string; email: string; role: string };
@@ -41,7 +42,7 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
       qc.invalidateQueries({ queryKey: ["project-members", projectId] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
       qc.invalidateQueries({ queryKey: ["projects"] });
-      toast.success("Project access updated");
+      toast.success(t("Project access updated"));
       onClose();
     },
     onError: (e) => toast.error(e.message),
@@ -61,11 +62,11 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
       open={open}
       onClose={onClose}
       size="lg"
-      title="Project access"
-      description="Owners and admins always have full access. Everyone else gets their role below, or the default role."
+      title={t("Project access")}
+      description={t("Owners and admins always have full access. Everyone else gets their role below, or the default role.")}
       footer={
         <Button variant="primary" loading={save.isPending} disabled={!has("project_roles") && members.length > 0} onClick={() => save.mutate()}>
-          Save access
+          {t("Save access")}
         </Button>
       }
     >
@@ -73,18 +74,18 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
         <Loading rows={3} />
       ) : (
         <div className="space-y-5">
-          <UpgradeNotice feature="project_roles">Per-project roles and private projects are part of the</UpgradeNotice>
+          <UpgradeNotice feature="project_roles">{t("Per-project roles and private projects are part of the")}</UpgradeNotice>
           <div className="rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-center gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold">Default role for other members</div>
-                <div className="text-xs text-muted">{roleDescriptions[defaultRole as Exclude<ProjectRole, "admin">]}</div>
+                <div className="text-[13px] font-semibold">{t("Default role for other members")}</div>
+                <div className="text-xs text-muted">{t(roleDescriptions[defaultRole as Exclude<ProjectRole, "admin">])}</div>
               </div>
               <Select className="w-44" value={defaultRole} onChange={(e) => setDefaultRole(e.target.value as ProjectRole)} disabled={!has("project_roles")}>
-                <option value="none">No access (private)</option>
-                <option value="viewer">Viewer</option>
-                <option value="developer">Developer</option>
-                <option value="maintainer">Maintainer</option>
+                <option value="none">{t("No access (private)")}</option>
+                <option value="viewer">{t("Viewer")}</option>
+                <option value="developer">{t("Developer")}</option>
+                <option value="maintainer">{t("Maintainer")}</option>
               </Select>
             </div>
           </div>
@@ -92,7 +93,7 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
           <div>
             <div className="mb-2 flex items-center gap-2">
               <Select className="flex-1" value={pick} onChange={(e) => setPick(Number(e.target.value))} disabled={!has("project_roles") || available.length === 0}>
-                <option value={0}>{available.length ? "Add a team member…" : "Every member already has a role"}</option>
+                <option value={0}>{available.length ? t("Add a team member…") : t("Every member already has a role")}</option>
                 {available.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} — {c.email}
@@ -100,11 +101,11 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
                 ))}
               </Select>
               <Button icon={<UserPlus />} disabled={!pick} onClick={add}>
-                Add
+                {t("Add")}
               </Button>
             </div>
             {members.length === 0 ? (
-              <Empty compact title="No explicit members" description="Everyone uses the default role." />
+              <Empty compact title={t("No explicit members")} description={t("Everyone uses the default role.")} />
             ) : (
               <div className="divide-y divide-border rounded-lg border border-border">
                 {members.map((m) => (
@@ -115,11 +116,11 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
                       <div className="truncate text-xs text-muted">{m.email}</div>
                     </div>
                     <Select className="h-8 w-36" value={m.role} onChange={(e) => setMembers(members.map((x) => (x.user_id === m.user_id ? { ...x, role: e.target.value as ProjectRole } : x)))}>
-                      <option value="viewer">Viewer</option>
-                      <option value="developer">Developer</option>
-                      <option value="maintainer">Maintainer</option>
+                      <option value="viewer">{t("Viewer")}</option>
+                      <option value="developer">{t("Developer")}</option>
+                      <option value="maintainer">{t("Maintainer")}</option>
                     </Select>
-                    <Button size="icon-sm" variant="ghost" title="Remove" onClick={() => setMembers(members.filter((x) => x.user_id !== m.user_id))}>
+                    <Button size="icon-sm" variant="ghost" title={t("Remove")} onClick={() => setMembers(members.filter((x) => x.user_id !== m.user_id))}>
                       <Trash2 className="text-danger" />
                     </Button>
                   </div>
@@ -129,10 +130,10 @@ export function MembersModal({ projectId, open, onClose }: { projectId: number; 
           </div>
           {admins.length > 0 && (
             <div className="text-xs text-muted">
-              Full access through their organization role:{" "}
+              {t("Full access through their organization role:")}{" "}
               {admins.map((a) => (
                 <Badge key={a.id} className="mr-1">
-                  {a.name} · {roleLabels[a.role === "owner" ? "admin" : (a.role as ProjectRole)] ?? a.role}
+                  {a.name} · {t(roleLabels[a.role === "owner" ? "admin" : (a.role as ProjectRole)] ?? a.role)}
                 </Badge>
               ))}
             </div>
@@ -155,7 +156,7 @@ export function EnvironmentSettingsModal({ env, onClose }: { env: Environment | 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", env!.project_id] });
       qc.invalidateQueries({ queryKey: ["application"] });
-      toast.success("Environment updated");
+      toast.success(t("Environment updated"));
       onClose();
     },
     onError: (e) => toast.error(e.message),
@@ -164,31 +165,31 @@ export function EnvironmentSettingsModal({ env, onClose }: { env: Environment | 
     <Modal
       open={!!env}
       onClose={onClose}
-      title={`Environment “${env?.name}”`}
-      description="Protection rules for deployments and configuration changes."
+      title={t("Environment “{name}”", { name: env?.name ?? "" })}
+      description={t("Protection rules for deployments and configuration changes.")}
       footer={
         <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-          Save
+          {t("Save")}
         </Button>
       }
     >
       <div className="space-y-5">
-        <UpgradeNotice feature="project_roles">Protected environments are part of the</UpgradeNotice>
+        <UpgradeNotice feature="project_roles">{t("Protected environments are part of the")}</UpgradeNotice>
         <Switch
           checked={f.protected}
           disabled={!has("project_roles") && !f.protected}
           onChange={(v) => setF({ protected: v, require_approval: v ? f.require_approval : false })}
-          label="Protected environment"
-          description="Only maintainers can change configuration, variables and domains. Deployments by developers become approval requests."
+          label={t("Protected environment")}
+          description={t("Only maintainers can change configuration, variables and domains. Deployments by developers become approval requests.")}
         />
         <Switch
           checked={f.require_approval}
           disabled={!has("approvals") && !f.require_approval}
           onChange={(v) => setF({ protected: v || f.protected, require_approval: v })}
-          label="Require approval for every deployment"
-          description="Including Git pushes and API calls. A maintainer other than the requester must approve (four-eyes principle)."
+          label={t("Require approval for every deployment")}
+          description={t("Including Git pushes and API calls. A maintainer other than the requester must approve (four-eyes principle).")}
         />
-        {!has("approvals") && has("project_roles") && <UpgradeNotice feature="approvals">Deployment approvals are part of the</UpgradeNotice>}
+        {!has("approvals") && has("project_roles") && <UpgradeNotice feature="approvals">{t("Deployment approvals are part of the")}</UpgradeNotice>}
       </div>
     </Modal>
   );

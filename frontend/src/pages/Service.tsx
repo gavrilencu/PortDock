@@ -12,8 +12,15 @@ import { LogViewer } from "../components/LogViewer";
 import { EnvEditor } from "../components/EnvEditor";
 import { domainURL, splitList } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
+import { t, tk, tx } from "../lib/i18n";
 
 type Tab = "overview" | "metrics" | "compose" | "env" | "settings";
+
+const actionDone: Record<string, string> = {
+  start: tk("Service started"),
+  stop: tk("Service stopped"),
+  restart: tk("Service restarted"),
+};
 
 export function ServicePage() {
   const id = Number(useParams().id);
@@ -37,7 +44,7 @@ export function ServicePage() {
   const action = useMutation({
     mutationFn: (a: string) => api.post(`/services/${id}/${a}`),
     onSuccess: (_, a) => {
-      toast.success(`Service ${a} ok`);
+      toast.success(actionDone[a] ? t(actionDone[a]) : t("Done"));
       qc.invalidateQueries({ queryKey: ["service", id] });
       qc.invalidateQueries({ queryKey: ["containers"] });
     },
@@ -58,10 +65,10 @@ export function ServicePage() {
             {s.name} <StatusBadge status={s.status} />
           </span>
         }
-        subtitle={`${s.template === "custom" ? "Docker Compose" : s.template} · on ${s.server_name}`}
+        subtitle={`${s.template === "custom" ? "Docker Compose" : s.template} · ${t("on {server}", { server: s.server_name })}`}
         breadcrumbs={
           <>
-            <Link to="/projects" className="hover:text-fg">Projects</Link> / <Link to={`/projects/${s.project.id}?env=${s.environment_id}`} className="hover:text-fg">{s.project.name}</Link> / <span>{s.environment.name}</span> /{" "}
+            <Link to="/projects" className="hover:text-fg">{t("Projects")}</Link> / <Link to={`/projects/${s.project.id}?env=${s.environment_id}`} className="hover:text-fg">{s.project.name}</Link> / <span>{s.environment.name}</span> /{" "}
             <span className="text-fg">{s.name}</span>
           </>
         }
@@ -70,34 +77,34 @@ export function ServicePage() {
             {running ? (
               <>
                 <Button icon={<RotateCw className="size-4" />} onClick={() => action.mutate("restart")}>
-                  Restart
+                  {t("Restart")}
                 </Button>
                 <Button icon={<Square className="size-4" />} onClick={() => action.mutate("stop")}>
-                  Stop
+                  {t("Stop")}
                 </Button>
               </>
             ) : (
               s.status === "stopped" && (containers.data?.length ?? 0) > 0 && (
                 <Button icon={<Play className="size-4" />} onClick={() => action.mutate("start")}>
-                  Start
+                  {t("Start")}
                 </Button>
               )
             )}
             <Button variant="primary" icon={<Rocket className="size-4" />} loading={deploy.isPending || deploying} onClick={() => deploy.mutate()}>
-              Deploy
+              {t("Deploy")}
             </Button>
           </>
         }
       />
       <Tabs
         value={tab}
-        onChange={(t) => setParams({ tab: t })}
+        onChange={(v) => setParams({ tab: v })}
         tabs={[
-          { id: "overview", label: "Overview", icon: <LayoutGrid /> },
-          { id: "metrics", label: "Metrics", icon: <Activity /> },
+          { id: "overview", label: t("Overview"), icon: <LayoutGrid /> },
+          { id: "metrics", label: t("Metrics"), icon: <Activity /> },
           { id: "compose", label: "Compose", icon: <FileCode /> },
-          { id: "env", label: "Environment", icon: <KeyRound /> },
-          { id: "settings", label: "Settings", icon: <Settings2 /> },
+          { id: "env", label: t("Environment"), icon: <KeyRound /> },
+          { id: "settings", label: t("Settings"), icon: <Settings2 /> },
         ]}
       />
       {tab === "overview" && (
@@ -112,7 +119,7 @@ export function ServicePage() {
             </div>
           )}
           {(stream.lines.length > 0 || deploying) && <LogViewer lines={stream.lines} live={!stream.status} className="h-80" filename={`service-${s.id}.log`} />}
-          <Card title="Containers">
+          <Card title={t("Containers")}>
             {containers.isLoading ? <Loading /> : containers.error ? <div className="p-5"><ErrorBox error={containers.error} /></div> : <ContainerTable serverId={s.server_id} containers={containers.data ?? []} />}
           </Card>
         </div>
@@ -121,7 +128,7 @@ export function ServicePage() {
       {tab === "compose" && <ComposeEditor s={s} onDeploy={() => deploy.mutate()} />}
       {tab === "env" && (
         <div className="space-y-3">
-          <p className="text-sm text-muted">Variables are available for compose interpolation (<code>${"{VAR}"}</code>) and injected into the exposed service.</p>
+          <p className="text-sm text-muted">{tx("Variables are available for compose interpolation ({example}) and injected into the exposed service.", { example: <code>${"{VAR}"}</code> })}</p>
           <EnvEditor owner={`/services/${id}`} />
         </div>
       )}
@@ -138,21 +145,21 @@ function ComposeEditor({ s, onDeploy }: { s: ServiceDetail; onDeploy: () => void
     mutationFn: () => api.patch<ServiceDetail>(`/services/${s.id}`, { ...s, compose }),
     onSuccess: (d) => {
       qc.setQueryData(["service", s.id], d);
-      toast.success("Compose saved");
+      toast.success(t("Compose saved"));
     },
     onError: (e) => toast.error(e.message),
   });
   return (
     <Card
       title="docker-compose.yml"
-      description="PortDock adds routing labels and the proxy network automatically via an override file."
+      description={t("PortDock adds routing labels and the proxy network automatically via an override file.")}
       actions={
         <>
           <Button size="sm" icon={<Save className="size-3.5" />} loading={save.isPending} disabled={compose === s.compose} onClick={() => save.mutate()}>
-            Save
+            {t("Save")}
           </Button>
           <Button size="sm" variant="primary" icon={<Rocket className="size-3.5" />} onClick={() => save.mutateAsync().then(onDeploy)}>
-            Save & deploy
+            {t("Save & deploy")}
           </Button>
         </>
       }
@@ -173,7 +180,7 @@ function ServiceSettings({ s }: { s: ServiceDetail }) {
     mutationFn: () => api.patch<ServiceDetail>(`/services/${s.id}`, { ...s, ...f }),
     onSuccess: (d) => {
       qc.setQueryData(["service", s.id], d);
-      toast.success("Saved — redeploy to apply domain changes");
+      toast.success(t("Saved — redeploy to apply domain changes"));
     },
     onError: (e) => toast.error(e.message),
   });
@@ -184,33 +191,33 @@ function ServiceSettings({ s }: { s: ServiceDetail }) {
   });
   return (
     <div className="space-y-6">
-      <Card title="General">
+      <Card title={t("General")}>
         <div className="grid gap-4 p-5 md:grid-cols-2">
-          <Field label="Name">
+          <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-          <Field label="Domain" hint="Routed to the service declared in x-portdock.">
+          <Field label={t("Domain")} hint={t("Routed to the service declared in x-portdock.")}>
             <Input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} />
           </Field>
-          <Field label="Description" className="md:col-span-2">
+          <Field label={t("Description")} className="md:col-span-2">
             <Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           </Field>
           <div className="flex justify-end md:col-span-2">
             <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
-              Save
+              {t("Save")}
             </Button>
           </div>
         </div>
       </Card>
-      <Card title="Danger zone" className="border-danger/30">
+      <Card title={t("Danger zone")} className="border-danger/30">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <p className="text-sm text-muted">Stop and remove the stack. Volumes can be kept or deleted.</p>
+          <p className="text-sm text-muted">{t("Stop and remove the stack. Volumes can be kept or deleted.")}</p>
           <div className="flex gap-2">
-            <Button variant="danger" onClick={async () => (await confirm({ title: "Delete service (keep volumes)?", danger: true, confirmText: "Delete" })) && del.mutate(false)}>
-              Delete, keep volumes
+            <Button variant="danger" onClick={async () => (await confirm({ title: t("Delete service (keep volumes)?"), danger: true, confirmText: t("Delete") })) && del.mutate(false)}>
+              {t("Delete, keep volumes")}
             </Button>
-            <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: "Delete service and volumes?", danger: true, confirmText: "Delete everything", typeToConfirm: s.name })) && del.mutate(true)}>
-              Delete with volumes
+            <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: t("Delete service and volumes?"), danger: true, confirmText: t("Delete everything"), typeToConfirm: s.name })) && del.mutate(true)}>
+              {t("Delete with volumes")}
             </Button>
           </div>
         </div>

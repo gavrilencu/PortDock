@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { MFAEnforcement } from "./security";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   FolderKanban,
   KeyRound,
+  Languages,
   LayoutDashboard,
   LogOut,
   Menu as MenuIcon,
@@ -34,6 +35,8 @@ import { CommandPaletteProvider, useCommandPalette } from "./CommandPalette";
 import { Avatar, Button, HeaderSlotProvider, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator, Skeleton } from "./ui";
 import { useFiringAlerts } from "../pages/Alerts";
 import { SidebarUpdate } from "./updates";
+import { getLocale, isLocale, LOCALES, setLocale, t, tk, useLocale } from "../lib/i18n";
+import { useChangeLocale } from "./LanguagePicker";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -65,29 +68,34 @@ export function Logo({ className }: { className?: string }) {
 
 const navGroups = [
   {
-    label: "Platform",
+    label: tk("Platform"),
     items: [
-      { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
-      { to: "/projects", label: "Projects", icon: FolderKanban },
-      { to: "/topology", label: "Topology", icon: Network },
-      { to: "/deployments", label: "Deployments", icon: Rocket },
+      { to: "/", label: tk("Overview"), icon: LayoutDashboard, end: true },
+      { to: "/projects", label: tk("Projects"), icon: FolderKanban },
+      { to: "/topology", label: tk("Topology"), icon: Network },
+      { to: "/deployments", label: tk("Deployments"), icon: Rocket },
     ],
   },
   {
-    label: "Infrastructure",
+    label: tk("Infrastructure"),
     items: [
-      { to: "/servers", label: "Servers", icon: ServerIcon },
-      { to: "/alerts", label: "Alerts", icon: BellRing },
+      { to: "/servers", label: tk("Servers"), icon: ServerIcon },
+      { to: "/alerts", label: tk("Alerts"), icon: BellRing },
     ],
   },
   {
-    label: "Organization",
+    label: tk("Organization"),
     items: [
-      { to: "/settings?tab=users", label: "Team", icon: Users, match: "tab=users" },
-      { to: "/settings", label: "Settings", icon: Settings, exclude: "tab=users" },
+      { to: "/settings?tab=users", label: tk("Team"), icon: Users, match: "tab=users" },
+      { to: "/settings", label: tk("Settings"), icon: Settings, exclude: "tab=users" },
     ],
   },
 ];
+
+const themeLabels: Record<ThemeMode, string> = { system: tk("System"), light: tk("Light"), dark: tk("Dark") };
+
+/** Display name of an organization role (value stays unchanged). */
+const orgRoleLabels: Record<string, string> = { owner: tk("Owner"), admin: tk("Admin"), member: tk("Member") };
 
 function themeIcon(m: ThemeMode) {
   return m === "dark" ? <Moon /> : m === "light" ? <Sun /> : <Monitor />;
@@ -96,6 +104,8 @@ function themeIcon(m: ThemeMode) {
 function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLogout }: { user: User; collapsed: boolean; onToggle?: () => void; onNavigate?: () => void; theme: ThemeMode; setTheme: (m: ThemeMode) => void; onLogout: () => void }) {
   const openPalette = useCommandPalette();
   const location = useLocation();
+  const locale = useLocale();
+  const changeLocale = useChangeLocale();
   const firing = useFiringAlerts().data ?? [];
   const critical = firing.some((a) => a.severity === "critical");
   return (
@@ -106,7 +116,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
           {!collapsed && (
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">PortDock</div>
-              <div className="truncate text-2xs text-subtle">Self-hosted platform</div>
+              <div className="truncate text-2xs text-subtle">{t("Self-hosted platform")}</div>
             </div>
           )}
         </Link>
@@ -119,12 +129,12 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
             "flex h-8 w-full items-center gap-2 rounded-md border border-border bg-surface-2/60 text-[13px] text-subtle shadow-xs transition-colors hover:border-border-strong hover:text-fg",
             collapsed ? "justify-center" : "px-2.5",
           )}
-          title="Search (Ctrl+K)"
+          title={t("Search (Ctrl+K)")}
         >
           <Search className="size-3.5" />
           {!collapsed && (
             <>
-              <span className="flex-1 text-left">Search…</span>
+              <span className="flex-1 text-left">{t("Search…")}</span>
               <Kbd>Ctrl K</Kbd>
             </>
           )}
@@ -134,7 +144,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
       <nav className={cn("flex-1 overflow-y-auto pb-4", collapsed ? "px-2" : "px-3")}>
         {navGroups.map((g) => (
           <div key={g.label} className="mt-5">
-            {!collapsed ? <div className="mb-1 px-2 text-2xs font-medium uppercase tracking-wider text-faint">{g.label}</div> : <div className="mx-2 mb-2 h-px bg-border" />}
+            {!collapsed ? <div className="mb-1 px-2 text-2xs font-medium uppercase tracking-wider text-faint">{t(g.label)}</div> : <div className="mx-2 mb-2 h-px bg-border" />}
             <div className="space-y-px">
               {g.items.map((n) => {
                 const it = n as typeof n & { match?: string; exclude?: string; end?: boolean };
@@ -144,7 +154,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
                     to={n.to}
                     end={it.end}
                     onClick={onNavigate}
-                    title={collapsed ? n.label : undefined}
+                    title={collapsed ? t(n.label) : undefined}
                     className={({ isActive }) => {
                       let active = isActive;
                       if (it.match) active = location.pathname === "/settings" && location.search.includes(it.match);
@@ -160,7 +170,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
                       <n.icon />
                       {collapsed && n.to === "/alerts" && firing.length > 0 && <span className={cn("absolute -right-1 -top-1 size-2 rounded-full", critical ? "bg-danger" : "bg-warning")} />}
                     </span>
-                    {!collapsed && <span className="flex-1">{n.label}</span>}
+                    {!collapsed && <span className="flex-1">{t(n.label)}</span>}
                     {!collapsed && n.to === "/alerts" && firing.length > 0 && (
                       <span className={cn("rounded px-1.5 text-2xs font-semibold leading-4 text-white", critical ? "bg-danger" : "bg-warning")}>{firing.length}</span>
                     )}
@@ -179,7 +189,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
         {onToggle && (
           <button onClick={onToggle} className={cn("flex h-8 w-full items-center gap-2.5 rounded-md text-[13px] text-muted hover:bg-surface-2 hover:text-fg [&_svg]:size-4 [&_svg]:text-faint", collapsed ? "justify-center" : "px-2")}>
             {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-            {!collapsed && "Collapse sidebar"}
+            {!collapsed && t("Collapse sidebar")}
           </button>
         )}
         <Menu
@@ -203,26 +213,33 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
           <div className="px-2 py-1.5">
             <div className="text-[13px] font-medium">{user.name}</div>
             <div className="text-xs text-subtle">
-              {user.email} · <span className="capitalize">{user.role}</span>
+              {user.email} · <span>{orgRoleLabels[user.role] ? t(orgRoleLabels[user.role]) : user.role}</span>
             </div>
           </div>
           <MenuSeparator />
           <Link to="/settings?tab=profile">
-            <MenuItem icon={<UserIcon />}>Profile</MenuItem>
+            <MenuItem icon={<UserIcon />}>{t("Profile")}</MenuItem>
           </Link>
           <Link to="/settings?tab=tokens">
-            <MenuItem icon={<KeyRound />}>API tokens</MenuItem>
+            <MenuItem icon={<KeyRound />}>{t("API tokens")}</MenuItem>
           </Link>
           <MenuSeparator />
-          <MenuLabel>Theme</MenuLabel>
+          <MenuLabel>{t("Theme")}</MenuLabel>
           {(["system", "light", "dark"] as const).map((m) => (
             <MenuItem key={m} icon={themeIcon(m)} active={theme === m} onClick={() => setTheme(m)}>
-              <span className="capitalize">{m}</span>
+              <span>{t(themeLabels[m])}</span>
+            </MenuItem>
+          ))}
+          <MenuSeparator />
+          <MenuLabel>{t("Language")}</MenuLabel>
+          {LOCALES.map((l) => (
+            <MenuItem key={l.id} icon={<Languages />} active={locale === l.id} onClick={() => changeLocale(l.id)}>
+              {l.label}
             </MenuItem>
           ))}
           <MenuSeparator />
           <MenuItem icon={<LogOut />} onClick={onLogout}>
-            Sign out
+            {t("Sign out")}
           </MenuItem>
         </Menu>
       </div>
@@ -242,7 +259,7 @@ function SystemStatus() {
       <span className={cn("relative flex size-2 rounded-full", down ? "bg-danger" : "bg-success")}>
         <span className={cn("absolute inset-0 animate-ping rounded-full opacity-40", down ? "bg-danger" : "bg-success")} />
       </span>
-      {down ? `${down} server${down > 1 ? "s" : ""} offline` : "All systems operational"}
+      {down ? t("{n} server offline|{n} servers offline", { n: down }) : t("All systems operational")}
     </Link>
   );
 }
@@ -260,22 +277,22 @@ function Topbar({ onMenu, slotRef }: { onMenu: () => void; slotRef: (el: HTMLDiv
       <Menu
         trigger={
           <Button variant="primary" size="sm" icon={<Plus />}>
-            Create
+            {t("Create")}
           </Button>
         }
       >
-        <MenuLabel>Create new</MenuLabel>
+        <MenuLabel>{t("Create new")}</MenuLabel>
         <Link to="/projects?new=1">
-          <MenuItem icon={<FolderKanban />}>Project</MenuItem>
+          <MenuItem icon={<FolderKanban />}>{t("Project")}</MenuItem>
         </Link>
         {admin && (
           <Link to="/servers?new=1">
-            <MenuItem icon={<ServerIcon />}>Server</MenuItem>
+            <MenuItem icon={<ServerIcon />}>{t("Server")}</MenuItem>
           </Link>
         )}
         {admin && (
           <Link to="/settings?tab=users">
-            <MenuItem icon={<Users />}>Team member</MenuItem>
+            <MenuItem icon={<Users />}>{t("Team member")}</MenuItem>
           </Link>
         )}
       </Menu>
@@ -298,6 +315,17 @@ export function AppLayout() {
     }
   });
   useLiveEvents();
+
+  // The account's language wins; a language picked before signing in is saved to an account without one.
+  const accountLocale = data?.user?.locale;
+  useEffect(() => {
+    if (!data?.user) return;
+    if (isLocale(accountLocale)) {
+      if (accountLocale !== getLocale()) setLocale(accountLocale);
+    } else if (getLocale() !== "en") {
+      api.patch("/auth/me", { locale: getLocale() }).catch(() => {});
+    }
+  }, [data?.user, accountLocale]);
 
   const toggle = () =>
     setCollapsed((c) => {
@@ -359,7 +387,7 @@ export function AppLayout() {
                       )}
                     >
                       <span className="flex-1">{data.license.message}</span>
-                      <span className="font-medium underline underline-offset-2">Manage license</span>
+                      <span className="font-medium underline underline-offset-2">{t("Manage license")}</span>
                     </Link>
                   )}
                   <Outlet />

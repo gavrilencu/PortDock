@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Copy, Eye, EyeOff, LoaderCircle, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn, copy } from "../lib/utils";
+import { t, tk, tx } from "../lib/i18n";
 
 // ---------- Button ----------
 
@@ -258,12 +259,12 @@ export function Loading({ rows = 3 }: { rows?: number }) {
   );
 }
 
-export function ErrorBox({ error, title = "Something went wrong" }: { error: unknown; title?: string }) {
+export function ErrorBox({ error, title }: { error: unknown; title?: string }) {
   return (
     <div className="flex gap-3 rounded-lg border border-danger/25 bg-danger-soft px-4 py-3 text-[13px]">
       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-danger" />
       <div className="min-w-0">
-        <div className="font-medium text-danger">{title}</div>
+        <div className="font-medium text-danger">{title ?? t("Something went wrong")}</div>
         <div className="mt-0.5 break-words text-muted">{error instanceof Error ? error.message : String(error)}</div>
       </div>
     </div>
@@ -308,17 +309,29 @@ const toneText: Record<Tone, string> = {
 };
 
 const statusLabel: Record<string, string> = {
-  success: "Ready",
-  running: "Running",
-  deploying: "Building",
-  queued: "Queued",
-  failed: "Failed",
-  cancelled: "Canceled",
-  stopped: "Stopped",
-  reachable: "Online",
-  unreachable: "Offline",
-  exited: "Exited",
-  degraded: "Degraded",
+  success: tk("Ready"),
+  running: tk("Running"),
+  deploying: tk("Building"),
+  queued: tk("Queued"),
+  failed: tk("Failed"),
+  cancelled: tk("Canceled"),
+  stopped: tk("Stopped"),
+  reachable: tk("Online"),
+  unreachable: tk("Offline"),
+  exited: tk("Exited"),
+  degraded: tk("Degraded"),
+  healthy: tk("Healthy"),
+  starting: tk("Starting"),
+  restarting: tk("Restarting"),
+  paused: tk("Paused"),
+  rejected: tk("Rejected"),
+  dead: tk("Dead"),
+  created: tk("Created"),
+  missing: tk("Missing"),
+  unknown: tk("Unknown"),
+  disabled: tk("Disabled"),
+  pending_approval: tk("Pending approval"),
+  unhealthy: tk("Unhealthy"),
 };
 
 export function StatusDot({ status, className }: { status: string; className?: string }) {
@@ -331,7 +344,7 @@ export function StatusBadge({ status, className, label }: { status: string; clas
   return (
     <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-md border border-border bg-surface px-2 text-xs font-medium text-fg shadow-xs", className)}>
       <StatusDot status={status} />
-      {label ?? statusLabel[status] ?? status.charAt(0).toUpperCase() + status.slice(1)}
+      {label ?? (statusLabel[status] ? t(statusLabel[status]) : status.charAt(0).toUpperCase() + status.slice(1))}
     </span>
   );
 }
@@ -510,10 +523,10 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         footer={
           <>
             <Button variant="secondary" onClick={() => close(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button variant={state?.danger ? "danger" : "primary"} className={state?.danger ? "border-danger/40 bg-danger text-white hover:bg-danger hover:opacity-90" : ""} disabled={blocked} onClick={() => close(true)}>
-              {state?.confirmText ?? "Confirm"}
+              {state?.confirmText ?? t("Confirm")}
             </Button>
           </>
         }
@@ -525,9 +538,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             if (!blocked) close(true);
           }}
         >
-          <div>{state?.description ?? "Are you sure you want to continue?"}</div>
+          <div>{state?.description ?? t("Are you sure you want to continue?")}</div>
           {state?.typeToConfirm && (
-            <Field label={<span className="font-normal text-muted">Type <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-fg">{state.typeToConfirm}</code> to confirm</span>}>
+            <Field label={<span className="font-normal text-muted">{tx("Type {text} to confirm", { text: <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-xs text-fg">{state.typeToConfirm}</code> })}</span>}>
               <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
             </Field>
           )}
@@ -552,11 +565,11 @@ export function CopyButton({ value, className }: { value: string; className?: st
         e.stopPropagation();
         if (await copy(value)) {
           setDone(true);
-          toast.success("Copied to clipboard");
+          toast.success(t("Copied to clipboard"));
           setTimeout(() => setDone(false), 1500);
         }
       }}
-      title="Copy"
+      title={t("Copy")}
     >
       {done ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
     </button>

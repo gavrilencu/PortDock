@@ -8,10 +8,20 @@ import { useLogStream } from "../lib/sse";
 import { Badge, Button, Modal, StatusDot, Table, useConfirm } from "./ui";
 import { LogViewer } from "./LogViewer";
 import { Terminal } from "./Terminal";
+import { t, tk } from "../lib/i18n";
+
+const actionDone: Record<string, string> = {
+  start: tk("{name}: started"),
+  stop: tk("{name}: stopped"),
+  restart: tk("{name}: restarted"),
+  pause: tk("{name}: paused"),
+  unpause: tk("{name}: resumed"),
+  remove: tk("{name}: removed"),
+};
 
 export function ContainerLogs({ url, className = "h-[520px]" }: { url: string; className?: string }) {
   const stream = useLogStream(url);
-  return <LogViewer lines={stream.lines} live={stream.connected} className={className} emptyText={stream.error ?? "No log output yet…"} />;
+  return <LogViewer lines={stream.lines} live={stream.connected} className={className} emptyText={stream.error ?? t("No log output yet…")} />;
 }
 
 export function ContainerTable({ serverId, containers, compact = false }: { serverId: number; containers: Container[]; compact?: boolean }) {
@@ -23,25 +33,25 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
   const action = useMutation({
     mutationFn: ({ c, a }: { c: Container; a: string }) => api.post(`/servers/${c.server_id || serverId}/containers/${encodeURIComponent(c.id)}/${a}`),
     onSuccess: (_, { a, c }) => {
-      toast.success(`${c.name}: ${a} ok`);
+      toast.success(t(actionDone[a] ?? tk("{name}: done"), { name: c.name }));
       qc.invalidateQueries({ queryKey: ["containers"] });
     },
     onError: (e) => toast.error(e.message),
   });
 
   if (containers.length === 0)
-    return <div className="px-4 py-10 text-center text-[13px] text-subtle">No containers yet. They appear here after the first deployment.</div>;
+    return <div className="px-4 py-10 text-center text-[13px] text-subtle">{t("No containers yet. They appear here after the first deployment.")}</div>;
 
   return (
     <>
       <Table>
         <thead>
           <tr>
-            <th>Name</th>
-            {!compact && <th>Image</th>}
-            <th>Status</th>
-            {!compact && <th>Ports</th>}
-            <th className="text-right">Actions</th>
+            <th>{t("Name")}</th>
+            {!compact && <th>{t("Image")}</th>}
+            <th>{t("Status")}</th>
+            {!compact && <th>{t("Ports")}</th>}
+            <th className="text-right">{t("Actions")}</th>
           </tr>
         </thead>
         <tbody>
@@ -65,37 +75,37 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
                 {!compact && <td className="max-w-56 truncate font-mono text-xs text-muted">{c.ports || "—"}</td>}
                 <td>
                   <div className="flex justify-end gap-0.5">
-                    <Button size="icon" variant="ghost" title="Logs" onClick={() => setLogs(c)}>
+                    <Button size="icon" variant="ghost" title={t("Logs")} onClick={() => setLogs(c)}>
                       <ScrollText className="size-4" />
                     </Button>
                     {running && (
-                      <Button size="icon" variant="ghost" title="Terminal" onClick={() => setTerm(c)}>
+                      <Button size="icon" variant="ghost" title={t("Terminal")} onClick={() => setTerm(c)}>
                         <SquareTerminal className="size-4" />
                       </Button>
                     )}
                     {running ? (
                       <>
-                        <Button size="icon" variant="ghost" title="Restart" onClick={() => action.mutate({ c, a: "restart" })}>
+                        <Button size="icon" variant="ghost" title={t("Restart")} onClick={() => action.mutate({ c, a: "restart" })}>
                           <RotateCw className="size-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" title="Pause" onClick={() => action.mutate({ c, a: "pause" })}>
+                        <Button size="icon" variant="ghost" title={t("Pause")} onClick={() => action.mutate({ c, a: "pause" })}>
                           <Pause className="size-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" title="Stop" onClick={() => action.mutate({ c, a: "stop" })}>
+                        <Button size="icon" variant="ghost" title={t("Stop")} onClick={() => action.mutate({ c, a: "stop" })}>
                           <Square className="size-4" />
                         </Button>
                       </>
                     ) : (
-                      <Button size="icon" variant="ghost" title={c.state === "paused" ? "Unpause" : "Start"} onClick={() => action.mutate({ c, a: c.state === "paused" ? "unpause" : "start" })}>
+                      <Button size="icon" variant="ghost" title={c.state === "paused" ? t("Resume") : t("Start")} onClick={() => action.mutate({ c, a: c.state === "paused" ? "unpause" : "start" })}>
                         <Play className="size-4" />
                       </Button>
                     )}
                     <Button
                       size="icon"
                       variant="ghost"
-                      title="Remove"
+                      title={t("Remove")}
                       onClick={async () => {
-                        if (await confirm({ title: `Remove container ${c.name}?`, description: "The container is force-removed. Volumes are kept.", danger: true, confirmText: "Remove" }))
+                        if (await confirm({ title: t("Remove container {name}?", { name: c.name }), description: t("The container is force-removed. Volumes are kept."), danger: true, confirmText: t("Remove") }))
                           action.mutate({ c, a: "remove" });
                       }}
                     >
@@ -108,10 +118,10 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
           })}
         </tbody>
       </Table>
-      <Modal open={!!logs} onClose={() => setLogs(null)} title={`Logs · ${logs?.name}`} size="xl">
+      <Modal open={!!logs} onClose={() => setLogs(null)} title={`${t("Logs")} · ${logs?.name}`} size="xl">
         {logs && <ContainerLogs url={`/servers/${logs.server_id || serverId}/containers/${encodeURIComponent(logs.id)}/logs?tail=500`} />}
       </Modal>
-      <Modal open={!!term} onClose={() => setTerm(null)} title={`Terminal · ${term?.name}`} size="xl">
+      <Modal open={!!term} onClose={() => setTerm(null)} title={`${t("Terminal")} · ${term?.name}`} size="xl">
         {term && <Terminal path={`/servers/${term.server_id || serverId}/containers/${encodeURIComponent(term.id)}/terminal`} />}
       </Modal>
     </>

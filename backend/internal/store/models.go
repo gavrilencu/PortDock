@@ -19,6 +19,8 @@ type User struct {
 	AuthSource  string `db:"auth_source" json:"auth_source"`
 	Disabled    bool   `db:"disabled" json:"disabled"`
 	LastLoginAt string `db:"last_login_at" json:"last_login_at"`
+	// Locale is the interface language chosen by the user ("" = default, English).
+	Locale string `db:"locale" json:"locale"`
 }
 
 func (u User) HasPassword() bool { return u.PasswordHash != "" }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, Download, Search, WrapText } from "lucide-react";
 import { cn, stripAnsi } from "../lib/utils";
 import { StatusDot } from "./ui";
+import { t } from "../lib/i18n";
 
 function lineClass(l: string): string {
   if (l.includes("━━━")) return "text-accent font-semibold pt-2";
@@ -16,7 +17,7 @@ export function LogViewer({
   lines,
   live,
   className,
-  emptyText = "Waiting for output…",
+  emptyText = t("Waiting for output…"),
   filename = "logs.txt",
 }: {
   lines: string[];
@@ -63,7 +64,7 @@ export function LogViewer({
         {live !== undefined && (
           <span className="flex items-center gap-1.5 text-xs text-zinc-400">
             <StatusDot status={live ? "deploying" : "stopped"} />
-            {live ? "Live" : "Ended"}
+            {live ? t("Live") : t("Ended")}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
@@ -72,17 +73,17 @@ export function LogViewer({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter"
+              placeholder={t("Filter")}
               className="h-7 w-40 rounded-md border border-white/10 bg-white/5 pl-7 pr-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-accent"
             />
           </div>
-          <button title="Wrap lines" onClick={() => setWrap(!wrap)} className={cn("rounded-md p-1.5 hover:bg-white/10", wrap ? "text-zinc-200" : "text-zinc-500")}>
+          <button title={t("Wrap lines")} onClick={() => setWrap(!wrap)} className={cn("rounded-md p-1.5 hover:bg-white/10", wrap ? "text-zinc-200" : "text-zinc-500")}>
             <WrapText className="size-3.5" />
           </button>
-          <button title="Follow" onClick={() => setFollow(!follow)} className={cn("rounded-md p-1.5 hover:bg-white/10", follow ? "text-accent" : "text-zinc-500")}>
+          <button title={t("Follow")} onClick={() => setFollow(!follow)} className={cn("rounded-md p-1.5 hover:bg-white/10", follow ? "text-accent" : "text-zinc-500")}>
             <ArrowDownToLine className="size-3.5" />
           </button>
-          <button title="Download" onClick={download} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200">
+          <button title={t("Download")} onClick={download} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200">
             <Download className="size-3.5" />
           </button>
         </div>
