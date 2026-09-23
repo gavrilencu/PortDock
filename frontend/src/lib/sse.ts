@@ -102,6 +102,7 @@ export function useLiveEvents() {
           qc.invalidateQueries({ queryKey: ["previews"] });
         }
         if (kind === "server") qc.invalidateQueries({ queryKey: ["servers"] });
+        if (kind === "alert") qc.invalidateQueries({ queryKey: ["alerts"] });
         if (kind === "backup") qc.invalidateQueries({ queryKey: ["backup-runs"] });
         if (kind === "application" || kind === "service" || kind === "database") {
           qc.invalidateQueries({ queryKey: ["containers"] });

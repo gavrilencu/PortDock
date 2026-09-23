@@ -18,6 +18,8 @@ import { ServicePage } from "./pages/Service";
 import { ServersPage } from "./pages/Servers";
 import { ServerPage } from "./pages/Server";
 import { SettingsPage } from "./pages/Settings";
+import { AlertsPage } from "./pages/Alerts";
+import { TopologyPage } from "./pages/Topology";
 import { ApiError } from "./lib/api";
 
 const queryClient = new QueryClient({
@@ -47,6 +49,8 @@ const router = createBrowserRouter([
       { path: "servers", element: <ServersPage /> },
       { path: "servers/:id", element: <ServerPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "alerts", element: <AlertsPage /> },
+      { path: "topology", element: <TopologyPage /> },
       { path: "*", element: <div className="py-20 text-center text-muted">Page not found.</div> },
     ],
   },

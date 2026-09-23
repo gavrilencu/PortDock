@@ -426,6 +426,26 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 	return nil
 }
 
+// deployComposeAll runs the compose project on every server, one after another.
+func (j *job) deployComposeAll(ctx context.Context, targets []target) error {
+	for i, t := range targets {
+		tj := *j
+		tj.x, tj.srv = t.x, t.srv
+		if len(targets) > 1 {
+			j.log.Step(fmt.Sprintf("Server %d/%d: %s", i+1, len(targets), t.srv.Name))
+		}
+		if err := tj.deployCompose(ctx); err != nil {
+			if i > 0 {
+				return fmt.Errorf("%s: %w (updated on %d of %d servers)", t.srv.Name, err, i, len(targets))
+			}
+			return err
+		}
+		j.d.Image = tj.d.Image
+	}
+	j.workdir = ""
+	return nil
+}
+
 func (j *job) deployCompose(ctx context.Context) error {
 	if j.d.RollbackOf != 0 {
 		return errors.New("rollback is not supported for docker compose applications; redeploy a previous commit instead")
@@ -447,6 +467,11 @@ func (j *job) deployCompose(ctx context.Context) error {
 		}
 	}
 	j.d.Image = "compose@" + short(j.d.CommitSHA)
+	if j.reg != nil {
+		if err := j.e.dockerLogin(ctx, j.x, *j.reg, j.log); err != nil {
+			return err
+		}
+	}
 	return RunComposeUp(ctx, ComposeUp{
 		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir,
 		File:    path.Join(j.ctxDir, strings.TrimPrefix(j.app.ComposePath, "/")),
@@ -505,9 +530,19 @@ func (e *Engine) PreviewDomains(app store.Application, srv store.Server, pr int)
 
 func (e *Engine) ProxyOptions(ctx context.Context) proxy.Options {
 	return proxy.Options{
-		Network:   e.cfg.ProxyNetwork,
-		DataDir:   e.cfg.DataDir,
-		ACMEEmail: e.db.Setting(ctx, "acme_email"),
-		Dashboard: e.db.Setting(ctx, "proxy_dashboard") == "true",
+		Network:      e.cfg.ProxyNetwork,
+		DataDir:      e.cfg.DataDir,
+		ACMEEmail:    e.db.Setting(ctx, "acme_email"),
+		Dashboard:    e.db.Setting(ctx, "proxy_dashboard") == "true",
+		ACMEServer:   e.db.Setting(ctx, "acme_server"),
+		DNSProvider:  e.db.Setting(ctx, "dns_provider"),
+		DNSEnv:       e.dnsEnv(ctx),
+		DNSResolvers: e.db.Setting(ctx, "dns_resolvers"),
 	}
+}
+
+func (e *Engine) dnsEnv(ctx context.Context) map[string]string {
+	env := map[string]string{}
+	_ = json.Unmarshal([]byte(e.box.MustDecrypt(e.db.Setting(ctx, "dns_env"))), &env)
+	return env
 }

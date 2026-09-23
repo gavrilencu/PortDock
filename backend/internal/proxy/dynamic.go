@@ -22,6 +22,8 @@ type DomainRoute struct {
 	HTTPS    bool
 	WWW      string // none | to-www | to-apex
 	Indexing bool
+	// Cert selects the certificate source: "" (HTTP-01), "dns" (DNS-01) or "custom" (uploaded).
+	Cert string
 }
 
 // AppRoutes describes every route of one workload. Upstreams are container
@@ -78,7 +80,29 @@ type router struct {
 }
 
 type tlsCfg struct {
-	CertResolver string `yaml:"certResolver"`
+	CertResolver string      `yaml:"certResolver,omitempty"`
+	Domains      []tlsDomain `yaml:"domains,omitempty"`
+}
+
+type tlsDomain struct {
+	Main string   `yaml:"main"`
+	SANs []string `yaml:"sans,omitempty"`
+}
+
+// tlsFor picks the resolver for a route. Wildcards can only be issued over DNS-01
+// and need explicit domains because HostRegexp rules carry no hostname.
+func tlsFor(d DomainRoute) *tlsCfg {
+	switch d.Cert {
+	case "custom":
+		return &tlsCfg{} // served from the uploaded certificates in the default store
+	case "dns":
+		t := &tlsCfg{CertResolver: DNSResolver}
+		if strings.HasPrefix(d.Host, "*.") {
+			t.Domains = []tlsDomain{{Main: d.Host}}
+		}
+		return t
+	}
+	return &tlsCfg{CertResolver: CertResolver}
 }
 
 type server struct {
@@ -135,7 +159,7 @@ func RenderDynamic(r AppRoutes) []byte {
 		rule := ruleFor(d)
 		if d.HTTPS {
 			routers[base+"-http"] = router{Rule: rule, EntryPoints: []string{"web"}, Service: svc, Middlewares: []string{n + "-https"}}
-			routers[base+"-https"] = router{Rule: rule, EntryPoints: []string{"websecure"}, Service: svc, Middlewares: chain, TLS: &tlsCfg{CertResolver: CertResolver}}
+			routers[base+"-https"] = router{Rule: rule, EntryPoints: []string{"websecure"}, Service: svc, Middlewares: chain, TLS: tlsFor(d)}
 		} else {
 			routers[base+"-http"] = router{Rule: rule, EntryPoints: []string{"web"}, Service: svc, Middlewares: chain}
 		}
@@ -155,4 +179,22 @@ func RenderDashboard(host string, https bool, port int) []byte {
 		Upstreams: []string{DashboardUpstream},
 		Domains:   []DomainRoute{{Host: host, Port: port, HTTPS: https, Indexing: false}},
 	})
+}
+
+// CustomCertFile is one uploaded certificate deployed to the proxy.
+type CustomCertFile struct {
+	CertFile, KeyFile string // paths inside the proxy container
+}
+
+// RenderCustomCerts lists uploaded certificates for Traefik's default store.
+func RenderCustomCerts(files []CustomCertFile) []byte {
+	if len(files) == 0 {
+		return nil
+	}
+	certs := make([]map[string]string, 0, len(files))
+	for _, f := range files {
+		certs = append(certs, map[string]string{"certFile": f.CertFile, "keyFile": f.KeyFile})
+	}
+	out, _ := yaml.Marshal(map[string]any{"tls": map[string]any{"certificates": certs}})
+	return append([]byte("# Managed by Shipyard: uploaded certificates.\n"), out...)
 }

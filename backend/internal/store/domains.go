@@ -18,6 +18,14 @@ type AppDomain struct {
 	DNSStatus     string `db:"dns_status" json:"dns_status"`
 	DNSDetail     string `db:"dns_detail" json:"dns_detail"`
 	DNSCheckedAt  string `db:"dns_checked_at" json:"dns_checked_at"`
+	// CertMode selects how the TLS certificate is obtained:
+	// auto (HTTP-01, DNS-01 for wildcards) | dns (DNS-01) | custom (uploaded certificate).
+	CertMode      string `db:"cert_mode" json:"cert_mode"`
+	CertStatus    string `db:"cert_status" json:"cert_status"` // valid | expiring | expired | pending | missing | error
+	CertIssuer    string `db:"cert_issuer" json:"cert_issuer"`
+	CertExpiresAt string `db:"cert_expires_at" json:"cert_expires_at"`
+	CertCheckedAt string `db:"cert_checked_at" json:"cert_checked_at"`
+	CertError     string `db:"cert_error" json:"cert_error"`
 	CreatedAt     string `db:"created_at" json:"created_at"`
 }
 

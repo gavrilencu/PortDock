@@ -30,6 +30,7 @@ type databaseDTO struct {
 	Project     store.Project     `json:"project"`
 	Environment store.Environment `json:"environment"`
 	ServerName  string            `json:"server_name"`
+	Access      Access            `json:"access"`
 }
 
 func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
@@ -40,6 +41,15 @@ func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
 		Hostname: db.UUID, Port: eng.Port, EngineName: eng.Name, ServerName: srv.Name}
 	dto.Environment, _ = store.ByID[store.Environment](ctx, s.db, "environments", db.EnvironmentID)
 	dto.Project, _ = store.ByID[store.Project](ctx, s.db, "projects", dto.Environment.ProjectID)
+	dto.Access = s.resourceAccess(ctx, db.EnvironmentID)
+	if !dto.Access.CanWrite {
+		// Viewers (and developers on protected environments) don't get credentials.
+		if dto.Password != "" {
+			dto.InternalURL = strings.ReplaceAll(dto.InternalURL, dto.Password, "********")
+			dto.PublicURL = strings.ReplaceAll(dto.PublicURL, dto.Password, "********")
+		}
+		dto.Password = ""
+	}
 	return dto
 }
 
@@ -56,7 +66,8 @@ func (s *Server) listDatabases(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, dbs)
+	visible := s.envVisibility(r.Context())
+	return ok(w, filterBy(dbs, func(d store.Database) bool { return visible(d.EnvironmentID) }))
 }
 
 func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
@@ -75,6 +86,9 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 	}
 	if _, err := store.ByID[store.Server](r.Context(), s.db, "servers", db.ServerID); err != nil {
 		return badRequest("server not found")
+	}
+	if err := s.requireEnv(r, db.EnvironmentID, permWrite); err != nil {
+		return err
 	}
 	if _, err := store.ByID[store.Environment](r.Context(), s.db, "environments", db.EnvironmentID); err != nil {
 		return badRequest("environment not found")
@@ -348,6 +362,7 @@ type serviceDTO struct {
 	Project     store.Project     `json:"project"`
 	Environment store.Environment `json:"environment"`
 	ServerName  string            `json:"server_name"`
+	Access      Access            `json:"access"`
 }
 
 func (s *Server) svcOut(ctx context.Context, svc store.Service) serviceDTO {
@@ -356,6 +371,7 @@ func (s *Server) svcOut(ctx context.Context, svc store.Service) serviceDTO {
 	dto.Project, _ = store.ByID[store.Project](ctx, s.db, "projects", dto.Environment.ProjectID)
 	srv, _ := store.ByID[store.Server](ctx, s.db, "servers", svc.ServerID)
 	dto.ServerName = srv.Name
+	dto.Access = s.resourceAccess(ctx, svc.EnvironmentID)
 	return dto
 }
 
@@ -372,6 +388,8 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	visible := s.envVisibility(r.Context())
+	svcs = filterBy(svcs, func(x store.Service) bool { return visible(x.EnvironmentID) })
 	for i := range svcs {
 		svcs[i].Compose = ""
 	}
@@ -389,6 +407,9 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	svc := in.Service
 	if _, err := store.ByID[store.Server](r.Context(), s.db, "servers", svc.ServerID); err != nil {
 		return badRequest("server not found")
+	}
+	if err := s.requireEnv(r, svc.EnvironmentID, permWrite); err != nil {
+		return err
 	}
 	if _, err := store.ByID[store.Environment](r.Context(), s.db, "environments", svc.EnvironmentID); err != nil {
 		return badRequest("environment not found")

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/shipyard/shipyard/internal/auth"
+	"github.com/shipyard/shipyard/internal/license"
 	"github.com/shipyard/shipyard/internal/store"
 )
 
@@ -11,6 +14,8 @@ type projectDTO struct {
 	store.Project
 	Environments []store.Environment `json:"environments"`
 	Resources    int                 `json:"resources"`
+	// Role is the current user's effective role (admin | maintainer | developer | viewer).
+	Role string `json:"role"`
 }
 
 func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
@@ -41,13 +46,18 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
 	for _, c := range counts {
 		nres[c.ProjectID] = c.N
 	}
+	u := auth.UserFrom(ctx)
 	out := make([]projectDTO, 0, len(ps))
 	for _, p := range ps {
+		role := s.projectRole(ctx, u, p.ID)
+		if roleRank(role) == 0 {
+			continue
+		}
 		e := byProject[p.ID]
 		if e == nil {
 			e = []store.Environment{}
 		}
-		out = append(out, projectDTO{Project: p, Environments: e, Resources: nres[p.ID]})
+		out = append(out, projectDTO{Project: p, Environments: e, Resources: nres[p.ID], Role: role})
 	}
 	return ok(w, out)
 }
@@ -62,6 +72,14 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("name is required")
 	}
 	p.ID, p.CreatedAt = 0, store.Now()
+	if !validProjectRole(p.DefaultRole, true) {
+		p.DefaultRole = "developer"
+	}
+	if p.DefaultRole != "developer" {
+		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
+			return err
+		}
+	}
 	if _, err := store.Insert(r.Context(), s.db, "projects", &p); err != nil {
 		return err
 	}
@@ -69,8 +87,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
 	if _, err := store.Insert(r.Context(), s.db, "environments", &env); err != nil {
 		return err
 	}
+	u := auth.UserFrom(r.Context())
+	if !u.IsAdmin() {
+		// The creator maintains the project, whatever its default role.
+		_, _ = s.db.ExecContext(r.Context(), "INSERT OR REPLACE INTO project_members(project_id, user_id, role, created_at) VALUES(?,?,?,?)", p.ID, u.ID, "maintainer", store.Now())
+	}
 	s.activity(r, "project.create", p.Name)
-	return ok(w, projectDTO{Project: p, Environments: []store.Environment{env}})
+	return ok(w, projectDTO{Project: p, Environments: []store.Environment{env}, Role: s.projectRole(r.Context(), u, p.ID)})
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {
@@ -86,7 +109,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, projectDTO{Project: p, Environments: envs})
+	return ok(w, projectDTO{Project: p, Environments: envs, Role: s.projectRole(r.Context(), auth.UserFrom(r.Context()), id)})
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) error {
@@ -98,6 +121,7 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	before := p.DefaultRole
 	if err := readJSON(r, &p); err != nil {
 		return err
 	}
@@ -105,8 +129,19 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return badRequest("name is required")
 	}
+	if !validProjectRole(p.DefaultRole, true) {
+		return badRequest("default role must be none, viewer, developer or maintainer")
+	}
+	if p.DefaultRole != before && p.DefaultRole != "developer" {
+		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
+			return err
+		}
+	}
 	if err := store.Update(r.Context(), s.db, "projects", &p); err != nil {
 		return err
+	}
+	if p.DefaultRole != before {
+		s.activity(r, "project.default_role", p.Name+": "+before+" → "+p.DefaultRole)
 	}
 	return ok(w, p)
 }
@@ -144,6 +179,12 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) error
 		return badRequest("name is required")
 	}
 	e.ID, e.ProjectID, e.CreatedAt = 0, id, store.Now()
+	if e.RequireApproval {
+		e.Protected = true
+	}
+	if err := s.envFeatures(r, store.Environment{}, e); err != nil {
+		return err
+	}
 	if _, err := store.Insert(r.Context(), s.db, "environments", &e); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return badRequest("environment %q already exists", e.Name)
@@ -196,4 +237,170 @@ func (s *Server) environmentResources(w http.ResponseWriter, r *http.Request) er
 		svcs[i].Compose = ""
 	}
 	return ok(w, map[string]any{"environment": env, "applications": apps, "databases": dbs, "services": svcs})
+}
+
+// updateEnvironment changes protection settings (and the name) of an environment.
+func (s *Server) updateEnvironment(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	env, err := store.ByID[store.Environment](r.Context(), s.db, "environments", id)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Name            *string `json:"name"`
+		Protected       *bool   `json:"protected"`
+		RequireApproval *bool   `json:"require_approval"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	if in.Name != nil {
+		env.Name = strings.ToLower(strings.TrimSpace(*in.Name))
+		if env.Name == "" {
+			return badRequest("name is required")
+		}
+	}
+	if in.Protected != nil {
+		env.Protected = *in.Protected
+	}
+	if in.RequireApproval != nil {
+		env.RequireApproval = *in.RequireApproval
+	}
+	if env.RequireApproval {
+		env.Protected = true // approvals only make sense on protected environments
+	}
+	before, _ := store.ByID[store.Environment](r.Context(), s.db, "environments", id)
+	if err := s.envFeatures(r, before, env); err != nil {
+		return err
+	}
+	if err := store.Update(r.Context(), s.db, "environments", &env); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return badRequest("environment %q already exists", env.Name)
+		}
+		return err
+	}
+	s.activity(r, "environment.update", fmt.Sprintf("%s (protected=%v, approvals=%v)", env.Name, env.Protected, env.RequireApproval))
+	return ok(w, env)
+}
+
+type memberOut struct {
+	UserID    int64  `db:"user_id" json:"user_id"`
+	Name      string `db:"name" json:"name"`
+	Email     string `db:"email" json:"email"`
+	UserRole  string `db:"user_role" json:"user_role"` // global role
+	Role      string `db:"role" json:"role"`           // project role
+	CreatedAt string `db:"created_at" json:"created_at"`
+}
+
+func (s *Server) listProjectMembers(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	rows, err := store.Select[memberOut](r.Context(), s.db, `SELECT m.user_id, u.name, u.email, u.role AS user_role, m.role, m.created_at
+		FROM project_members m JOIN users u ON u.id = m.user_id WHERE m.project_id = ? ORDER BY u.name`, id)
+	if err != nil {
+		return err
+	}
+	p, err := store.ByID[store.Project](r.Context(), s.db, "projects", id)
+	if err != nil {
+		return err
+	}
+	if p.DefaultRole == "" {
+		p.DefaultRole = "developer"
+	}
+	return ok(w, map[string]any{"members": rows, "default_role": p.DefaultRole, "roles": projectRoles})
+}
+
+// setProjectMembers replaces the explicit memberships of a project.
+func (s *Server) setProjectMembers(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Members []struct {
+			UserID int64  `json:"user_id"`
+			Role   string `json:"role"`
+		} `json:"members"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	ctx := r.Context()
+	if len(in.Members) > 0 {
+		if err := s.requireFeature(ctx, license.FeatureProjectRoles); err != nil {
+			return err
+		}
+	}
+	me := auth.UserFrom(ctx)
+	keepsManage := me.IsAdmin()
+	for _, m := range in.Members {
+		if !validProjectRole(m.Role, false) {
+			return badRequest("role must be viewer, developer or maintainer")
+		}
+		if _, err := store.ByID[store.User](ctx, s.db, "users", m.UserID); err != nil {
+			return badRequest("user #%d not found", m.UserID)
+		}
+		if m.UserID == me.ID && m.Role == "maintainer" {
+			keepsManage = true
+		}
+	}
+	if !keepsManage {
+		var def string
+		_ = s.db.QueryRowContext(ctx, "SELECT default_role FROM projects WHERE id = ?", id).Scan(&def)
+		keepsManage = def == "maintainer"
+	}
+	if !keepsManage {
+		return badRequest("you would remove your own maintainer access; keep yourself as a maintainer")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "DELETE FROM project_members WHERE project_id = ?", id); err != nil {
+		return err
+	}
+	for _, m := range in.Members {
+		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO project_members(project_id, user_id, role, created_at) VALUES(?,?,?,?)", id, m.UserID, m.Role, store.Now()); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.activity(r, "project.members", fmt.Sprintf("project #%d: %d member(s)", id, len(in.Members)))
+	return s.listProjectMembers(w, r)
+}
+
+// envFeatures gates turning on protection or approvals.
+func (s *Server) envFeatures(r *http.Request, before, after store.Environment) error {
+	if after.Protected && !before.Protected {
+		if err := s.requireFeature(r.Context(), license.FeatureProjectRoles); err != nil {
+			return err
+		}
+	}
+	if after.RequireApproval && !before.RequireApproval {
+		return s.requireFeature(r.Context(), license.FeatureApprovals)
+	}
+	return nil
+}
+
+// memberCandidates lists active users a maintainer can add to the project.
+func (s *Server) memberCandidates(w http.ResponseWriter, r *http.Request) error {
+	type row struct {
+		ID    int64  `db:"id" json:"id"`
+		Name  string `db:"name" json:"name"`
+		Email string `db:"email" json:"email"`
+		Role  string `db:"role" json:"role"`
+	}
+	rows, err := store.Select[row](r.Context(), s.db, "SELECT id, name, email, role FROM users WHERE disabled = 0 ORDER BY name")
+	if err != nil {
+		return err
+	}
+	return ok(w, rows)
 }

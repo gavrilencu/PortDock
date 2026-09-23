@@ -44,6 +44,55 @@ CREATE TABLE IF NOT EXISTS user_identities (
   UNIQUE(provider_id, subject)
 );
 
+CREATE TABLE IF NOT EXISTS registries (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  kind       TEXT NOT NULL DEFAULT 'generic',
+  host       TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  password   TEXT NOT NULL DEFAULT '', -- encrypted
+  namespace  TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS custom_certificates (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  cert_pem   TEXT NOT NULL,
+  key_pem    TEXT NOT NULL,            -- encrypted
+  domains    TEXT NOT NULL DEFAULT '',
+  issuer     TEXT NOT NULL DEFAULT '',
+  not_before TEXT NOT NULL DEFAULT '',
+  not_after  TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS ldap_directories (
+  id              INTEGER PRIMARY KEY,
+  name            TEXT NOT NULL,
+  slug            TEXT NOT NULL UNIQUE,
+  kind            TEXT NOT NULL DEFAULT 'ad',
+  host            TEXT NOT NULL,
+  port            INTEGER NOT NULL DEFAULT 636,
+  security        TEXT NOT NULL DEFAULT 'ldaps',
+  skip_verify     INTEGER NOT NULL DEFAULT 0,
+  ca_cert         TEXT NOT NULL DEFAULT '',
+  bind_dn         TEXT NOT NULL DEFAULT '',
+  bind_password   TEXT NOT NULL DEFAULT '', -- encrypted
+  base_dn         TEXT NOT NULL,
+  user_filter     TEXT NOT NULL,
+  email_attr      TEXT NOT NULL DEFAULT 'mail',
+  name_attr       TEXT NOT NULL DEFAULT 'displayName',
+  groups_attr     TEXT NOT NULL DEFAULT 'memberOf',
+  required_groups TEXT NOT NULL DEFAULT '',
+  admin_groups    TEXT NOT NULL DEFAULT '',
+  nested_groups   INTEGER NOT NULL DEFAULT 1,
+  auto_register   INTEGER NOT NULL DEFAULT 1,
+  default_role    TEXT NOT NULL DEFAULT 'member',
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS api_tokens (
   id           INTEGER PRIMARY KEY,
   user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -98,6 +147,14 @@ CREATE TABLE IF NOT EXISTS environments (
   name       TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT '',
   UNIQUE(project_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'developer', -- viewer | developer | maintainer
+  created_at TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (project_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS applications (
@@ -297,3 +354,81 @@ CREATE TABLE IF NOT EXISTS app_domains (
   created_at     TEXT NOT NULL DEFAULT '',
   UNIQUE(host, path)
 );
+
+-- Additional servers an application is deployed to (besides applications.server_id).
+CREATE TABLE IF NOT EXISTS application_servers (
+  application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  server_id      INTEGER NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  PRIMARY KEY (application_id, server_id)
+);
+
+-- Time series. scope: server | application | database | service; ref_id is the
+-- resource id (the server id for scope=server). One row per (resource, server) per minute.
+CREATE TABLE IF NOT EXISTS metrics (
+  ts        INTEGER NOT NULL, -- unix seconds
+  scope     TEXT NOT NULL,
+  ref_id    INTEGER NOT NULL,
+  server_id INTEGER NOT NULL,
+  cpu       REAL NOT NULL DEFAULT 0, -- percent (servers: of all cores; containers: 100 = one core)
+  mem       REAL NOT NULL DEFAULT 0, -- bytes
+  mem_total REAL NOT NULL DEFAULT 0,
+  disk      REAL NOT NULL DEFAULT 0,
+  disk_total REAL NOT NULL DEFAULT 0,
+  rx        REAL NOT NULL DEFAULT 0, -- bytes/s
+  tx        REAL NOT NULL DEFAULT 0,
+  load      REAL NOT NULL DEFAULT 0,
+  restarts  INTEGER NOT NULL DEFAULT 0, -- container restarts since the previous sample
+  up        REAL NOT NULL DEFAULT 1     -- 1 when every container is running
+);
+CREATE INDEX IF NOT EXISTS idx_metrics_ref ON metrics(scope, ref_id, ts);
+CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts);
+
+-- Hourly rollups (averages, plus peaks) kept for long ranges.
+CREATE TABLE IF NOT EXISTS metrics_hourly (
+  ts        INTEGER NOT NULL,
+  scope     TEXT NOT NULL,
+  ref_id    INTEGER NOT NULL,
+  server_id INTEGER NOT NULL,
+  cpu       REAL NOT NULL DEFAULT 0,
+  cpu_max   REAL NOT NULL DEFAULT 0,
+  mem       REAL NOT NULL DEFAULT 0,
+  mem_max   REAL NOT NULL DEFAULT 0,
+  mem_total REAL NOT NULL DEFAULT 0,
+  disk      REAL NOT NULL DEFAULT 0,
+  disk_total REAL NOT NULL DEFAULT 0,
+  rx        REAL NOT NULL DEFAULT 0,
+  tx        REAL NOT NULL DEFAULT 0,
+  load      REAL NOT NULL DEFAULT 0,
+  restarts  INTEGER NOT NULL DEFAULT 0,
+  up        REAL NOT NULL DEFAULT 1,
+  PRIMARY KEY (scope, ref_id, server_id, ts)
+);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id           INTEGER PRIMARY KEY,
+  name         TEXT NOT NULL,
+  scope        TEXT NOT NULL,             -- server | application | database | service
+  target_id    INTEGER NOT NULL DEFAULT 0, -- 0 = every resource of the scope
+  metric       TEXT NOT NULL,             -- cpu | memory | disk | load | restarts | down
+  threshold    REAL NOT NULL DEFAULT 0,
+  duration     INTEGER NOT NULL DEFAULT 5, -- minutes the condition must hold
+  severity     TEXT NOT NULL DEFAULT 'warning', -- warning | critical
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS alert_events (
+  id          INTEGER PRIMARY KEY,
+  rule_id     INTEGER NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+  scope       TEXT NOT NULL,
+  ref_id      INTEGER NOT NULL,
+  server_id   INTEGER NOT NULL DEFAULT 0,
+  target_name TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'firing', -- firing | resolved
+  value       REAL NOT NULL DEFAULT 0,
+  message     TEXT NOT NULL DEFAULT '',
+  started_at  TEXT NOT NULL,
+  resolved_at TEXT NOT NULL DEFAULT '',
+  acknowledged_by INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_alert_events_open ON alert_events(status, rule_id, scope, ref_id, server_id);

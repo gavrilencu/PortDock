@@ -15,16 +15,39 @@ export interface User {
   has_password: boolean;
 }
 
+export interface LicenseSummary {
+  plan: "community" | "pro" | "enterprise";
+  plan_name: string;
+  source: "license" | "trial" | "community";
+  features: string[];
+  message: string;
+  in_grace: boolean;
+  expired: boolean;
+}
+
 export interface AuthStatus {
   setup_required: boolean;
   version: string;
   user?: User;
   mfa_setup_required?: boolean;
+  license?: LicenseSummary;
+}
+
+export type ProjectRole = "admin" | "maintainer" | "developer" | "viewer" | "none";
+
+export interface Access {
+  role: ProjectRole;
+  can_deploy: boolean;
+  can_write: boolean;
+  can_manage: boolean;
+  deploy_needs_approval: boolean;
+  protected: boolean;
 }
 
 export interface LoginProviders {
   password_login: boolean;
   providers: { slug: string; name: string; kind: string }[];
+  ldap?: { slug: string; name: string; kind: string }[];
 }
 
 export interface TwoFactorStatus {
@@ -104,6 +127,8 @@ export interface Environment {
   id: number;
   project_id: number;
   name: string;
+  protected: boolean;
+  require_approval: boolean;
   created_at: string;
 }
 
@@ -111,9 +136,11 @@ export interface Project {
   id: number;
   name: string;
   description: string;
+  default_role: ProjectRole;
   created_at: string;
   environments: Environment[];
   resources: number;
+  role: ProjectRole;
 }
 
 export type BuildPack = "auto" | "dockerfile" | "compose" | "node" | "bun" | "python" | "go" | "static" | "shell" | "nixpacks" | "image";
@@ -165,6 +192,37 @@ export interface Application {
   current_image: string;
   created_at: string;
   updated_at: string;
+  registry_id: number;
+  registry_image: string;
+  build_server_id: number;
+}
+
+export interface ServerRef {
+  id: number;
+  name: string;
+  host: string;
+  status: string;
+}
+
+export interface Registry {
+  id: number;
+  name: string;
+  kind: string;
+  host: string;
+  username: string;
+  namespace: string;
+  password_set: boolean;
+  apps: number;
+  created_at: string;
+}
+
+export interface RegistryKind {
+  kind: string;
+  name: string;
+  host: string;
+  username_label: string;
+  password_label: string;
+  hint: string;
 }
 
 export interface ApplicationDetail extends Application {
@@ -173,9 +231,13 @@ export interface ApplicationDetail extends Application {
   environment: Environment;
   server_name: string;
   server_host: string;
+  servers: ServerRef[];
+  registry_name: string;
+  registry_repository: string;
+  access: Access;
 }
 
-export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "cancelled";
+export type DeploymentStatus = "queued" | "running" | "success" | "failed" | "cancelled" | "pending_approval" | "rejected";
 
 export interface Deployment {
   id: number;
@@ -191,6 +253,14 @@ export interface Deployment {
   rollback_of: number;
   force_rebuild: boolean;
   logs?: string;
+  requested_by: number;
+  reviewed_by: number;
+  reviewed_at: string;
+  review_comment: string;
+  requested_by_name?: string;
+  reviewed_by_name?: string;
+  can_review?: boolean;
+  can_self_approve?: boolean;
   started_at: string;
   finished_at: string;
   created_at: string;
@@ -255,6 +325,7 @@ export interface DatabaseDetail extends Database {
   project: { id: number; name: string };
   environment: Environment;
   server_name: string;
+  access: Access;
 }
 
 export interface Backup {
@@ -305,6 +376,7 @@ export interface ServiceDetail extends Service {
   project: { id: number; name: string };
   environment: Environment;
   server_name: string;
+  access: Access;
 }
 
 export interface EnvironmentResources {
@@ -324,6 +396,8 @@ export interface Container {
   networks: string;
   created_at: string;
   labels: Record<string, string>;
+  server_id?: number;
+  server_name?: string;
 }
 
 export interface ContainerStat {
@@ -428,8 +502,10 @@ export interface ActivityEntry {
   id: number;
   user_id: number;
   user_name: string;
+  user_email: string;
   action: string;
   target: string;
+  ip: string;
   created_at: string;
 }
 
@@ -543,8 +619,17 @@ export interface AppDomain {
   dns_status: DNSStatus;
   dns_detail: string;
   dns_checked_at: string;
+  cert_mode: CertMode | "";
+  cert_status: CertStatus;
+  cert_issuer: string;
+  cert_expires_at: string;
+  cert_checked_at: string;
+  cert_error: string;
   created_at: string;
 }
+
+export type CertMode = "auto" | "dns" | "custom";
+export type CertStatus = "" | "valid" | "expiring" | "expired" | "pending" | "missing" | "local" | "error";
 
 export interface DomainsResponse {
   domains: AppDomain[];

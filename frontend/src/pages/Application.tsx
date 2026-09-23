@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   Box,
   ExternalLink,
   GitBranch,
@@ -21,10 +22,13 @@ import {
   SquareTerminal,
   Trash2,
   Webhook,
+  Lock,
+  ShieldCheck,
+  Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { ApplicationDetail, Container, Deployment, Preview } from "../lib/types";
+import type { ApplicationDetail, Container, Deployment, Preview, Server } from "../lib/types";
 import {
   Badge,
   Button,
@@ -39,6 +43,7 @@ import {
   PasswordInput,
   Select,
   StatusBadge,
+  StatusDot,
   Switch,
   Tabs,
   Textarea,
@@ -50,10 +55,14 @@ import { BuildSettings } from "../components/BuildSettings";
 import { AccessCallout, DNSBadge, DomainLinks, DomainsTab, domainURL as rowURL, publishedURLs, useDomains } from "../components/Domains";
 import { EnvEditor } from "../components/EnvEditor";
 import { ContainerLogs, ContainerTable } from "../components/ContainerTable";
+import { useRegistries } from "../components/registries";
+import { AccessNotice, UpgradeNotice } from "../components/access";
 import { Terminal } from "../components/Terminal";
 import { domainURL, shortSha, timeAgo } from "../lib/utils";
+import { MetricsPanel } from "../components/metrics";
+import { ResourceTopology } from "../components/resourceTopology";
 
-type Tab = "overview" | "config" | "domains" | "env" | "deployments" | "logs" | "terminal" | "previews" | "webhooks";
+type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "deployments" | "logs" | "terminal" | "previews" | "webhooks";
 
 export function useApp(id: number) {
   return useQuery({ queryKey: ["application", id], queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`) });
@@ -72,6 +81,7 @@ export function ApplicationPage() {
     mutationFn: (force: boolean) => api.post<Deployment>(`/applications/${id}/deploy`, { force_rebuild: force }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["app-deployments", id] });
+      if (d.status === "pending_approval") toast.success("Deployment requested — a maintainer has to approve it");
       nav(`/applications/${id}/deployments/${d.id}`);
     },
     onError: (e) => toast.error(e.message),
@@ -90,6 +100,7 @@ export function ApplicationPage() {
   if (error) return <ErrorBox error={error} />;
   const a = app!;
   const running = a.status === "running" || a.status === "degraded";
+  const acc = a.access;
 
   return (
     <>
@@ -119,13 +130,14 @@ export function ApplicationPage() {
             <Link to={`/projects/${a.project.id}?env=${a.environment_id}`} className="hover:text-fg">
               {a.project.name}
             </Link>{" "}
-            / <span>{a.environment.name}</span> / <span className="text-fg">{a.name}</span>
+            / <span>{a.environment.name}</span>
+            {a.environment.protected && <Lock className="mx-1 inline size-3 text-warning" />} / <span className="text-fg">{a.name}</span>
           </>
         }
         actions={
           <>
             <DomainLinks appId={a.id} extra={publishedURLs(a, a.server_host)} />
-            {running ? (
+            {!acc.can_write ? null : running ? (
               <>
                 <Button icon={<RotateCw className="size-4" />} onClick={() => action.mutate("restart")} loading={action.isPending && action.variables === "restart"}>
                   Restart
@@ -141,12 +153,16 @@ export function ApplicationPage() {
                 </Button>
               )
             )}
-            <Button icon={<Hammer className="size-4" />} onClick={() => deploy.mutate(true)} title="Rebuild without cache reuse">
-              Force rebuild
-            </Button>
-            <Button variant="primary" icon={<Rocket className="size-4" />} loading={deploy.isPending} onClick={() => deploy.mutate(false)}>
-              {a.current_image ? "Redeploy" : "Deploy"}
-            </Button>
+            {acc.can_deploy && !acc.deploy_needs_approval && (
+              <Button icon={<Hammer className="size-4" />} onClick={() => deploy.mutate(true)} title="Rebuild without cache reuse">
+                Force rebuild
+              </Button>
+            )}
+            {acc.can_deploy && (
+              <Button variant="primary" icon={acc.deploy_needs_approval ? <ShieldCheck className="size-4" /> : <Rocket className="size-4" />} loading={deploy.isPending} onClick={() => deploy.mutate(false)}>
+                {acc.deploy_needs_approval ? "Request deployment" : a.current_image ? "Redeploy" : "Deploy"}
+              </Button>
+            )}
           </>
         }
       />
@@ -155,12 +171,14 @@ export function ApplicationPage() {
         onChange={setTab}
         tabs={[
           { id: "overview", label: "Overview", icon: <LayoutGrid /> },
+          { id: "topology", label: "Topology", icon: <Network /> },
+          { id: "metrics", label: "Metrics", icon: <Activity /> },
           { id: "config", label: "Configuration", icon: <Settings2 /> },
           { id: "domains", label: "Domains", icon: <Globe /> },
-          { id: "env", label: "Environment", icon: <KeyRound /> },
+          { id: "env", label: "Environment", icon: <KeyRound />, hidden: !a.access.can_write },
           { id: "deployments", label: "Deployments", icon: <Rocket /> },
           { id: "logs", label: "Logs", icon: <ScrollText /> },
-          { id: "terminal", label: "Terminal", icon: <SquareTerminal /> },
+          { id: "terminal", label: "Terminal", icon: <SquareTerminal />, hidden: !a.access.can_write },
           { id: "previews", label: "Previews", icon: <GitPullRequest />, hidden: a.source_type !== "git" },
           { id: "webhooks", label: "CI/CD & Webhooks", icon: <Webhook /> },
         ]}
@@ -171,6 +189,9 @@ export function ApplicationPage() {
           <Overview app={a} />
         </div>
       )}
+      {tab === "topology" && <ResourceTopology kind="application" id={a.id} />}
+      {tab === "metrics" && <MetricsPanel scope="application" id={a.id} />}
+      {tab !== "overview" && tab !== "metrics" && tab !== "deployments" && tab !== "logs" && <AccessNotice access={a.access} />}
       {tab === "config" && <Configuration app={a} />}
       {tab === "domains" && <DomainsTab app={a} />}
       {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} />}
@@ -234,6 +255,17 @@ function Overview({ app }: { app: ApplicationDetail }) {
           <dl className="space-y-3 p-5 text-sm">
             {[
               ["Build pack", <Badge>{app.build_pack}</Badge>],
+              [
+                (app.servers?.length ?? 1) > 1 ? "Servers" : "Server",
+                <span className="flex flex-wrap justify-end gap-1">
+                  {(app.servers ?? []).map((s) => (
+                    <Link key={s.id} to={`/servers/${s.id}`}>
+                      <Badge>{s.name}</Badge>
+                    </Link>
+                  ))}
+                </span>,
+              ],
+              ...(app.registry_name ? [["Registry", <code className="break-all text-xs">{app.registry_repository}</code>]] : []),
               ["Port", app.port],
               ["Replicas", app.replicas],
               ["Current image", <code className="break-all text-xs">{app.current_image || "—"}</code>],
@@ -272,12 +304,17 @@ function Configuration({ app }: { app: ApplicationDetail }) {
   const confirm = useConfirm();
   const [f, setF] = useState(app);
   const [token, setToken] = useState<string | null>(null);
-  useEffect(() => setF(app), [app]);
+  const extraIds = (a: ApplicationDetail) => (a.servers ?? []).map((s) => s.id).filter((id) => id !== a.server_id);
+  const [serverIds, setServerIds] = useState<number[]>(extraIds(app));
+  useEffect(() => {
+    setF(app);
+    setServerIds(extraIds(app));
+  }, [app]);
   const set = <K extends keyof ApplicationDetail>(k: K, v: ApplicationDetail[K]) => setF((x) => ({ ...x, [k]: v }));
-  const dirty = JSON.stringify(f) !== JSON.stringify(app) || token !== null;
+  const dirty = JSON.stringify(f) !== JSON.stringify(app) || token !== null || JSON.stringify(serverIds) !== JSON.stringify(extraIds(app));
 
   const save = useMutation({
-    mutationFn: () => api.patch<ApplicationDetail>(`/applications/${app.id}`, { ...f, ...(token !== null ? { git_token: token } : {}) }),
+    mutationFn: () => api.patch<ApplicationDetail>(`/applications/${app.id}`, { ...f, server_ids: serverIds, ...(token !== null ? { git_token: token } : {}) }),
     onSuccess: (a) => {
       qc.setQueryData(["application", app.id], a);
       setToken(null);
@@ -364,6 +401,7 @@ function Configuration({ app }: { app: ApplicationDetail }) {
             <BuildSettings value={f} hidePort onChange={(patch) => setF((x) => ({ ...x, ...patch }))} />
           </div>
         )}
+        <ServersSection f={f} set={set} serverIds={serverIds} setServerIds={setServerIds} app={app} />
         <Section title="Network" description="Ports of the container. Domains, HTTPS and redirects are managed in the Domains tab.">
           <Field label="Container port" hint="Default internal port for domains.">
             <Input type="number" value={f.port} onChange={(e) => set("port", Number(e.target.value))} />
@@ -406,11 +444,14 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           </Field>
         </Section>
       </Card>
-      <div className="sticky bottom-4 z-10 flex justify-end">
-        <Button variant="primary" icon={<Save className="size-4" />} disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()} className="shadow-xl">
-          Save configuration
-        </Button>
-      </div>
+      {app.access.can_write && (
+        <div className="sticky bottom-4 z-10 flex justify-end">
+          <Button variant="primary" icon={<Save className="size-4" />} disabled={!dirty} loading={save.isPending} onClick={() => save.mutate()} className="shadow-xl">
+            Save configuration
+          </Button>
+        </div>
+      )}
+      {app.access.can_manage && (
       <Card title="Danger zone" className="border-danger/30">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
           <p className="text-sm text-muted">Delete this application, its containers, images and deployment history.</p>
@@ -426,8 +467,123 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           </Button>
         </div>
       </Card>
+      )}
     </div>
   );
+}
+
+function ServersSection({
+  f,
+  set,
+  serverIds,
+  setServerIds,
+  app,
+}: {
+  f: ApplicationDetail;
+  set: <K extends keyof ApplicationDetail>(k: K, v: ApplicationDetail[K]) => void;
+  serverIds: number[];
+  setServerIds: (v: number[]) => void;
+  app: ApplicationDetail;
+}) {
+  const servers = useQuery({ queryKey: ["servers"], queryFn: () => api.get<Server[]>("/servers") });
+  const regs = useRegistries();
+  const list = servers.data ?? [];
+  const multi = serverIds.length > 0;
+  const builds = f.source_type === "git" && f.build_pack !== "compose";
+  const reg = regs.data?.registries.find((r) => r.id === f.registry_id);
+  const defaultRepo = reg ? `${reg.host}/${[reg.namespace, app.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "") || "app"].filter(Boolean).join("/")}` : "";
+  return (
+    <Section
+      title="Servers & registry"
+      description="Deploy the same build to several servers with a rolling update. Point each domain's DNS (or your load balancer) at all of them."
+    >
+      <Field label="Primary server" hint={app.status !== "stopped" ? "Stop the application to move it." : "Runs previews and the pre-deploy command."}>
+        <Select value={f.server_id} disabled={app.status !== "stopped"} onChange={(e) => set("server_id", Number(e.target.value))}>
+          {list.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {builds && (
+        <Field label="Build on" hint="A dedicated build server keeps builds off production machines.">
+          <Select value={f.build_server_id || 0} onChange={(e) => set("build_server_id", Number(e.target.value))}>
+            <option value={0}>Primary server</option>
+            {list
+              .filter((s) => s.id !== f.server_id)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+          </Select>
+        </Field>
+      )}
+      <Field label="Additional servers" className="sm:col-span-2" hint={list.length <= 1 ? "Add more servers in Servers to deploy this application to several machines." : undefined}>
+        <div className="mb-2 empty:hidden">
+          <UpgradeNotice feature="multi_server">Deploying to several servers is part of the</UpgradeNotice>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {list
+            .filter((s) => s.id !== f.server_id)
+            .map((s) => {
+              const on = serverIds.includes(s.id);
+              return (
+                <label key={s.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-[13px] transition-colors ${on ? "border-border-strong bg-surface-2" : "border-border hover:bg-surface-2/60"}`}>
+                  <input type="checkbox" className="size-4 accent-[var(--color-fg)]" checked={on} onChange={(e) => setServerIds(e.target.checked ? [...serverIds, s.id].sort((a, b) => a - b) : serverIds.filter((x) => x !== s.id))} />
+                  <StatusDot status={s.status === "reachable" ? "running" : "exited"} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{s.name}</span>
+                    <span className="block truncate font-mono text-2xs text-muted">{s.host}</span>
+                  </span>
+                </label>
+              );
+            })}
+        </div>
+        {extraRemoved(app, serverIds) && <p className="mt-2 text-xs text-warning">Servers you uncheck have this application removed from them when you save.</p>}
+      </Field>
+      {(builds || f.source_type === "image" || f.build_pack === "compose") && (
+        <>
+          <Field
+            label="Container registry"
+            hint={
+              builds
+                ? multi || f.build_server_id
+                  ? reg
+                    ? "Built images are pushed here; every server pulls them."
+                    : "Without a registry the image is streamed from the build server to each server over SSH."
+                  : "Optional: push every build so it can be pulled anywhere."
+                : "Credentials used to pull private images."
+            }
+          >
+            <Select value={f.registry_id || 0} onChange={(e) => set("registry_id", Number(e.target.value))}>
+              <option value={0}>{builds ? "None — keep images on the servers" : "None — public image"}</option>
+              {regs.data?.registries.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </Select>
+            {!regs.data?.registries.length && (
+              <Link to="/settings?tab=registries" className="mt-1.5 inline-block text-xs text-muted underline-offset-2 hover:text-fg hover:underline">
+                Connect a registry →
+              </Link>
+            )}
+          </Field>
+          {builds && reg && (
+            <Field label="Image name" hint={`Default: ${defaultRepo}`}>
+              <Input value={f.registry_image} onChange={(e) => set("registry_image", e.target.value)} placeholder={defaultRepo.slice(reg.host.length + 1)} className="font-mono text-xs" />
+            </Field>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+function extraRemoved(app: ApplicationDetail, ids: number[]) {
+  return (app.servers ?? []).some((s) => s.id !== app.server_id && !ids.includes(s.id));
 }
 
 function DeploymentsList({ appId }: { appId: number }) {
@@ -451,6 +607,7 @@ function ContainerPicker({ containers, value, onChange }: { containers: Containe
     <Select value={value} onChange={(e) => onChange(e.target.value)} className="max-w-md">
       {containers.map((c) => (
         <option key={c.id} value={c.name}>
+          {c.server_name ? `${c.server_name} · ` : ""}
           {c.name} ({c.state}){c.labels["shipyard.pr"] && c.labels["shipyard.pr"] !== "0" ? ` · PR #${c.labels["shipyard.pr"]}` : ""}
         </option>
       ))}
@@ -488,7 +645,7 @@ function AppTerminal({ app }: { app: ApplicationDetail }) {
   return (
     <div className="space-y-4">
       <ContainerPicker containers={running} value={current} onChange={setName} />
-      <Terminal key={current} path={`/servers/${app.server_id}/containers/${encodeURIComponent(current)}/terminal`} />
+      <Terminal key={current} path={`/servers/${running.find((c) => c.name === current)?.server_id || app.server_id}/containers/${encodeURIComponent(current)}/terminal`} />
     </div>
   );
 }

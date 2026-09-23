@@ -20,63 +20,81 @@ import (
 
 // ---- applications ----
 
-// AppAction runs start | stop | restart on an application's production containers.
+// AppAction runs start | stop | restart on an application's production containers on all its servers.
 func (e *Engine) AppAction(ctx context.Context, app store.Application, action string) error {
-	x, _, err := e.pool.ForID(ctx, app.ServerID)
-	if err != nil {
-		return err
-	}
-	if app.BuildPack == "compose" {
-		if _, err := executor.Output(ctx, x, fmt.Sprintf("docker compose -p %s %s", q(composeProject(app.UUID)), action)); err != nil {
+	found := 0
+	err := e.eachTarget(ctx, app, func(t target) error {
+		if app.BuildPack == "compose" {
+			_, err := executor.Output(ctx, t.x, fmt.Sprintf("docker compose -p %s %s", q(composeProject(app.UUID)), action))
+			found++
 			return err
 		}
-	} else {
-		cs, err := docker.PS(ctx, x, true, "label="+docker.LabelResource+"="+app.UUID, "label="+docker.LabelPR+"=0")
+		cs, err := docker.PS(ctx, t.x, true, "label="+docker.LabelResource+"="+app.UUID, "label="+docker.LabelPR+"=0")
 		if err != nil {
 			return err
 		}
-		if len(cs) == 0 {
-			return errors.New("no containers found; deploy the application first")
-		}
+		found += len(cs)
 		for _, c := range cs {
-			if err := docker.ContainerAction(ctx, x, action, c.Name); err != nil {
+			if err := docker.ContainerAction(ctx, t.x, action, c.Name); err != nil {
 				return err
 			}
 		}
+		return nil
+	})
+	if err == nil && found == 0 {
+		err = errors.New("no containers found; deploy the application first")
 	}
 	status := e.liveStatus(ctx, app)
 	_, _ = e.db.ExecContext(ctx, "UPDATE applications SET status = ? WHERE id = ?", status, app.ID)
 	e.hub.Event("application", app.ID, status)
-	return nil
+	return err
 }
 
-// AppContainers lists all containers (production + previews) of an application.
+// AppContainers lists all containers (production + previews) of an application on all its servers.
 func (e *Engine) AppContainers(ctx context.Context, app store.Application) ([]docker.Container, error) {
-	x, _, err := e.pool.ForID(ctx, app.ServerID)
-	if err != nil {
+	filter := "label=" + docker.LabelResource + "=" + app.UUID
+	if app.BuildPack == "compose" {
+		filter = "label=com.docker.compose.project=" + composeProject(app.UUID)
+	}
+	cs, err := e.listAppContainers(ctx, app, true, filter)
+	if err != nil && len(cs) == 0 {
 		return nil, err
 	}
-	if app.BuildPack == "compose" {
-		return docker.PS(ctx, x, true, "label=com.docker.compose.project="+composeProject(app.UUID))
-	}
-	return docker.PS(ctx, x, true, "label="+docker.LabelResource+"="+app.UUID)
+	return cs, nil
 }
 
-// DeleteApp removes all containers, images and files of an application.
-func (e *Engine) DeleteApp(ctx context.Context, app store.Application) error {
-	x, _, err := e.pool.ForID(ctx, app.ServerID)
-	if err != nil {
-		return err
-	}
+// removeAppFrom deletes containers, routes, images and files of app on one server.
+func (e *Engine) removeAppFrom(ctx context.Context, x executor.Executor, app store.Application) error {
 	e.removeAllRoutes(ctx, x, app.UUID)
 	script := fmt.Sprintf(
 		"docker compose -p %[1]s down -v --remove-orphans >/dev/null 2>&1; "+
 			"docker ps -aq --filter label=%[2]s=%[3]s | xargs -r docker rm -f >/dev/null 2>&1; "+
+			"docker images -q --filter label=%[2]s=%[3]s | sort -u | xargs -r docker rmi -f >/dev/null 2>&1; "+
 			"docker images --format '{{.Repository}}:{{.Tag}}' | grep '^shipyard/%[3]s' | xargs -r docker rmi -f >/dev/null 2>&1; "+
 			"rm -rf %[4]s %[5]s 2>/dev/null; true",
 		q(composeProject(app.UUID)), docker.LabelResource, app.UUID,
 		q(path.Join(e.cfg.DataDir, "apps", app.UUID)), q(path.Join(e.cfg.DataDir, "builds", app.UUID)))
 	return x.Run(ctx, script, executor.RunOpts{})
+}
+
+// DeleteApp removes all containers, images and files of an application from every server.
+func (e *Engine) DeleteApp(ctx context.Context, app store.Application) error {
+	err := e.eachTarget(ctx, app, func(t target) error { return e.removeAppFrom(ctx, t.x, app) })
+	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID {
+		if x, _, berr := e.pool.ForID(ctx, app.BuildServerID); berr == nil {
+			_ = e.removeAppFrom(ctx, x, app)
+		}
+	}
+	return err
+}
+
+// RemoveAppFromServer undeploys app from a server that no longer belongs to it.
+func (e *Engine) RemoveAppFromServer(ctx context.Context, app store.Application, serverID int64) error {
+	x, _, err := e.pool.ForID(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	return e.removeAppFrom(ctx, x, app)
 }
 
 // CleanupPreview removes the containers and images of a pull request preview.

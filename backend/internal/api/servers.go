@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/shipyard/shipyard/internal/auth"
 	"net/http"
 	"strings"
 
@@ -141,6 +142,9 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) error {
 	if err := validateServer(&srv); err != nil {
 		return err
 	}
+	if err := s.checkServerLimit(r.Context()); err != nil {
+		return err
+	}
 	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
 	}
@@ -264,6 +268,25 @@ func (s *Server) serverContainers(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return badRequest("%v", err)
 	}
+	if !auth.UserFrom(r.Context()).IsAdmin() {
+		// Members only see containers of resources they can access.
+		uuids := map[string]int64{}
+		for _, t := range []string{"applications", "databases", "services"} {
+			type row struct {
+				UUID string `db:"uuid"`
+				Env  int64  `db:"environment_id"`
+			}
+			rows, _ := store.Select[row](r.Context(), s.db, "SELECT uuid, environment_id FROM "+t)
+			for _, x := range rows {
+				uuids[x.UUID] = x.Env
+			}
+		}
+		visible := s.envVisibility(r.Context())
+		cs = filterBy(cs, func(c docker.Container) bool {
+			env, ok := uuids[c.Labels[docker.LabelResource]]
+			return ok && visible(env)
+		})
+	}
 	return ok(w, cs)
 }
 
@@ -273,6 +296,9 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	cid, action := r.PathValue("cid"), r.PathValue("action")
+	if err := s.authorizeContainer(r, x, cid, permWrite); err != nil {
+		return err
+	}
 	if err := docker.ContainerAction(r.Context(), x, action, cid); err != nil {
 		return badRequest("%v", err)
 	}
@@ -285,9 +311,15 @@ func (s *Server) containerInspect(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	if err := s.authorizeContainer(r, x, r.PathValue("cid"), permRead); err != nil {
+		return err
+	}
 	raw, err := docker.Inspect(r.Context(), x, r.PathValue("cid"))
 	if err != nil {
 		return badRequest("%v", err)
+	}
+	if s.authorizeContainer(r, x, r.PathValue("cid"), permWrite) != nil {
+		raw = stripEnv(raw)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(raw)
@@ -297,6 +329,9 @@ func (s *Server) containerInspect(w http.ResponseWriter, r *http.Request) error 
 func (s *Server) containerLogs(w http.ResponseWriter, r *http.Request) error {
 	x, _, err := s.serverExec(r)
 	if err != nil {
+		return err
+	}
+	if err := s.authorizeContainer(r, x, r.PathValue("cid"), permRead); err != nil {
 		return err
 	}
 	return s.sseContainerLogs(w, r, x, r.PathValue("cid"))

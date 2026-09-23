@@ -69,6 +69,9 @@ type Options struct {
 	PRNumber      int
 	ForceRebuild  bool
 	RollbackOf    int64 // deployment whose image should be redeployed
+	RequestedBy   int64 // user who triggered it (0 = automation)
+	// NeedsApproval holds the deployment as pending_approval until a maintainer approves it.
+	NeedsApproval bool
 }
 
 // Enqueue creates a queued deployment for app.
@@ -82,7 +85,10 @@ func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) 
 	d := store.Deployment{
 		UUID: secrets.RandomToken(8), ApplicationID: app.ID, Status: "queued", Trigger: o.Trigger,
 		CommitSHA: o.CommitSHA, CommitMessage: o.CommitMessage, Branch: o.Branch, PRNumber: o.PRNumber,
-		ForceRebuild: o.ForceRebuild, RollbackOf: o.RollbackOf, CreatedAt: store.Now(),
+		ForceRebuild: o.ForceRebuild, RollbackOf: o.RollbackOf, CreatedAt: store.Now(), RequestedBy: o.RequestedBy,
+	}
+	if o.NeedsApproval {
+		d.Status = "pending_approval"
 	}
 	if o.RollbackOf != 0 {
 		prev, err := store.ByID[store.Deployment](ctx, e.db, "deployments", o.RollbackOf)
@@ -98,8 +104,68 @@ func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) 
 		return d, err
 	}
 	e.hub.Event("deployment", d.ID, d.Status)
+	if d.Status == "pending_approval" {
+		e.reportCommitStatus(app, d, "pending", "Waiting for deployment approval")
+		requester := "automation"
+		if o.RequestedBy != 0 {
+			_ = e.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", o.RequestedBy).Scan(&requester)
+		}
+		e.notify.Send(notify.Event{
+			Name:    "deployment.approval_required",
+			Title:   fmt.Sprintf("Approval required: %s", app.Name),
+			Message: fmt.Sprintf("%s requested a deployment of %s (%s).", requester, app.Name, firstNonEmpty(short(d.CommitSHA), d.Branch, "latest")),
+			URL:     fmt.Sprintf("%s/applications/%d/deployments/%d", e.PublicURL(ctx), app.ID, d.ID),
+			Fields:  map[string]string{"Trigger": d.Trigger, "Branch": d.Branch},
+		})
+		return d, nil
+	}
 	e.hub.Event("application", app.ID, "queued")
 	e.queue <- d.ID
+	return d, nil
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// ErrNotPending is returned when approving a deployment that no longer waits.
+var ErrNotPending = errors.New("deployment is not waiting for approval")
+
+// Review approves (queues) or rejects a pending deployment.
+func (e *Engine) Review(ctx context.Context, id, reviewer int64, approve bool, comment string) (store.Deployment, error) {
+	status := "rejected"
+	if approve {
+		status = "queued"
+	}
+	res, err := e.db.ExecContext(ctx, `UPDATE deployments SET status = ?, reviewed_by = ?, reviewed_at = ?, review_comment = ?,
+		finished_at = CASE WHEN ? = 'rejected' THEN ? ELSE finished_at END WHERE id = ? AND status = 'pending_approval'`,
+		status, reviewer, store.Now(), comment, status, store.Now(), id)
+	if err != nil {
+		return store.Deployment{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.Deployment{}, ErrNotPending
+	}
+	d, err := store.ByID[store.Deployment](ctx, e.db, "deployments", id)
+	if err != nil {
+		return d, err
+	}
+	e.hub.Event("deployment", d.ID, d.Status)
+	if app, err := store.ByID[store.Application](ctx, e.db, "applications", d.ApplicationID); err == nil {
+		if approve {
+			e.hub.Event("application", app.ID, "queued")
+		} else {
+			e.reportCommitStatus(app, d, "error", "Deployment rejected")
+		}
+	}
+	if approve {
+		e.queue <- d.ID
+	}
 	return d, nil
 }
 
@@ -112,7 +178,7 @@ func (e *Engine) Cancel(ctx context.Context, id int64) error {
 		cancel()
 		return nil
 	}
-	res, err := e.db.ExecContext(ctx, "UPDATE deployments SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'queued'", store.Now(), id)
+	res, err := e.db.ExecContext(ctx, "UPDATE deployments SET status = 'cancelled', finished_at = ? WHERE id = ? AND status IN ('queued', 'pending_approval')", store.Now(), id)
 	if err != nil {
 		return err
 	}

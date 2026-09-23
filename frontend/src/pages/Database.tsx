@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, History, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, Trash2 } from "lucide-react";
+import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, History, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Backup, BackupRun, DatabaseDetail } from "../lib/types";
@@ -9,8 +9,9 @@ import { Badge, Button, Card, CopyField, Empty, ErrorBox, Field, Input, Loading,
 import { ContainerLogs } from "../components/ContainerTable";
 import { Terminal } from "../components/Terminal";
 import { formatBytes, timeAgo } from "../lib/utils";
+import { MetricsPanel } from "../components/metrics";
 
-type Tab = "overview" | "backups" | "logs" | "terminal" | "settings";
+type Tab = "overview" | "metrics" | "backups" | "logs" | "terminal" | "settings";
 
 export function DatabasePage() {
   const id = Number(useParams().id);
@@ -69,6 +70,7 @@ export function DatabasePage() {
         onChange={(t) => setParams({ tab: t })}
         tabs={[
           { id: "overview", label: "Connection", icon: <LayoutGrid /> },
+          { id: "metrics", label: "Metrics", icon: <Activity /> },
           { id: "backups", label: "Backups", icon: <DatabaseBackup /> },
           { id: "logs", label: "Logs", icon: <ScrollText /> },
           { id: "terminal", label: "Terminal", icon: <SquareTerminal /> },
@@ -96,6 +98,7 @@ export function DatabasePage() {
           </Card>
         </div>
       )}
+      {tab === "metrics" && <MetricsPanel scope="database" id={db.id} />}
       {tab === "backups" && <Backups db={db} />}
       {tab === "logs" && <ContainerLogs url={`/databases/${id}/logs?tail=500`} className="h-[600px]" />}
       {tab === "terminal" && (running ? <Terminal path={`/servers/${db.server_id}/containers/${db.uuid}/terminal`} /> : <Empty icon={<SquareTerminal />} title="Database is not running" />)}

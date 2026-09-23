@@ -146,12 +146,13 @@ func (s *Server) pushOutcome(ctx context.Context, app store.Application, branch,
 	case !matchesWatchPaths(app.WatchPaths, files):
 		res.Status, res.Message = "ignored", "no changes in watch paths"
 	default:
-		d, err := s.engine.Enqueue(ctx, app, deploy.Options{Trigger: "webhook", CommitSHA: sha, CommitMessage: firstLine(msg), Branch: branch})
+		d, err := s.engine.Enqueue(ctx, app, deploy.Options{Trigger: "webhook", CommitSHA: sha, CommitMessage: firstLine(msg), Branch: branch,
+			NeedsApproval: s.automationNeedsApproval(ctx, app, 0)})
 		if err != nil {
 			return res, err
 		}
 		s.db.LogActivity(ctx, 0, "webhook.deploy", app.Name+"@"+short(sha))
-		res.Status, res.DeploymentID = "queued", d.ID
+		res.Status, res.DeploymentID = d.Status, d.ID
 	}
 	return res, nil
 }
@@ -333,11 +334,12 @@ func (s *Server) deployHook(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	d, err := s.engine.Enqueue(r.Context(), app, deploy.Options{
 		Trigger: "api", CommitSHA: q.Get("commit"), Branch: q.Get("branch"), ForceRebuild: q.Get("force") == "true",
+		NeedsApproval: s.automationNeedsApproval(r.Context(), app, 0),
 	})
 	if err != nil {
 		return err
 	}
-	return accepted(w, webhookResult{Status: "queued", DeploymentID: d.ID})
+	return accepted(w, webhookResult{Status: d.Status, DeploymentID: d.ID})
 }
 
 func firstLine(s string) string {

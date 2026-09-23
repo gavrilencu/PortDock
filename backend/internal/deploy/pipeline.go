@@ -14,6 +14,7 @@ import (
 	"github.com/shipyard/shipyard/internal/docker"
 	"github.com/shipyard/shipyard/internal/executor"
 	"github.com/shipyard/shipyard/internal/proxy"
+	"github.com/shipyard/shipyard/internal/registry"
 	"github.com/shipyard/shipyard/internal/store"
 )
 
@@ -34,6 +35,7 @@ type job struct {
 	ctxDir  string // build context (checkout + base directory)
 	env     Env
 	routes  []proxy.DomainRoute // production domains, or preview domains for PRs
+	reg     *store.Registry     // push/pull registry (nil: images stay on the servers)
 }
 
 func (j *job) run(ctx context.Context, cmd string) error {
@@ -50,17 +52,31 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	if err != nil {
 		return fmt.Errorf("load application: %w", err)
 	}
-	x, srv, err := e.pool.ForID(ctx, app.ServerID)
+	targets, err := e.appTargets(ctx, app)
 	if err != nil {
-		return fmt.Errorf("connect to server: %w", err)
+		return err
+	}
+	if d.PRNumber > 0 {
+		targets = targets[:1] // previews run on the primary server only
+	}
+	build := targets[0]
+	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID && app.BuildPack != "compose" && app.SourceType != "image" {
+		x, srv, err := e.pool.ForID(ctx, app.BuildServerID)
+		if err != nil {
+			return fmt.Errorf("connect to build server: %w", err)
+		}
+		build = target{x: x, srv: srv}
 	}
 	if d.PRNumber == 0 {
 		_, _ = e.db.ExecContext(ctx, "UPDATE applications SET status = 'deploying' WHERE id = ?", app.ID)
 		e.hub.Event("application", app.ID, "deploying")
 	}
-	j := &job{e: e, app: app, srv: srv, x: x, d: d, log: log}
+	j := &job{e: e, app: app, srv: build.srv, x: build.x, d: d, log: log}
+	if j.reg, err = e.Registry(ctx, app.RegistryID); err != nil {
+		return err
+	}
 	if d.PRNumber > 0 {
-		j.routes = e.previewRoutes(app, srv, d.PRNumber)
+		j.routes = e.previewRoutes(app, targets[0].srv, d.PRNumber)
 	} else if j.routes, err = e.DomainRoutes(ctx, app); err != nil {
 		return fmt.Errorf("load domains: %w", err)
 	}
@@ -76,18 +92,30 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		log.Mask(tok)
 	}
 
-	log.Printf("🚀 Deploying %s (deployment %s, trigger: %s) to server %q", app.Name, d.UUID, d.Trigger, srv.Name)
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.srv.Name
+	}
+	log.Printf("🚀 Deploying %s (deployment %s, trigger: %s) to %s", app.Name, d.UUID, d.Trigger, plural(len(targets), "server")+" ("+strings.Join(names, ", ")+")")
+	if build.srv.ID != targets[0].srv.ID {
+		log.Printf("Building on dedicated build server %q", build.srv.Name)
+	}
+	if j.reg != nil {
+		log.Printf("Registry: %s (%s)", j.reg.Name, j.reg.Host)
+	}
 	if d.PRNumber > 0 {
 		log.Printf("Preview deployment for pull request #%d (branch %s)", d.PRNumber, d.Branch)
 	}
 
-	log.Step("Preparing server")
-	if err := docker.EnsureNetwork(ctx, x, e.cfg.ProxyNetwork); err != nil {
-		return fmt.Errorf("create network: %w", err)
-	}
-	if srv.ProxyEnabled && len(j.domains()) > 0 {
-		if err := proxy.Ensure(ctx, x, e.ProxyOptions(ctx), false); err != nil {
-			log.Printf("⚠ could not start proxy: %v", err)
+	log.Step("Preparing " + plural(len(targets), "server"))
+	for _, t := range targets {
+		if err := docker.EnsureNetwork(ctx, t.x, e.cfg.ProxyNetwork); err != nil {
+			return fmt.Errorf("%s: create network: %w", t.srv.Name, err)
+		}
+		if t.srv.ProxyEnabled && len(j.domains()) > 0 {
+			if err := proxy.Ensure(ctx, t.x, e.ProxyOptions(ctx), false); err != nil {
+				log.Printf("⚠ %s: could not start proxy: %v", t.srv.Name, err)
+			}
 		}
 	}
 
@@ -95,89 +123,115 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		if j.workdir != "" {
 			// Files cloned by the git container are root-owned; fall back to a container for cleanup.
 			parent, name := path.Split(j.workdir)
-			_ = x.Run(context.WithoutCancel(ctx), fmt.Sprintf("rm -rf %s 2>/dev/null || docker run --rm -v %s:/w alpine rm -rf /w/%s",
+			_ = build.x.Run(context.WithoutCancel(ctx), fmt.Sprintf("rm -rf %s 2>/dev/null || docker run --rm -v %s:/w alpine rm -rf /w/%s",
 				q(j.workdir), q(parent), q(name)), executor.RunOpts{})
 		}
 	}()
 
 	if app.BuildPack == "compose" {
-		return j.deployCompose(ctx)
+		return j.deployComposeAll(ctx, targets)
 	}
 
-	image, err := j.resolveImage(ctx)
+	image, pull, err := j.resolveImage(ctx)
 	if err != nil {
 		return err
 	}
 	d.Image = image
-
-	if app.PreDeployCommand != "" {
-		log.Step("Pre-deploy command")
-		envFile, err := j.writeEnvFile(ctx)
-		if err != nil {
+	if len(targets) > 1 || build.srv.ID != targets[0].srv.ID || pull {
+		log.Step("Distributing image")
+		if err := j.distribute(ctx, image, build, targets, pull); err != nil {
 			return err
 		}
-		cmd := fmt.Sprintf("docker run --rm --network %s --env-file %s %s sh -c %s",
-			q(e.cfg.ProxyNetwork), q(envFile), q(image), q(app.PreDeployCommand))
-		if err := j.run(ctx, cmd); err != nil {
-			return fmt.Errorf("pre-deploy command failed: %w", err)
+	}
+
+	for i, t := range targets {
+		tj := *j // per-server copy; build-time changes to j.app (e.g. static port) carry over
+		tj.x, tj.srv = t.x, t.srv
+		if len(targets) > 1 {
+			log.Step(fmt.Sprintf("Server %d/%d: %s", i+1, len(targets), t.srv.Name))
 		}
-	}
-
-	if err := j.rollout(ctx, image); err != nil {
-		return err
-	}
-
-	if app.PostDeployCommand != "" {
-		log.Step("Post-deploy command")
-		if err := j.run(ctx, fmt.Sprintf("docker exec %s sh -c %s", q(j.containerName(1)), q(app.PostDeployCommand))); err != nil {
-			log.Printf("⚠ post-deploy command failed: %v", err)
+		if i == 0 && app.PreDeployCommand != "" {
+			log.Step("Pre-deploy command")
+			envFile, err := tj.writeEnvFile(ctx)
+			if err != nil {
+				return err
+			}
+			cmd := fmt.Sprintf("docker run --rm --network %s --env-file %s %s sh -c %s",
+				q(e.cfg.ProxyNetwork), q(envFile), q(image), q(app.PreDeployCommand))
+			if err := tj.run(ctx, cmd); err != nil {
+				return fmt.Errorf("pre-deploy command failed: %w", err)
+			}
 		}
+		if err := tj.rollout(ctx, image); err != nil {
+			if i > 0 {
+				return fmt.Errorf("%s: %w (the new version is live on %d of %d servers)", t.srv.Name, err, i, len(targets))
+			}
+			return err
+		}
+		if app.PostDeployCommand != "" {
+			log.Step("Post-deploy command")
+			if err := tj.run(ctx, fmt.Sprintf("docker exec %s sh -c %s", q(tj.containerName(1)), q(app.PostDeployCommand))); err != nil {
+				log.Printf("⚠ post-deploy command failed: %v", err)
+			}
+		}
+		tj.cleanupImages(context.WithoutCancel(ctx))
 	}
-
-	j.cleanupImages(context.WithoutCancel(ctx))
+	if build.srv.ID != targets[0].srv.ID {
+		j.cleanupImages(context.WithoutCancel(ctx))
+	}
 	return nil
 }
 
-// resolveImage checks out and builds the source, or pulls/reuses an image.
-func (j *job) resolveImage(ctx context.Context) (string, error) {
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// resolveImage checks out and builds the source (pushing it to the registry),
+// or selects a prebuilt image. pull reports that every server must pull it.
+func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err error) {
 	app, d := j.app, j.d
 
 	if d.RollbackOf != 0 {
 		j.log.Step("Rollback")
 		j.log.Printf("Re-using image %s from deployment #%d", d.Image, d.RollbackOf)
-		if _, err := j.output(ctx, "docker image inspect "+q(d.Image)+" >/dev/null"); err != nil {
-			return "", fmt.Errorf("image %s is no longer available on the server", d.Image)
+		if !hasImage(ctx, j.x, d.Image) && (j.reg == nil || !strings.HasPrefix(d.Image, j.reg.Host+"/")) {
+			if app.SourceType == "image" || app.BuildPack == "image" {
+				return d.Image, true, nil
+			}
+			return "", false, fmt.Errorf("image %s is no longer available on the server", d.Image)
 		}
-		return d.Image, nil
+		return d.Image, false, nil
 	}
 
 	if app.SourceType == "image" || app.BuildPack == "image" {
-		j.log.Step("Pulling image")
 		if app.DockerImage == "" {
-			return "", errors.New("no docker image configured")
+			return "", false, errors.New("no docker image configured")
 		}
-		if err := j.run(ctx, "docker pull "+q(app.DockerImage)); err != nil {
-			return "", fmt.Errorf("pull image: %w", err)
-		}
-		return app.DockerImage, nil
+		return app.DockerImage, true, nil
 	}
 
 	if err := j.checkout(ctx); err != nil {
-		return "", err
+		return "", false, err
 	}
 
-	image := j.imageRepo() + ":" + short12(d.CommitSHA)
-	if !d.ForceRebuild {
-		if _, err := j.output(ctx, "docker image inspect "+q(image)+" >/dev/null 2>&1"); err == nil {
-			j.log.Printf("Image %s already exists for this commit, skipping build (use force rebuild to override).", image)
-			return image, nil
-		}
+	image = j.imageRepo() + ":" + short12(d.CommitSHA)
+	if !d.ForceRebuild && hasImage(ctx, j.x, image) {
+		j.log.Printf("Image %s already exists for this commit, skipping build (use force rebuild to override).", image)
+		return image, false, nil
 	}
 	j.log.Step("Building image (" + app.BuildPack + ")")
 	if err := j.build(ctx, image); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return image, nil
+	if d.PRNumber == 0 {
+		if err := j.push(ctx, image); err != nil {
+			return "", false, err
+		}
+	}
+	return image, false, nil
 }
 
 func short12(sha string) string {
@@ -191,6 +245,9 @@ func short12(sha string) string {
 }
 
 func (j *job) imageRepo() string {
+	if j.reg != nil && j.d.PRNumber == 0 {
+		return registry.Repository(*j.reg, j.app.RegistryImage, j.app.Name)
+	}
 	repo := "shipyard/" + j.app.UUID
 	if j.d.PRNumber > 0 {
 		repo += "-pr" + strconv.Itoa(j.d.PRNumber)
@@ -578,18 +635,14 @@ func (j *job) cleanupImages(ctx context.Context) {
 	}
 }
 
-// liveStatus derives an application's status from its running containers.
+// liveStatus derives an application's status from its containers on all servers.
 func (e *Engine) liveStatus(ctx context.Context, app store.Application) string {
-	x, _, err := e.pool.ForID(ctx, app.ServerID)
-	if err != nil {
-		return "unknown"
-	}
 	filter := "label=" + docker.LabelResource + "=" + app.UUID
 	if app.BuildPack == "compose" {
 		filter = "label=com.docker.compose.project=" + composeProject(app.UUID)
 	}
-	cs, err := docker.PS(ctx, x, true, filter)
-	if err != nil {
+	cs, err := e.listAppContainers(ctx, app, true, filter)
+	if err != nil && len(cs) == 0 {
 		return "unknown"
 	}
 	return aggregateStatus(cs, true)

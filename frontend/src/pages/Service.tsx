@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, ExternalLink, FileCode, Globe, KeyRound, LayoutGrid, Play, Rocket, RotateCw, Save, Settings2, Square, Trash2 } from "lucide-react";
+import { Activity, Boxes, ExternalLink, FileCode, Globe, KeyRound, LayoutGrid, Play, Rocket, RotateCw, Save, Settings2, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Container, ServiceDetail } from "../lib/types";
@@ -11,8 +11,9 @@ import { ContainerTable } from "../components/ContainerTable";
 import { LogViewer } from "../components/LogViewer";
 import { EnvEditor } from "../components/EnvEditor";
 import { domainURL, splitList } from "../lib/utils";
+import { MetricsPanel } from "../components/metrics";
 
-type Tab = "overview" | "compose" | "env" | "settings";
+type Tab = "overview" | "metrics" | "compose" | "env" | "settings";
 
 export function ServicePage() {
   const id = Number(useParams().id);
@@ -93,6 +94,7 @@ export function ServicePage() {
         onChange={(t) => setParams({ tab: t })}
         tabs={[
           { id: "overview", label: "Overview", icon: <LayoutGrid /> },
+          { id: "metrics", label: "Metrics", icon: <Activity /> },
           { id: "compose", label: "Compose", icon: <FileCode /> },
           { id: "env", label: "Environment", icon: <KeyRound /> },
           { id: "settings", label: "Settings", icon: <Settings2 /> },
@@ -115,6 +117,7 @@ export function ServicePage() {
           </Card>
         </div>
       )}
+      {tab === "metrics" && <MetricsPanel scope="service" id={s.id} />}
       {tab === "compose" && <ComposeEditor s={s} onDeploy={() => deploy.mutate()} />}
       {tab === "env" && (
         <div className="space-y-3">

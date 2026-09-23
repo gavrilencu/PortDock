@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Ban, Bell, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Boxes, FileKey2, Sparkles, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { ActivityEntry, APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
+import type { APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
 import { DNSBadge } from "../components/Domains";
 import { useUser } from "../components/Layout";
 import { GitHubMark, GitSourcesSettings } from "../components/github";
 import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
 import { SecuritySettings } from "../components/security";
 import { AuthenticationSettings } from "../components/sso";
+import { RegistriesSettings } from "../components/registries";
+import { AuditLog, LicenseSettings } from "../components/auditLicense";
+import { CertificatesSettings } from "../components/certificates";
+import { UpdateSettings } from "../components/updates";
 import { timeAgo } from "../lib/utils";
 
-type Tab = "general" | "profile" | "security" | "auth" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
+type Tab = "general" | "profile" | "security" | "auth" | "registries" | "license" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -37,6 +41,10 @@ export function SettingsPage() {
         { id: "users", label: "Team members", icon: <Users />, hidden: !admin },
         { id: "auth", label: "Authentication", icon: <LockKeyhole />, hidden: !admin },
         { id: "git", label: "Git sources", icon: <GitHubMark />, hidden: !admin },
+        { id: "registries", label: "Container registries", icon: <Boxes />, hidden: !admin },
+        { id: "certificates", label: "Certificates", icon: <FileKey2 />, hidden: !admin },
+        { id: "license", label: "License", icon: <Sparkles />, hidden: !admin },
+        { id: "updates", label: "Updates", icon: <ArrowUpCircle />, hidden: !admin },
         { id: "notifications", label: "Notifications", icon: <Bell />, hidden: !admin },
         { id: "storage", label: "Backup storage", icon: <Cloud />, hidden: !admin },
       ],
@@ -78,6 +86,10 @@ export function SettingsPage() {
           {tab === "profile" && <Profile />}
           {tab === "security" && <SecuritySettings />}
           {tab === "auth" && <AuthenticationSettings />}
+          {tab === "registries" && <RegistriesSettings />}
+          {tab === "license" && <LicenseSettings />}
+          {tab === "certificates" && <CertificatesSettings />}
+          {tab === "updates" && <UpdateSettings />}
           {tab === "general" && <General />}
           {tab === "users" && <Team />}
           {tab === "git" && <GitSourcesSettings />}
@@ -85,7 +97,7 @@ export function SettingsPage() {
           {tab === "tokens" && <Tokens />}
           {tab === "notifications" && <Notifications />}
           {tab === "storage" && <Storage />}
-          {tab === "activity" && <ActivityLog />}
+          {tab === "activity" && <AuditLog />}
         </div>
       </div>
     </>
@@ -648,7 +660,7 @@ const channelFields: Record<NotificationChannel["type"], { key: string; label: s
   ],
 };
 
-const allEvents = ["deployment.success", "deployment.failed", "backup.failed", "server.unreachable", "server.reachable"];
+const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed"];
 
 function Notifications() {
   const qc = useQueryClient();
@@ -808,37 +820,6 @@ function Storage() {
           </Button>
         </div>
       </div>
-    </Card>
-  );
-}
-
-function ActivityLog() {
-  const { data, isLoading } = useQuery({ queryKey: ["activity"], queryFn: () => api.get<ActivityEntry[]>("/activity"), refetchInterval: 30_000 });
-  if (isLoading) return <Loading />;
-  return (
-    <Card title="Audit log" description="The latest 200 actions.">
-      <Table>
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Who</th>
-            <th>Action</th>
-            <th>Target</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data!.map((a) => (
-            <tr key={a.id}>
-              <td className="whitespace-nowrap text-xs text-muted">{timeAgo(a.created_at)}</td>
-              <td className="text-sm">{a.user_name}</td>
-              <td>
-                <code className="text-xs">{a.action}</code>
-              </td>
-              <td className="text-xs text-muted">{a.target}</td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
     </Card>
   );
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/shipyard/shipyard/internal/auth"
+	"github.com/shipyard/shipyard/internal/ldapauth"
+	"github.com/shipyard/shipyard/internal/license"
 	"github.com/shipyard/shipyard/internal/secrets"
 	"github.com/shipyard/shipyard/internal/sso"
 	"github.com/shipyard/shipyard/internal/store"
@@ -74,6 +77,7 @@ func (t *ttlStore[T]) take(key string) (T, bool) {
 type mfaChallenge struct {
 	UserID   int64
 	Attempts int
+	Base     string // first factor: password | ldap:<slug>
 }
 
 type ssoLogin struct {
@@ -154,31 +158,47 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 			return errStatus(429, "too many failed sign-in attempts; try again in %s", retryIn(left))
 		}
 	}
+	base := "password"
 	u, err := store.Get[store.User](ctx, s.db, "SELECT * FROM users WHERE email = ?", email)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, c.Password) {
-		s.sec.limiter.Fail(ipKey)
-		s.sec.limiter.Fail(emailKey)
-		s.db.LogActivity(ctx, u.ID, "login.failed", email+" from "+auth.ClientIP(r))
-		if err == nil && !u.HasPassword() {
-			return errStatus(401, "this account signs in with single sign-on")
+		// Not a local password: try LDAP / Active Directory (username, UPN or email).
+		du, dir, derr := s.ldapLogin(ctx, strings.TrimSpace(c.Email), c.Password)
+		switch {
+		case derr == nil:
+			u, err, base = du, nil, "ldap:"+dir.Slug
+		case errors.Is(derr, errNoDirectoryUser) || errors.Is(derr, ldapauth.ErrInvalidCredentials):
+			s.sec.limiter.Fail(ipKey)
+			s.sec.limiter.Fail(emailKey)
+			s.db.LogActivity(ctx, u.ID, "login.failed", email+" from "+auth.ClientIP(r))
+			if err == nil && !u.HasPassword() && !strings.HasPrefix(u.AuthSource, "ldap:") {
+				return errStatus(401, "this account signs in with single sign-on")
+			}
+			return errStatus(401, "invalid username or password")
+		default:
+			s.sec.limiter.Fail(ipKey)
+			s.db.LogActivity(ctx, 0, "login.failed", email+" via "+dir.Name+": "+derr.Error())
+			return errStatus(401, "%s: %v", dir.Name, derr)
 		}
-		return errStatus(401, "invalid email or password")
 	}
 	if u.Disabled {
 		return errStatus(403, "this account has been disabled; contact an administrator")
 	}
-	if !s.passwordLoginAllowed(ctx, u) {
+	if base == "password" && !s.passwordLoginAllowed(ctx, u) {
 		return errStatus(403, "password sign-in is disabled for your organization; use single sign-on")
 	}
 	s.sec.limiter.Reset(emailKey)
 	if u.TOTPEnabled {
-		token := s.sec.challenges.put(mfaChallenge{UserID: u.ID}, 5*time.Minute)
+		token := s.sec.challenges.put(mfaChallenge{UserID: u.ID, Base: base}, 5*time.Minute)
 		return ok(w, map[string]any{"mfa_required": true, "mfa_token": token})
 	}
-	if err := s.auth.CreateSession(ctx, w, r, u.ID, "password"); err != nil {
+	if err := s.auth.CreateSession(ctx, w, r, u.ID, base); err != nil {
 		return err
 	}
-	s.db.LogActivity(ctx, u.ID, "login", u.Email)
+	if base == "password" {
+		s.db.LogActivity(ctx, u.ID, "login", u.Email)
+	} else {
+		s.db.LogActivity(ctx, u.ID, "login", u.Email+" via "+strings.TrimPrefix(base, "ldap:")+" (LDAP)")
+	}
 	return ok(w, toUserOut(u))
 }
 
@@ -211,7 +231,11 @@ func (s *Server) loginMFA(w http.ResponseWriter, r *http.Request) error {
 		return errStatus(401, "invalid authentication code")
 	}
 	s.sec.challenges.take(in.Token)
-	if err := s.auth.CreateSession(ctx, w, r, u.ID, "password+"+method); err != nil {
+	first := ch.Base
+	if first == "" {
+		first = "password"
+	}
+	if err := s.auth.CreateSession(ctx, w, r, u.ID, first+"+"+method); err != nil {
 		return err
 	}
 	s.db.LogActivity(ctx, u.ID, "login", u.Email+" (2FA: "+method+")")
@@ -448,7 +472,12 @@ func (s *Server) listLoginProviders(w http.ResponseWriter, r *http.Request) erro
 	for _, p := range ps {
 		out = append(out, item{p.Slug, p.Name, p.Kind})
 	}
-	return ok(w, map[string]any{"password_login": s.db.Setting(r.Context(), "password_login") != "false", "providers": out})
+	dirs, _ := store.Select[store.LDAPDirectory](r.Context(), s.db, "SELECT * FROM ldap_directories WHERE enabled = 1 ORDER BY id")
+	ldapList := make([]item, 0, len(dirs))
+	for _, d := range dirs {
+		ldapList = append(ldapList, item{d.Slug, d.Name, d.Kind})
+	}
+	return ok(w, map[string]any{"password_login": s.db.Setting(r.Context(), "password_login") != "false", "providers": out, "ldap": ldapList})
 }
 
 func (s *Server) ssoRedirectURI(ctx context.Context, slug string) string {
@@ -584,6 +613,9 @@ func (s *Server) ssoResolveUser(ctx context.Context, p store.SSOProvider, c sso.
 		case !p.AutoRegister:
 			return store.User{}, fmt.Errorf("there is no account for %s — ask an administrator to invite you", c.Email)
 		default:
+			if err := s.checkUserLimit(ctx); err != nil {
+				return store.User{}, fmt.Errorf("cannot create an account for %s: the user limit of the license is reached", c.Email)
+			}
 			name := c.Name
 			if name == "" {
 				name = strings.Split(c.Email, "@")[0]
@@ -753,6 +785,9 @@ func (s *Server) createSSOProvider(w http.ResponseWriter, r *http.Request) error
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
+	if err := s.requireFeature(r.Context(), license.FeatureSSO); err != nil {
+		return err
+	}
 	p := store.SSOProvider{Enabled: true, TrustEmail: true, Scopes: "openid email profile", GroupsClaim: "groups", DefaultRole: "member", CreatedAt: store.Now()}
 	if err := s.applySSOProvider(&p, in); err != nil {
 		return err
@@ -779,6 +814,11 @@ func (s *Server) updateSSOProvider(w http.ResponseWriter, r *http.Request) error
 	var in ssoProviderIn
 	if err := readJSON(r, &in); err != nil {
 		return err
+	}
+	if in.Enabled != nil && *in.Enabled && !p.Enabled {
+		if err := s.requireFeature(r.Context(), license.FeatureSSO); err != nil {
+			return err
+		}
 	}
 	if err := s.applySSOProvider(&p, in); err != nil {
 		return err

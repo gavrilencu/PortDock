@@ -4,7 +4,9 @@ import { CircleCheck, ExternalLink, Pencil, Plus, Save, ShieldCheck, Trash2, Use
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Settings, SSOPreset, SSOProvider } from "../lib/types";
-import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Switch, Table, useConfirm } from "./ui";
+import { UpgradeNotice, useLicense } from "./access";
+import { LDAPCard } from "./ldap";
+import { Button, Card, CopyField, Empty, Field, Input, Loading, Modal, PasswordInput, Select, Switch, Table, useConfirm } from "./ui";
 
 const kindColors: Record<string, string> = {
   entra: "bg-[#0078d4] text-white",
@@ -210,6 +212,7 @@ function ProviderModal({ initial, presets, redirectBase, onClose }: { initial: F
 }
 
 function ProvidersCard() {
+  const { has } = useLicense();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const q = useQuery({
@@ -244,6 +247,11 @@ function ProvidersCard() {
         )
       }
     >
+      {!has("sso") && (
+        <div className="border-b border-border p-4">
+          <UpgradeNotice feature="sso">Single sign-on is part of the</UpgradeNotice>
+        </div>
+      )}
       {providers.length === 0 ? (
         <div className="p-5">
           <Empty
@@ -333,6 +341,7 @@ export function AuthenticationSettings() {
     <div className="space-y-6">
       <PolicyCard />
       <ProvidersCard />
+      <LDAPCard />
     </div>
   );
 }

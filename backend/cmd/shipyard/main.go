@@ -17,23 +17,42 @@ import (
 	_ "time/tzdata" // timezones on minimal images and Windows
 
 	"github.com/shipyard/shipyard/internal/api"
+	"github.com/shipyard/shipyard/internal/audit"
 	"github.com/shipyard/shipyard/internal/auth"
 	"github.com/shipyard/shipyard/internal/config"
 	"github.com/shipyard/shipyard/internal/deploy"
 	"github.com/shipyard/shipyard/internal/executor"
 	"github.com/shipyard/shipyard/internal/github"
+	"github.com/shipyard/shipyard/internal/license"
+	"github.com/shipyard/shipyard/internal/monitor"
 	"github.com/shipyard/shipyard/internal/notify"
 	"github.com/shipyard/shipyard/internal/scheduler"
 	"github.com/shipyard/shipyard/internal/secrets"
 	"github.com/shipyard/shipyard/internal/store"
 	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/shipyard/shipyard/internal/updater"
 	"github.com/shipyard/shipyard/web"
 )
 
 func main() {
 	resetPassword := flag.String("reset-password", "", "reset the password of the user with this email and exit")
 	disable2FA := flag.String("disable-2fa", "", "turn off two-factor authentication for the user with this email and exit")
+	installLicense := flag.String("install-license", "", "install a license key and exit")
+	selfUpdate := flag.String("self-update", "", "internal: replace the given Shipyard container with this image (run by the updater container)")
 	flag.Parse()
+	if *selfUpdate != "" {
+		dataDir := os.Getenv("SHIPYARD_DATA_DIR")
+		if dataDir == "" {
+			dataDir = "/data/shipyard"
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		if err := updater.Swap(ctx, updater.NewDocker(), *selfUpdate, dataDir); err != nil {
+			fmt.Fprintln(os.Stderr, "update failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	level := slog.LevelInfo
 	if os.Getenv("SHIPYARD_DEBUG") == "1" {
@@ -41,13 +60,13 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
-	if err := run(*resetPassword, *disable2FA); err != nil {
+	if err := run(*resetPassword, *disable2FA, *installLicense); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(resetPassword, disable2FA string) error {
+func run(resetPassword, disable2FA, installLicense string) error {
 	cfg := config.Load()
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
@@ -60,6 +79,18 @@ func run(resetPassword, disable2FA string) error {
 
 	if resetPassword != "" {
 		return doResetPassword(db, resetPassword)
+	}
+	if installLicense != "" {
+		l, err := license.Parse(installLicense)
+		if err != nil {
+			return err
+		}
+		if err := db.SetSetting(context.Background(), "license_key", strings.Join(strings.Fields(installLicense), "")); err != nil {
+			return err
+		}
+		db.LogActivity(context.Background(), 0, "license.install", l.Customer+" · "+l.Plan+" (command line)")
+		fmt.Printf("Installed %s license for %s, valid until %s\n", l.Plan, l.Customer, l.ExpiresAt[:10])
+		return nil
 	}
 	if disable2FA != "" {
 		res, err := db.ExecContext(context.Background(),
@@ -92,7 +123,13 @@ func run(resetPassword, disable2FA string) error {
 
 	engine.Start(ctx)
 	sched.Start(ctx)
+	mon := monitor.New(db, pool, notifier, hub)
+	go mon.Run(ctx)
+	auditStream := audit.New(db, box)
+	store.OnActivity = auditStream.Push
+	go auditStream.Run(ctx)
 	go engine.Monitor(ctx, 30*time.Second)
+	go engine.CertificateWatch(ctx, 6*time.Hour)
 	go func() {
 		if err := engine.ApplyDashboardRoute(ctx); err != nil && !errors.Is(err, deploy.ErrNotContainerized) {
 			slog.Warn("dashboard domain routing", "err", err)
@@ -100,10 +137,11 @@ func run(resetPassword, disable2FA string) error {
 	}()
 
 	srv := api.New(api.Deps{
-		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh,
+		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh, Monitor: mon, Audit: auditStream,
 		Auth: auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
 		UI:   web.FS(),
 	})
+	go srv.UpdateWatch(ctx)
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),

@@ -21,7 +21,7 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
   const [term, setTerm] = useState<Container | null>(null);
 
   const action = useMutation({
-    mutationFn: ({ c, a }: { c: Container; a: string }) => api.post(`/servers/${serverId}/containers/${encodeURIComponent(c.id)}/${a}`),
+    mutationFn: ({ c, a }: { c: Container; a: string }) => api.post(`/servers/${c.server_id || serverId}/containers/${encodeURIComponent(c.id)}/${a}`),
     onSuccess: (_, { a, c }) => {
       toast.success(`${c.name}: ${a} ok`);
       qc.invalidateQueries({ queryKey: ["containers"] });
@@ -57,6 +57,7 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
                     <span className="font-medium">{c.name}</span>
                     {kind && <Badge tone="accent">{kind}</Badge>}
                     {pr && pr !== "0" && <Badge tone="info">PR #{pr}</Badge>}
+                    {c.server_name && <Badge>{c.server_name}</Badge>}
                   </div>
                 </td>
                 {!compact && <td className="max-w-64 truncate font-mono text-xs text-muted">{c.image}</td>}
@@ -108,10 +109,10 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
         </tbody>
       </Table>
       <Modal open={!!logs} onClose={() => setLogs(null)} title={`Logs · ${logs?.name}`} size="xl">
-        {logs && <ContainerLogs url={`/servers/${serverId}/containers/${encodeURIComponent(logs.id)}/logs?tail=500`} />}
+        {logs && <ContainerLogs url={`/servers/${logs.server_id || serverId}/containers/${encodeURIComponent(logs.id)}/logs?tail=500`} />}
       </Modal>
       <Modal open={!!term} onClose={() => setTerm(null)} title={`Terminal · ${term?.name}`} size="xl">
-        {term && <Terminal path={`/servers/${serverId}/containers/${encodeURIComponent(term.id)}/terminal`} />}
+        {term && <Terminal path={`/servers/${term.server_id || serverId}/containers/${encodeURIComponent(term.id)}/terminal`} />}
       </Modal>
     </>
   );

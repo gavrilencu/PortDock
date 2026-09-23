@@ -112,6 +112,9 @@ type Project struct {
 	ID          int64  `db:"id" json:"id"`
 	Name        string `db:"name" json:"name"`
 	Description string `db:"description" json:"description"`
+	// DefaultRole applies to members without an explicit project role:
+	// none (private project) | viewer | developer | maintainer.
+	DefaultRole string `db:"default_role" json:"default_role"`
 	CreatedAt   string `db:"created_at" json:"created_at"`
 }
 
@@ -119,6 +122,20 @@ type Environment struct {
 	ID        int64  `db:"id" json:"id"`
 	ProjectID int64  `db:"project_id" json:"project_id"`
 	Name      string `db:"name" json:"name"`
+	// Protected environments can only be changed by maintainers; developer
+	// deployments become approval requests.
+	Protected bool `db:"protected" json:"protected"`
+	// RequireApproval holds every deployment (including git pushes) until a
+	// maintainer other than the requester approves it.
+	RequireApproval bool   `db:"require_approval" json:"require_approval"`
+	CreatedAt       string `db:"created_at" json:"created_at"`
+}
+
+// ProjectMember grants a user a role in one project.
+type ProjectMember struct {
+	ProjectID int64  `db:"project_id" json:"project_id"`
+	UserID    int64  `db:"user_id" json:"user_id"`
+	Role      string `db:"role" json:"role"` // viewer | developer | maintainer
 	CreatedAt string `db:"created_at" json:"created_at"`
 }
 
@@ -167,13 +184,31 @@ type Application struct {
 	CustomDockerOptions string `db:"custom_docker_options" json:"custom_docker_options"`
 	Status              string `db:"status" json:"status"`
 	CurrentImage        string `db:"current_image" json:"current_image"`
-	CreatedAt           string `db:"created_at" json:"created_at"`
-	UpdatedAt           string `db:"updated_at" json:"updated_at"`
+	// RegistryID pushes built images to (and pulls private images from) this registry.
+	RegistryID int64 `db:"registry_id" json:"registry_id"`
+	// RegistryImage overrides the repository path (default: <namespace>/<app name>).
+	RegistryImage string `db:"registry_image" json:"registry_image"`
+	// BuildServerID builds on a dedicated server (0 = the primary server).
+	BuildServerID int64  `db:"build_server_id" json:"build_server_id"`
+	CreatedAt     string `db:"created_at" json:"created_at"`
+	UpdatedAt     string `db:"updated_at" json:"updated_at"`
 
 	HasGitToken bool `db:"-" json:"has_git_token"`
 }
 
 func (a Application) DomainList() []string { return SplitList(a.Domains) }
+
+// Registry is a container registry used to push built images and pull private ones.
+type Registry struct {
+	ID        int64  `db:"id" json:"id"`
+	Name      string `db:"name" json:"name"`
+	Kind      string `db:"kind" json:"kind"` // dockerhub | ghcr | gitlab | harbor | quay | ecr | generic
+	Host      string `db:"host" json:"host"`
+	Username  string `db:"username" json:"username"` // ECR: access key ID
+	Password  string `db:"password" json:"-"`        // encrypted token/password; ECR: secret access key
+	Namespace string `db:"namespace" json:"namespace"`
+	CreatedAt string `db:"created_at" json:"created_at"`
+}
 
 type EnvVar struct {
 	ID        int64  `db:"id" json:"id"`
@@ -204,6 +239,11 @@ type Deployment struct {
 	StartedAt     string `db:"started_at" json:"started_at"`
 	FinishedAt    string `db:"finished_at" json:"finished_at"`
 	CreatedAt     string `db:"created_at" json:"created_at"`
+	// Approval workflow (status pending_approval → queued | rejected).
+	RequestedBy   int64  `db:"requested_by" json:"requested_by"`
+	ReviewedBy    int64  `db:"reviewed_by" json:"reviewed_by"`
+	ReviewedAt    string `db:"reviewed_at" json:"reviewed_at"`
+	ReviewComment string `db:"review_comment" json:"review_comment"`
 }
 
 type Database struct {
@@ -276,6 +316,7 @@ type Activity struct {
 	UserID    int64  `db:"user_id" json:"user_id"`
 	Action    string `db:"action" json:"action"`
 	Target    string `db:"target" json:"target"`
+	IP        string `db:"ip" json:"ip"`
 	CreatedAt string `db:"created_at" json:"created_at"`
 }
 
@@ -314,4 +355,78 @@ type GitHubInstallation struct {
 	AccountAvatar       string `db:"account_avatar" json:"account_avatar"`
 	RepositorySelection string `db:"repository_selection" json:"repository_selection"`
 	CreatedAt           string `db:"created_at" json:"created_at"`
+}
+
+// CustomCertificate is an uploaded certificate (corporate CA, EV, …) served by
+// Traefik for every hostname it covers.
+type CustomCertificate struct {
+	ID        int64  `db:"id" json:"id"`
+	Name      string `db:"name" json:"name"`
+	CertPEM   string `db:"cert_pem" json:"-"`
+	KeyPEM    string `db:"key_pem" json:"-"`       // encrypted
+	Domains   string `db:"domains" json:"domains"` // SANs, comma-separated
+	Issuer    string `db:"issuer" json:"issuer"`
+	NotBefore string `db:"not_before" json:"not_before"`
+	NotAfter  string `db:"not_after" json:"not_after"`
+	CreatedAt string `db:"created_at" json:"created_at"`
+}
+
+// LDAPDirectory is an LDAP / Active Directory server users can sign in with.
+type LDAPDirectory struct {
+	ID           int64  `db:"id" json:"id"`
+	Name         string `db:"name" json:"name"`
+	Slug         string `db:"slug" json:"slug"`
+	Kind         string `db:"kind" json:"kind"` // ad | openldap | freeipa | generic
+	Host         string `db:"host" json:"host"`
+	Port         int    `db:"port" json:"port"`
+	Security     string `db:"security" json:"security"` // ldaps | starttls | none
+	SkipVerify   bool   `db:"skip_verify" json:"skip_verify"`
+	CACert       string `db:"ca_cert" json:"ca_cert"`
+	BindDN       string `db:"bind_dn" json:"bind_dn"`
+	BindPassword string `db:"bind_password" json:"-"` // encrypted
+	BaseDN       string `db:"base_dn" json:"base_dn"`
+	// UserFilter finds the account; {username} is replaced (escaped) with what the user typed.
+	UserFilter string `db:"user_filter" json:"user_filter"`
+	EmailAttr  string `db:"email_attr" json:"email_attr"`
+	NameAttr   string `db:"name_attr" json:"name_attr"`
+	GroupsAttr string `db:"groups_attr" json:"groups_attr"`
+	// RequiredGroups (DNs or CNs, comma-separated): only members may sign in.
+	RequiredGroups string `db:"required_groups" json:"required_groups"`
+	// AdminGroups: members become admins (synced on every sign-in).
+	AdminGroups  string `db:"admin_groups" json:"admin_groups"`
+	NestedGroups bool   `db:"nested_groups" json:"nested_groups"` // AD: resolve nested membership
+	AutoRegister bool   `db:"auto_register" json:"auto_register"`
+	DefaultRole  string `db:"default_role" json:"default_role"`
+	Enabled      bool   `db:"enabled" json:"enabled"`
+	CreatedAt    string `db:"created_at" json:"created_at"`
+}
+
+// AlertRule fires when metric exceeds threshold for duration minutes.
+type AlertRule struct {
+	ID        int64   `db:"id" json:"id"`
+	Name      string  `db:"name" json:"name"`
+	Scope     string  `db:"scope" json:"scope"`
+	TargetID  int64   `db:"target_id" json:"target_id"`
+	Metric    string  `db:"metric" json:"metric"`
+	Threshold float64 `db:"threshold" json:"threshold"`
+	Duration  int     `db:"duration" json:"duration"`
+	Severity  string  `db:"severity" json:"severity"`
+	Enabled   bool    `db:"enabled" json:"enabled"`
+	CreatedAt string  `db:"created_at" json:"created_at"`
+}
+
+// AlertEvent is one firing (and later resolved) occurrence of a rule for a target.
+type AlertEvent struct {
+	ID             int64   `db:"id" json:"id"`
+	RuleID         int64   `db:"rule_id" json:"rule_id"`
+	Scope          string  `db:"scope" json:"scope"`
+	RefID          int64   `db:"ref_id" json:"ref_id"`
+	ServerID       int64   `db:"server_id" json:"server_id"`
+	TargetName     string  `db:"target_name" json:"target_name"`
+	Status         string  `db:"status" json:"status"`
+	Value          float64 `db:"value" json:"value"`
+	Message        string  `db:"message" json:"message"`
+	StartedAt      string  `db:"started_at" json:"started_at"`
+	ResolvedAt     string  `db:"resolved_at" json:"resolved_at"`
+	AcknowledgedBy int64   `db:"acknowledged_by" json:"acknowledged_by"`
 }

@@ -3,15 +3,19 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/shipyard/shipyard/internal/auth"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/shipyard/shipyard/internal/deploy"
+	"github.com/shipyard/shipyard/internal/license"
 	"github.com/shipyard/shipyard/internal/proxy"
+	"github.com/shipyard/shipyard/internal/registry"
 	"github.com/shipyard/shipyard/internal/secrets"
 	"github.com/shipyard/shipyard/internal/store"
+	"regexp"
 )
 
 var buildPacks = []string{"auto", "dockerfile", "compose", "node", "bun", "python", "go", "static", "shell", "nixpacks", "image"}
@@ -23,6 +27,18 @@ type appDTO struct {
 	Environment store.Environment `json:"environment"`
 	ServerName  string            `json:"server_name"`
 	ServerHost  string            `json:"server_host"` // address for published host ports
+	// Servers lists every server the application runs on (primary first).
+	Servers      []serverRef `json:"servers"`
+	RegistryName string      `json:"registry_name"`
+	RegistryRepo string      `json:"registry_repository"`
+	Access       Access      `json:"access"`
+}
+
+type serverRef struct {
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Host   string `json:"host"`
+	Status string `json:"status"`
 }
 
 func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
@@ -41,6 +57,16 @@ func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
 	dto.ServerHost = srv.Host
 	if srv.IsLocal {
 		dto.ServerHost = "localhost"
+	}
+	for _, id := range s.engine.AppServerIDs(ctx, a) {
+		if x, err := store.ByID[store.Server](ctx, s.db, "servers", id); err == nil {
+			dto.Servers = append(dto.Servers, serverRef{ID: x.ID, Name: x.Name, Host: x.Host, Status: x.Status})
+		}
+	}
+	dto.Access = s.resourceAccess(ctx, a.EnvironmentID)
+	if reg, err := s.engine.Registry(ctx, a.RegistryID); err == nil && reg != nil {
+		dto.RegistryName = reg.Name
+		dto.RegistryRepo = registry.Repository(*reg, a.RegistryImage, a.Name)
 	}
 	return dto
 }
@@ -120,6 +146,32 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	if _, err := store.ByID[store.Server](ctx, s.db, "servers", a.ServerID); err != nil {
 		return badRequest("server not found")
 	}
+	if a.BuildServerID == a.ServerID {
+		a.BuildServerID = 0
+	}
+	if a.BuildServerID != 0 {
+		var cur int64
+		_ = s.db.QueryRowContext(ctx, "SELECT build_server_id FROM applications WHERE id = ?", a.ID).Scan(&cur)
+		if cur != a.BuildServerID {
+			if err := s.requireFeature(ctx, license.FeatureMultiServer); err != nil {
+				return err
+			}
+		}
+	}
+	if a.BuildServerID != 0 {
+		if _, err := store.ByID[store.Server](ctx, s.db, "servers", a.BuildServerID); err != nil {
+			return badRequest("build server not found")
+		}
+	}
+	if a.RegistryID != 0 {
+		if _, err := store.ByID[store.Registry](ctx, s.db, "registries", a.RegistryID); err != nil {
+			return badRequest("registry not found")
+		}
+	}
+	a.RegistryImage = strings.Trim(strings.ToLower(strings.TrimSpace(a.RegistryImage)), "/")
+	if a.RegistryImage != "" && !registryImageRe.MatchString(a.RegistryImage) {
+		return badRequest("image name may contain lowercase letters, digits, '.', '_', '-' and '/' (e.g. team/api)")
+	}
 	if _, err := store.ByID[store.Environment](ctx, s.db, "environments", a.EnvironmentID); err != nil {
 		return badRequest("environment not found")
 	}
@@ -129,6 +181,48 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 type appInput struct {
 	*store.Application
 	GitToken *string `json:"git_token"`
+	// ServerIDs are the additional servers to deploy to (besides server_id).
+	ServerIDs *[]int64 `json:"server_ids"`
+}
+
+var registryImageRe = regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$`)
+
+// applyAppServers validates and stores the additional servers, then undeploys
+// the application from servers that were removed.
+func (s *Server) applyAppServers(r *http.Request, a store.Application, ids *[]int64) error {
+	if ids == nil {
+		return nil
+	}
+	ctx := r.Context()
+	for _, id := range *ids {
+		if _, err := store.ByID[store.Server](ctx, s.db, "servers", id); err != nil {
+			return badRequest("server #%d not found", id)
+		}
+	}
+	before := s.engine.AppServerIDs(ctx, a)
+	for _, id := range *ids {
+		if id != a.ServerID && !slices.Contains(before, id) {
+			if err := s.requireFeature(ctx, license.FeatureMultiServer); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	if err := s.engine.SetAppServers(ctx, a, *ids); err != nil {
+		return err
+	}
+	after := s.engine.AppServerIDs(ctx, a)
+	for _, id := range before {
+		if !slices.Contains(after, id) {
+			if err := s.engine.RemoveAppFromServer(ctx, a, id); err != nil {
+				s.activity(r, "application.undeploy_failed", fmt.Sprintf("%s from server #%d: %v", a.Name, id, err))
+			}
+		}
+	}
+	if len(after) != len(before) {
+		s.activity(r, "application.servers", fmt.Sprintf("%s: %d server(s)", a.Name, len(after)))
+	}
+	return nil
 }
 
 func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) error {
@@ -136,6 +230,8 @@ func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	visible := s.envVisibility(r.Context())
+	apps = filterBy(apps, func(a store.Application) bool { return visible(a.EnvironmentID) })
 	for i := range apps {
 		apps[i].HasGitToken = apps[i].GitToken != ""
 	}
@@ -160,6 +256,9 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 		a.GitToken = s.box.Encrypt(*in.GitToken)
 	}
 	if err := s.validateApp(r.Context(), &a); err != nil {
+		return err
+	}
+	if err := s.requireEnv(r, a.EnvironmentID, permWrite); err != nil {
 		return err
 	}
 	// Suggest a domain from the server's wildcard when none was given.
@@ -197,6 +296,9 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	if ds, _ := s.db.Domains(r.Context(), a.ID); len(ds) > 0 {
 		a, _ = store.ByID[store.Application](r.Context(), s.db, "applications", a.ID)
 	}
+	if err := s.applyAppServers(r, a, in.ServerIDs); err != nil {
+		return err
+	}
 	s.activity(r, "application.create", a.Name)
 	return ok(w, s.appOut(r.Context(), a))
 }
@@ -233,7 +335,15 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 	if err := s.validateApp(r.Context(), &a); err != nil {
 		return err
 	}
+	if a.EnvironmentID != orig.EnvironmentID {
+		if err := s.requireEnv(r, a.EnvironmentID, permWrite); err != nil {
+			return err
+		}
+	}
 	if err := store.Update(r.Context(), s.db, "applications", &a); err != nil {
+		return err
+	}
+	if err := s.applyAppServers(r, a, in.ServerIDs); err != nil {
 		return err
 	}
 	s.activity(r, "application.update", a.Name)
@@ -277,13 +387,19 @@ func (s *Server) deployApplication(w http.ResponseWriter, r *http.Request) error
 	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		trigger = "api"
 	}
+	by, needs := s.deployGate(r.Context(), a)
 	d, err := s.engine.Enqueue(r.Context(), a, deploy.Options{
 		Trigger: trigger, ForceRebuild: in.ForceRebuild, CommitSHA: strings.TrimSpace(in.CommitSHA), Branch: strings.TrimSpace(in.Branch),
+		RequestedBy: by, NeedsApproval: needs,
 	})
 	if err != nil {
 		return err
 	}
-	s.activity(r, "application.deploy", a.Name)
+	if needs {
+		s.activity(r, "deployment.request_approval", a.Name)
+	} else {
+		s.activity(r, "application.deploy", a.Name)
+	}
 	return ok(w, d)
 }
 
@@ -315,7 +431,7 @@ func (s *Server) regenerateWebhookSecret(w http.ResponseWriter, r *http.Request)
 	return ok(w, s.appOut(r.Context(), a))
 }
 
-const deploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at"
+const deploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at, requested_by, reviewed_by, reviewed_at, review_comment"
 
 func (s *Server) listAppDeployments(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r, "id")
@@ -338,9 +454,10 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) error {
 	type row struct {
 		store.Deployment
 		ApplicationName string `db:"application_name" json:"application_name"`
+		EnvironmentID   int64  `db:"environment_id" json:"environment_id"`
 	}
 	q := "SELECT d.id, d.uuid, d.application_id, d.status, d.trigger, d.commit_sha, d.commit_message, d.branch, d.pr_number, d.image, " +
-		"d.rollback_of, d.started_at, d.finished_at, d.created_at, a.name AS application_name FROM deployments d JOIN applications a ON a.id = d.application_id"
+		"d.rollback_of, d.started_at, d.finished_at, d.created_at, d.requested_by, a.name AS application_name, a.environment_id AS environment_id FROM deployments d JOIN applications a ON a.id = d.application_id"
 	var args []any
 	if st := r.URL.Query().Get("status"); st != "" {
 		q += " WHERE d.status = ?"
@@ -351,7 +468,8 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, rows)
+	visible := s.envVisibility(r.Context())
+	return ok(w, filterBy(rows, func(d row) bool { return visible(d.EnvironmentID) }))
 }
 
 func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) error {
@@ -359,11 +477,27 @@ func (s *Server) getDeployment(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	d, err := store.ByID[store.Deployment](r.Context(), s.db, "deployments", id)
+	ctx := r.Context()
+	d, err := store.ByID[store.Deployment](ctx, s.db, "deployments", id)
 	if err != nil {
 		return err
 	}
-	return ok(w, d)
+	out := struct {
+		store.Deployment
+		RequestedByName string `json:"requested_by_name"`
+		ReviewedByName  string `json:"reviewed_by_name"`
+		CanReview       bool   `json:"can_review"`
+		CanSelfApprove  bool   `json:"can_self_approve"`
+	}{Deployment: d}
+	_ = s.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", d.RequestedBy).Scan(&out.RequestedByName)
+	_ = s.db.QueryRowContext(ctx, "SELECT name FROM users WHERE id = ?", d.ReviewedBy).Scan(&out.ReviewedByName)
+	if envID, err := s.envOf(ctx, "deployment", id); err == nil {
+		_, _, err := s.authorizeEnv(ctx, envID, permManage)
+		out.CanReview = err == nil && d.Status == "pending_approval"
+	}
+	u := auth.UserFrom(ctx)
+	out.CanSelfApprove = d.RequestedBy == 0 || d.RequestedBy != u.ID || u.Role == "owner"
+	return ok(w, out)
 }
 
 func (s *Server) deploymentStream(w http.ResponseWriter, r *http.Request) error {
@@ -404,7 +538,8 @@ func (s *Server) rollbackDeployment(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	nd, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: "rollback", RollbackOf: d.ID})
+	by, needs := s.deployGate(r.Context(), a)
+	nd, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: "rollback", RollbackOf: d.ID, RequestedBy: by, NeedsApproval: needs})
 	if err != nil {
 		return badRequest("%v", err)
 	}
@@ -430,39 +565,39 @@ func (s *Server) appLogs(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	x, _, err := s.pool.ForID(r.Context(), a.ServerID)
+	cs, err := s.engine.AppContainers(r.Context(), a)
 	if err != nil {
 		return badRequest("%v", err)
 	}
 	name := r.URL.Query().Get("container")
-	if name == "" {
-		cs, err := s.engine.AppContainers(r.Context(), a)
-		if err != nil {
-			return badRequest("%v", err)
-		}
-		for _, c := range cs {
-			if c.State == "running" && (c.Labels["shipyard.pr"] == "0" || c.Labels["shipyard.pr"] == "") {
-				name = c.Name
-				break
-			}
-		}
-		if name == "" && len(cs) > 0 {
-			name = cs[0].Name
-		}
-		if name == "" {
-			return badRequest("no containers; deploy the application first")
-		}
-	} else {
-		// Only allow containers that belong to this application.
-		cs, err := s.engine.AppContainers(r.Context(), a)
-		if err != nil {
-			return badRequest("%v", err)
-		}
-		if !slices.ContainsFunc(cs, func(c dockerContainer) bool { return c.Name == name || c.ID == name }) {
-			return errStatus(403, "container does not belong to this application")
+	var pick *dockerContainer
+	for i, c := range cs {
+		switch {
+		case name != "" && (c.Name == name || c.ID == name):
+			pick = &cs[i]
+		case name == "" && pick == nil && c.State == "running" && (c.Labels["shipyard.pr"] == "0" || c.Labels["shipyard.pr"] == ""):
+			pick = &cs[i]
 		}
 	}
-	return s.sseContainerLogs(w, r, x, name)
+	if pick == nil && name == "" && len(cs) > 0 {
+		pick = &cs[0]
+	}
+	if pick == nil {
+		if name != "" {
+			// Only allow containers that belong to this application.
+			return errStatus(403, "container does not belong to this application")
+		}
+		return badRequest("no containers; deploy the application first")
+	}
+	serverID := pick.ServerID
+	if serverID == 0 {
+		serverID = a.ServerID
+	}
+	x, _, err := s.pool.ForID(r.Context(), serverID)
+	if err != nil {
+		return badRequest("%v", err)
+	}
+	return s.sseContainerLogs(w, r, x, pick.Name)
 }
 
 type previewDTO struct {

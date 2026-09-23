@@ -5,8 +5,11 @@ services:
       context: .
       args:
         VERSION: ${SHIPYARD_VERSION:-dev}
+        UPDATE_REPO: ${SHIPYARD_UPDATE_REPO:-}
         BASE_REGISTRY: ${BASE_REGISTRY:-docker.io/library}
-    image: shipyard:latest
+    # Set SHIPYARD_IMAGE=ghcr.io/<owner>/<repo>:vX.Y.Z to run a published release
+    # instead of building locally; in-app updates replace the container in place.
+    image: ${SHIPYARD_IMAGE:-shipyard:latest}
     container_name: shipyard
     restart: unless-stopped
     ports:
