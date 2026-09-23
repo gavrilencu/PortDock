@@ -453,3 +453,23 @@ type AlertEvent struct {
 	ResolvedAt     string  `db:"resolved_at" json:"resolved_at"`
 	AcknowledgedBy int64   `db:"acknowledged_by" json:"acknowledged_by"`
 }
+
+// ChatConversation is a user's conversation with the AI assistant.
+type ChatConversation struct {
+	ID        int64  `db:"id" json:"id"`
+	UserID    int64  `db:"user_id" json:"-"`
+	Title     string `db:"title" json:"title"`
+	CreatedAt string `db:"created_at" json:"created_at"`
+	UpdatedAt string `db:"updated_at" json:"updated_at"`
+}
+
+// ChatMessage is one message of a ChatConversation.
+type ChatMessage struct {
+	ID             int64  `db:"id" json:"id"`
+	ConversationID int64  `db:"conversation_id" json:"conversation_id"`
+	Role           string `db:"role" json:"role"`
+	Content        string `db:"content" json:"content"`
+	Model          string `db:"model" json:"model"`
+	Error          bool   `db:"error" json:"error,omitempty"`
+	CreatedAt      string `db:"created_at" json:"created_at"`
+}

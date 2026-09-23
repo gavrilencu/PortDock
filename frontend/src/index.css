@@ -203,6 +203,15 @@ body {
   animation: fade-in 120ms ease-out;
 }
 
+/* AI assistant: "typing" dots shown until the first words of a reply arrive. */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+
 /* Subtle dotted grid used on empty states and auth backdrop. */
 .bg-grid {
   background-image: radial-gradient(circle at 1px 1px, var(--border) 1px, transparent 0);

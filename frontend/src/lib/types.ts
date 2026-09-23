@@ -681,3 +681,48 @@ export interface VersionsResponse {
   max_age_days: number;
   pending?: { deployment_id: number; version_id: number; status: string; trigger: string };
 }
+
+// ---------- AI assistant ----------
+
+export interface ChatStatus {
+  enabled: boolean;
+  /** Enabled, configured and this user is permitted. */
+  allowed: boolean;
+  model: string;
+}
+
+export interface ChatSettings {
+  enabled: boolean;
+  api_key_set: boolean;
+  model: string;
+  access: "all" | "admins" | "selected";
+  user_ids: number[];
+  instructions: string;
+}
+
+export interface ChatModel {
+  id: string;
+  name: string;
+  context_length: number;
+  /** USD per token as a decimal string; "0" = free. */
+  prompt_price: string;
+  completion_price: string;
+  description?: string;
+}
+
+export interface ChatConversation {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant";
+  content: string;
+  model: string;
+  created_at: string;
+  error?: boolean;
+}
