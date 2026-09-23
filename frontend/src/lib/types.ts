@@ -19,6 +19,8 @@ export interface User {
 export interface AuthStatus {
   setup_required: boolean;
   version: string;
+  /** GitHub repository (owner/name) of this build. */
+  repo?: string;
   user?: User;
   mfa_setup_required?: boolean;
 }

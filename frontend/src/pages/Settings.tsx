@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
@@ -16,11 +16,12 @@ import { AuditLog } from "../components/audit";
 import { CertificatesSettings } from "../components/certificates";
 import { UpdateSettings } from "../components/updates";
 import { AssistantSettings } from "../components/assistant/AssistantSettings";
+import { AboutPage } from "../components/about";
 import { timeAgo } from "../lib/utils";
 import { isLocale, LOCALES, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "../components/LanguagePicker";
 
-type Tab = "general" | "profile" | "security" | "auth" | "assistant" | "registries" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
+type Tab = "about" | "general" | "profile" | "security" | "auth" | "assistant" | "registries" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -59,6 +60,10 @@ export function SettingsPage() {
         { id: "activity", label: t("Audit log"), icon: <Activity /> },
       ],
     },
+    {
+      label: "PortDock",
+      items: [{ id: "about", label: t("About"), icon: <Info /> }],
+    },
   ];
   return (
     <>
@@ -90,6 +95,7 @@ export function SettingsPage() {
           {tab === "security" && <SecuritySettings />}
           {tab === "auth" && <AuthenticationSettings />}
           {tab === "assistant" && <AssistantSettings />}
+          {tab === "about" && <AboutPage />}
           {tab === "registries" && <RegistriesSettings />}
           {tab === "certificates" && <CertificatesSettings />}
           {tab === "updates" && <UpdateSettings />}

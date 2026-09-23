@@ -37,6 +37,7 @@ import { useFiringAlerts } from "../pages/Alerts";
 import { SidebarUpdate } from "./updates";
 import { getLocale, isLocale, LOCALES, setLocale, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "./LanguagePicker";
+import { Credits } from "./credits";
 import { ChatWidget } from "./assistant/ChatWidget";
 
 const UserContext = createContext<User | null>(null);
@@ -378,8 +379,13 @@ export function AppLayout() {
             <Topbar onMenu={() => setMobile(true)} slotRef={setSlot} />
             <main className="min-h-0 flex-1 overflow-y-auto">
               <HeaderSlotProvider value={slot}>
-                <div className="w-full px-4 py-6 md:px-6">
-                  <Outlet />
+                <div className="flex min-h-full w-full flex-col px-4 pt-6 md:px-6">
+                  <div className="flex-1">
+                    <Outlet />
+                  </div>
+                  <footer className="mt-10 border-t border-border py-4">
+                    <Credits />
+                  </footer>
                 </div>
               </HeaderSlotProvider>
             </main>
