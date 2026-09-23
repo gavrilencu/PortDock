@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/portdock/portdock/internal/composefile"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -19,6 +20,8 @@ type Suggestion struct {
 	StartCommand     string   `json:"start_command,omitempty"`
 	PublishDirectory string   `json:"publish_directory,omitempty"`
 	ComposePath      string   `json:"compose_path,omitempty"`
+	// ComposeServices lists the services of the compose file, so each can get a domain.
+	ComposeServices []composefile.Service `json:"compose_services,omitempty"`
 	Framework        string   `json:"framework,omitempty"`
 	Files            []string `json:"files"`
 }
@@ -66,6 +69,9 @@ func (c *Client) Detect(ctx context.Context, app store.GitHubApp, installationID
 	case file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml") != "":
 		s.BuildPack, s.Reason = "compose", "Docker Compose file found"
 		s.ComposePath = file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+		if raw, err := c.File(ctx, app, installationID, fullName, path.Join(baseDir, s.ComposePath), ref); err == nil {
+			s.ComposeServices, _ = composefile.Services(raw)
+		}
 	case file("package.json") != "":
 		var p pkgJSON
 		if raw, err := c.File(ctx, app, installationID, fullName, path.Join(baseDir, "package.json"), ref); err == nil {

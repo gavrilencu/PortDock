@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/portdock/portdock/internal/composefile"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -98,6 +100,7 @@ func (s *Server) checkDomain(ctx context.Context, d *store.AppDomain, expected [
 type domainInput struct {
 	Domain      *string `json:"domain"` // URL or host, e.g. https://app.example.com/api
 	Port        *int    `json:"port"`
+	Service     *string `json:"service"`
 	HTTPS       *bool   `json:"https"`
 	WWWRedirect *string `json:"www_redirect"`
 	Indexing    *bool   `json:"indexing"`
@@ -157,10 +160,6 @@ func (s *Server) afterDomainChange(ctx context.Context, app store.Application) d
 	_ = s.db.SyncDomainsColumn(ctx, app.ID)
 	s.hub.Event("application", app.ID, app.Status)
 	res := s.domainsOf(ctx, app)
-	if app.BuildPack == "compose" {
-		res.RequiresDeploy = true
-		return res
-	}
 	if err := s.engine.ApplyRoutes(ctx, app); err != nil {
 		res.RoutingWarning = "Saved, but routing could not be updated: " + err.Error()
 	}
@@ -173,7 +172,7 @@ func (s *Server) domainsOf(ctx context.Context, app store.Application) domainsRe
 		ds = []store.AppDomain{}
 	}
 	srv, _ := store.ByID[store.Server](ctx, s.db, "servers", app.ServerID)
-	res := domainsResponse{Domains: ds, ServerAddresses: []string{}, RequiresDeploy: app.BuildPack == "compose"}
+	res := domainsResponse{Domains: ds, ServerAddresses: []string{}}
 	for _, ip := range s.serverIPs(ctx, srv) {
 		res.ServerAddresses = append(res.ServerAddresses, ip.String())
 	}
@@ -237,12 +236,22 @@ func (s *Server) createDomain(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, s.afterDomainChange(r.Context(), app))
 }
 
+// composeServiceRe matches Docker Compose service names.
+var composeServiceRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`)
+
 func applyDomainInput(d *store.AppDomain, in domainInput) error {
 	if in.Port != nil {
 		if *in.Port < 0 || *in.Port > 65535 {
 			return badRequest("invalid port")
 		}
 		d.Port = *in.Port
+	}
+	if in.Service != nil {
+		svc := strings.TrimSpace(*in.Service)
+		if svc != "" && !composeServiceRe.MatchString(svc) {
+			return badRequest("invalid compose service name")
+		}
+		d.Service = svc
 	}
 	if in.HTTPS != nil {
 		d.HTTPS = *in.HTTPS
@@ -488,4 +497,20 @@ func (s *Server) suggestDomain(w http.ResponseWriter, r *http.Request) error {
 		host = fmt.Sprintf("%s-%d.%s", name, i, base)
 	}
 	return ok(w, map[string]string{"domain": scheme + host, "kind": kind})
+}
+
+// composeServices lists the services of a compose application's last deployed
+// compose file, so domains can target them. Empty before the first deploy.
+func (s *Server) composeServices(w http.ResponseWriter, r *http.Request) error {
+	app, err := s.loadApp(r)
+	if err != nil {
+		return err
+	}
+	out := []composefile.Service{}
+	if app.BuildPack == "compose" {
+		if ss, err := s.engine.ComposeServices(r.Context(), app); err == nil {
+			out = ss
+		}
+	}
+	return ok(w, map[string]any{"services": out})
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -334,6 +335,10 @@ type ComposeUp struct {
 	Port     int
 	Domains  []string
 	HTTPS    bool
+	// FileRoutes routes through the proxy's file provider (written by the caller)
+	// instead of container labels; Routed services join the proxy network.
+	FileRoutes bool
+	Routed     []string
 	Env      map[string]string
 	Kind     string // application | service
 	Resource string
@@ -346,17 +351,23 @@ type ComposeUp struct {
 	}
 }
 
-func RunComposeUp(ctx context.Context, c ComposeUp) error {
+// ComposeResult reports the main service of a deployed compose project.
+type ComposeResult struct {
+	Main string
+	Port int
+}
+
+func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 	raw, err := executor.Output(ctx, c.X, "cat "+q(c.File))
 	if err != nil {
-		return fmt.Errorf("read compose file: %w", err)
+		return ComposeResult{}, fmt.Errorf("read compose file: %w", err)
 	}
 	var spec composeSpec
 	if err := yaml.Unmarshal([]byte(raw), &spec); err != nil {
-		return fmt.Errorf("invalid compose file: %w", err)
+		return ComposeResult{}, fmt.Errorf("invalid compose file: %w", err)
 	}
 	if len(spec.Services) == 0 {
-		return errors.New("compose file defines no services")
+		return ComposeResult{}, errors.New("compose file defines no services")
 	}
 	names := make([]string, 0, len(spec.Services))
 	for n := range spec.Services {
@@ -371,16 +382,22 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 		main = names[0]
 	}
 	if _, ok := spec.Services[main]; !ok {
-		return fmt.Errorf("service %q not found in compose file (available: %s)", main, strings.Join(names, ", "))
+		return ComposeResult{}, fmt.Errorf("service %q not found in compose file (available: %s)", main, strings.Join(names, ", "))
+	}
+	for _, n := range c.Routed {
+		if _, ok := spec.Services[n]; !ok {
+			return ComposeResult{}, fmt.Errorf("a domain targets service %q, which is not in the compose file (available: %s)", n, strings.Join(names, ", "))
+		}
 	}
 	port := c.Port
 	if spec.PortDock.Port > 0 && (port == 0 || c.Kind == "service") {
 		port = spec.PortDock.Port
 	}
+	res := ComposeResult{Main: main, Port: port}
 
 	envPath := c.Dir + "/.portdock.env"
 	if err := executor.WriteFile(ctx, c.X, envPath, []byte(envFile(c.Env)), "0600"); err != nil {
-		return err
+		return res, err
 	}
 
 	override := map[string]any{}
@@ -392,11 +409,15 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 			docker.LabelResource: c.Resource,
 		}
 		svc := map[string]any{"labels": labels}
-		if n == main {
+		if n == main && !c.FileRoutes {
 			for k, v := range proxy.Labels(proxy.Route{Name: c.Resource, Domains: c.Domains, Port: port, HTTPS: c.HTTPS, Network: c.Network}) {
 				labels[k] = v
 			}
+		}
+		if n == main || slices.Contains(c.Routed, n) {
 			svc["networks"] = []string{"default", c.Network}
+		}
+		if n == main {
 			svc["env_file"] = []string{envPath}
 		}
 		services[n] = svc
@@ -406,7 +427,7 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 	ob, _ := yaml.Marshal(override)
 	overridePath := c.Dir + "/.portdock.override.yml"
 	if err := executor.WriteFile(ctx, c.X, overridePath, ob, "0644"); err != nil {
-		return err
+		return res, err
 	}
 
 	timeout := max(c.Timeout, 60)
@@ -417,13 +438,15 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 	}
 	c.Log.Printf("$ %s", cmd)
 	if err := c.X.Run(ctx, cmd, executor.RunOpts{Stdout: c.Log}); err != nil {
-		return fmt.Errorf("docker compose up failed: %w", err)
+		return res, fmt.Errorf("docker compose up failed: %w", err)
 	}
-	for _, d := range c.Domains {
-		host, p := proxy.NormalizeDomain(d)
-		c.Log.Printf("🌐 %s → %s:%d", host+p, main, port)
+	if !c.FileRoutes {
+		for _, d := range c.Domains {
+			host, p := proxy.NormalizeDomain(d)
+			c.Log.Printf("🌐 %s → %s:%d", host+p, main, port)
+		}
 	}
-	return nil
+	return res, nil
 }
 
 // deployComposeAll runs the compose project on every server, one after another.
@@ -472,13 +495,30 @@ func (j *job) deployCompose(ctx context.Context) error {
 			return err
 		}
 	}
-	return RunComposeUp(ctx, ComposeUp{
-		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir,
-		File:    path.Join(j.ctxDir, strings.TrimPrefix(j.app.ComposePath, "/")),
-		Service: j.app.ComposeService, Port: j.app.Port, Domains: j.domains(), HTTPS: len(j.routes) == 0 || j.routes[0].HTTPS,
+	file := path.Join(j.ctxDir, strings.TrimPrefix(j.app.ComposePath, "/"))
+	// Resolve which service and port each domain targets before starting anything.
+	raw, err := executor.Output(ctx, j.x, "cat "+q(file))
+	if err != nil {
+		return fmt.Errorf("read compose file: %w", err)
+	}
+	main, mainPort, services, err := composeMain(raw, j.app.ComposeService, j.app.Port)
+	if err != nil {
+		return err
+	}
+	routes, err := resolveComposeRoutes(j.routes, main, mainPort, services, j.log)
+	if err != nil {
+		return err
+	}
+	if _, err := RunComposeUp(ctx, ComposeUp{
+		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir, File: file,
+		Service: main, Port: mainPort, FileRoutes: true, Routed: routedServices(routes),
 		Env: vars, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
 		Build: true, Timeout: j.app.HealthCheckTimeout, Log: j.log,
-	})
+	}); err != nil {
+		return err
+	}
+	// Traffic moves once `up --wait` reported the containers healthy.
+	return j.e.writeComposeRoutes(ctx, j.x, j.app, routes, j.d.PRNumber, j.log)
 }
 
 // ---- shared helpers ----

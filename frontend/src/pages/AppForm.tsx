@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { ApplicationDetail, BuildPack, BuildSuggestion, GitHubRepo } from "../lib/types";
+import type { ApplicationDetail, BuildPack, BuildSuggestion, ComposeService, GitHubRepo } from "../lib/types";
 import { Button, Card, Field, Input, PasswordInput, SegmentedControl, Switch } from "../components/ui";
 import { BranchSelect, GitHubMark, RepoPicker, useGitHubApps } from "../components/github";
 import { BuildSettings, applySuggestion } from "../components/BuildSettings";
@@ -41,6 +41,8 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
   });
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
   const useGH = kind !== "image" && source === "github" && hasGitHub;
+  // Domains per compose service (frontend, backend…), keyed by service name.
+  const [svcDomains, setSvcDomains] = useState<Record<string, { domain: string; port: string }>>({});
 
   // Suggest the deployment type from the selected repository and branch.
   const detect = useQuery({
@@ -57,6 +59,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
   }, [detect.data, touchedPack, kind]);
 
   const repoName = useGH ? (repo?.name ?? "") : (f.git_repository.replace(/\.git$/, "").split("/").pop() ?? "");
+  const composeServices = useGH && f.build_pack === "compose" ? (detect.data?.compose_services ?? []) : [];
 
   const create = useMutation({
     mutationFn: async () => {
@@ -68,6 +71,12 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
         server_id: serverId,
         source_type: kind === "image" ? "image" : "git",
       };
+      if (composeServices.length > 0) {
+        body.domains = "";
+        body.domain_routes = composeServices
+          .filter((s) => svcDomains[s.name]?.domain.trim())
+          .map((s) => ({ domain: svcDomains[s.name].domain.trim(), service: s.name, port: Number(svcDomains[s.name].port) || 0 }));
+      }
       if (useGH) {
         if (!repo) throw new Error(t("Select a repository"));
         body.github_app_id = repo.github_app_id;
@@ -240,9 +249,13 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
               <Field label={t("Name")} hint={t("Defaults to the repository name.")}>
                 <Input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder={repoName || "my-app"} />
               </Field>
-              <Field label={t("Domains")} hint={t("Comma separated. Leave empty to use the server's wildcard domain.")}>
-                <Input value={f.domains} onChange={(e) => set({ domains: e.target.value })} placeholder="app.example.com" />
-              </Field>
+              {composeServices.length > 0 ? (
+                <ServiceDomains services={composeServices} value={svcDomains} onChange={setSvcDomains} />
+              ) : (
+                <Field label={t("Domains")} hint={t("Comma separated. Leave empty to use the server's wildcard domain.")}>
+                  <Input value={f.domains} onChange={(e) => set({ domains: e.target.value })} placeholder="app.example.com" />
+                </Field>
+              )}
               <div className="flex items-center justify-between gap-4 border-t border-border pt-5 md:col-span-2">
                 <Switch checked={f.deploy} onChange={(v) => set({ deploy: v })} label={t("Deploy immediately")} />
                 <Button type="submit" variant="primary" loading={create.isPending} disabled={f.build_pack === "shell" && !f.start_command}>
@@ -253,6 +266,47 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
           </Card>
         </>
       )}
+    </div>
+  );
+}
+
+/** One domain (and optional port) per service of the repository's compose file. */
+function ServiceDomains({
+  services,
+  value,
+  onChange,
+}: {
+  services: ComposeService[];
+  value: Record<string, { domain: string; port: string }>;
+  onChange: (v: Record<string, { domain: string; port: string }>) => void;
+}) {
+  const set = (name: string, patch: Partial<{ domain: string; port: string }>) =>
+    onChange({ ...value, [name]: { ...(value[name] ?? { domain: "", port: "" }), ...patch } });
+  return (
+    <div className="space-y-2 md:col-span-2">
+      <div>
+        <div className="text-[13px] font-medium">{t("Domains per service")}</div>
+        <p className="mt-0.5 text-xs text-subtle">
+          {t("Give each public service of docker-compose.yml its own domain, e.g. the frontend on app.example.com and the backend on api.example.com. Leave databases and workers empty.")}
+        </p>
+      </div>
+      <div className="divide-y divide-border rounded-lg border border-border">
+        {services.map((s) => (
+          <div key={s.name} className="grid items-center gap-2 px-3 py-2.5 sm:grid-cols-[10rem_1fr_7rem]">
+            <span className="truncate font-mono text-[13px]" title={s.name}>
+              {s.name}
+            </span>
+            <Input value={value[s.name]?.domain ?? ""} onChange={(e) => set(s.name, { domain: e.target.value })} placeholder={`${s.name}.example.com`} aria-label={t("Domain of {service}", { service: s.name })} />
+            <Input
+              type="number"
+              value={value[s.name]?.port ?? ""}
+              onChange={(e) => set(s.name, { port: e.target.value })}
+              placeholder={s.port ? String(s.port) : t("Port")}
+              aria-label={t("Port of {service}", { service: s.name })}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

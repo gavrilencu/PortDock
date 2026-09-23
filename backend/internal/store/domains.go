@@ -12,6 +12,8 @@ type AppDomain struct {
 	Host          string `db:"host" json:"host"`
 	Path          string `db:"path" json:"path"`
 	Port          int    `db:"port" json:"port"`
+	// Service is the Docker Compose service receiving the traffic ("" = the application's main service).
+	Service       string `db:"service" json:"service"`
 	HTTPS         bool   `db:"https" json:"https"`
 	WWWRedirect   string `db:"www_redirect" json:"www_redirect"`
 	Indexing      bool   `db:"indexing" json:"indexing"`

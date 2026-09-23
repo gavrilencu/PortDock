@@ -183,6 +183,15 @@ type appInput struct {
 	GitToken *string `json:"git_token"`
 	// ServerIDs are the additional servers to deploy to (besides server_id).
 	ServerIDs *[]int64 `json:"server_ids"`
+	// DomainRoutes adds domains that target a service of a compose application
+	// (e.g. the frontend and the backend of a monorepo), on top of Domains.
+	DomainRoutes []domainRouteInput `json:"domain_routes"`
+}
+
+type domainRouteInput struct {
+	Domain  string `json:"domain"`
+	Service string `json:"service"`
+	Port    int    `json:"port"`
 }
 
 var registryImageRe = regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$`)
@@ -268,17 +277,38 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 		}
 	}
 	var rows []store.AppDomain
+	routes := make([]domainRouteInput, 0, len(in.DomainRoutes))
 	for _, raw := range store.SplitList(a.Domains) {
-		host, path, schemeHTTPS, err := parseDomain(raw)
+		routes = append(routes, domainRouteInput{Domain: raw})
+	}
+	for _, dr := range in.DomainRoutes {
+		for _, raw := range store.SplitList(dr.Domain) {
+			routes = append(routes, domainRouteInput{Domain: raw, Service: dr.Service, Port: dr.Port})
+		}
+	}
+	if len(in.DomainRoutes) > 0 && a.BuildPack != "compose" {
+		return badRequest("domains per service are only available for docker compose applications")
+	}
+	seen := map[string]bool{}
+	for _, dr := range routes {
+		host, path, schemeHTTPS, err := parseDomain(dr.Domain)
 		if err != nil {
 			return err
 		}
+		if seen[host+path] {
+			return badRequest("%s%s is listed twice", host, path)
+		}
+		seen[host+path] = true
 		if err := s.domainConflict(r.Context(), host, path, 0); err != nil {
 			return err
 		}
-		d := store.AppDomain{Host: host, Path: path, HTTPS: a.HTTPS, WWWRedirect: "none", Indexing: true, DNSStatus: "unknown", CreatedAt: store.Now()}
+		d := store.AppDomain{Host: host, Path: path, HTTPS: a.HTTPS, WWWRedirect: "none", Indexing: true, DNSStatus: "unknown", CertMode: "auto", CreatedAt: store.Now()}
 		if schemeHTTPS != nil {
 			d.HTTPS = *schemeHTTPS
+		}
+		svc, port := dr.Service, dr.Port
+		if err := applyDomainInput(&d, domainInput{Service: &svc, Port: &port}); err != nil {
+			return err
 		}
 		rows = append(rows, d)
 	}

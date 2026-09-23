@@ -409,10 +409,11 @@ func (e *Engine) DeployService(ctx context.Context, svc store.Service) (string, 
 		if err != nil {
 			return err
 		}
-		return RunComposeUp(ctx, ComposeUp{
+		_, err = RunComposeUp(ctx, ComposeUp{
 			X: x, Project: composeProject(svc.UUID), Dir: dir, File: file, Domains: domains, HTTPS: true,
 			Env: env.Runtime, Kind: "service", Resource: svc.UUID, Network: e.cfg.ProxyNetwork, Timeout: 180, Log: log,
 		})
+		return err
 	}()
 	if err != nil {
 		log.Printf("❌ %v", err)
