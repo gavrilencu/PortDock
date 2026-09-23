@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PortDock installer: installs Docker if needed and starts PortDock with docker compose.
-# Usage (as root, from the repository root):  ./install.sh [public-url]
+# Usage (as root, from the repository root):  sudo bash install.sh [public-url]
 set -euo pipefail
 
 PUBLIC_URL="${1:-}"
@@ -18,8 +18,13 @@ if [ -z "$PUBLIC_URL" ]; then
   PUBLIC_URL="http://${IP}:8000"
 fi
 
-echo "==> Building and starting PortDock (${PUBLIC_URL})"
-PORTDOCK_PUBLIC_URL="$PUBLIC_URL" docker compose up -d --build
+cd "$(dirname "$0")"
+# Version and update source come from the checkout, so in-app updates work out of the box.
+VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
+REPO=$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(\.git)?$##; s#^.*github\.com[:/]##')
+
+echo "==> Building and starting PortDock ${VERSION} (${PUBLIC_URL})"
+PORTDOCK_PUBLIC_URL="$PUBLIC_URL" PORTDOCK_VERSION="$VERSION" PORTDOCK_UPDATE_REPO="$REPO"   docker compose up -d --build
 
 echo
 echo "PortDock is starting at ${PUBLIC_URL}"

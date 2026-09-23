@@ -88,8 +88,8 @@ Un singur binar (~20 MB) care conține API-ul, UI-ul, workerii de deploy, monito
 Pe un server Linux (Ubuntu/Debian recomandat), ca root, cu porturile 80, 443 și 8000 libere:
 
 ```bash
-git clone <repo> portdock && cd portdock
-./install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000
+git clone https://github.com/gavrilencu/PortDock.git portdock && cd portdock
+sudo bash install.sh https://portdock.example.com   # sau fără argument: http://<ip>:8000
 ```
 
 Deschide URL-ul, creează contul de owner. Serverul local e adăugat automat; apasă **Servers → localhost → Run setup** ca să pornești Traefik.
@@ -197,7 +197,7 @@ go run ./cmd/portdock-license issue -key ~/.portdock-license/private.key \
 go run ./cmd/portdock-license inspect SY1....                               # vezi conținutul unei chei
 ```
 
-Clientul instalează cheia din **Settings → License** sau din linia de comandă: `docker exec portdock portdock -install-license SY1....`
+Clientul instalează cheia din **Settings → License** sau din linia de comandă: `docker exec portdock portdock -install-license PD1....`
 
 Dacă generezi o pereche nouă de chei (`portdock-license keygen`), înlocuiește `publicKeyB64` din `backend/internal/license/license.go` sau setează-l la build: `-ldflags "-X github.com/portdock/portdock/internal/license.publicKeyB64=..."`.
 
@@ -233,7 +233,7 @@ Pentru ca GitHub să poată trimite webhook-uri, `PORTDOCK_PUBLIC_URL` trebuie s
 - run: curl -fsS -X POST "${{ secrets.PORTDOCK_DEPLOY_HOOK }}&commit=${{ github.sha }}"
 ```
 
-**API**: `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer sy_…"`
+**API**: `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer pd_…"`
 
 ## Arhitectură
 
