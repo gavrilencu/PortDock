@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, Bell, Cloud, Eye, EyeOff, KeyRound, Plus, RefreshCw, Save, Send, Settings2, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, Ban, Bell, Cloud, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { ActivityEntry, APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
 import { DNSBadge } from "../components/Domains";
 import { useUser } from "../components/Layout";
 import { GitHubMark, GitSourcesSettings } from "../components/github";
-import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
+import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
+import { SecuritySettings } from "../components/security";
+import { AuthenticationSettings } from "../components/sso";
 import { timeAgo } from "../lib/utils";
 
-type Tab = "general" | "profile" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
+type Tab = "general" | "profile" | "security" | "auth" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
@@ -24,6 +26,7 @@ export function SettingsPage() {
       label: "Account",
       items: [
         { id: "profile", label: "Profile", icon: <UserIcon /> },
+        { id: "security", label: "Sign-in & security", icon: <ShieldCheck /> },
         { id: "tokens", label: "API tokens", icon: <TerminalIcon /> },
       ],
     },
@@ -32,6 +35,7 @@ export function SettingsPage() {
       items: [
         { id: "general", label: "General", icon: <Settings2 />, hidden: !admin },
         { id: "users", label: "Team members", icon: <Users />, hidden: !admin },
+        { id: "auth", label: "Authentication", icon: <LockKeyhole />, hidden: !admin },
         { id: "git", label: "Git sources", icon: <GitHubMark />, hidden: !admin },
         { id: "notifications", label: "Notifications", icon: <Bell />, hidden: !admin },
         { id: "storage", label: "Backup storage", icon: <Cloud />, hidden: !admin },
@@ -72,6 +76,8 @@ export function SettingsPage() {
         </nav>
         <div className="min-w-0">
           {tab === "profile" && <Profile />}
+          {tab === "security" && <SecuritySettings />}
+          {tab === "auth" && <AuthenticationSettings />}
           {tab === "general" && <General />}
           {tab === "users" && <Team />}
           {tab === "git" && <GitSourcesSettings />}
@@ -112,9 +118,15 @@ function Profile() {
         <Field label="Email">
           <Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
         </Field>
-        <Field label="Current password" hint="Required to set a new password.">
-          <PasswordInput value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} />
-        </Field>
+        {user.has_password ? (
+          <Field label="Current password" hint="Required to set a new password. Other sessions are signed out after a change.">
+            <PasswordInput value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} />
+          </Field>
+        ) : (
+          <Field label="Password" hint="You sign in with single sign-on. Set a password only if your administrator allows password sign-in.">
+            <Input value="Not set" disabled />
+          </Field>
+        )}
         <Field label="New password">
           <PasswordInput value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} />
         </Field>
@@ -300,8 +312,16 @@ function Team() {
     onError: (e) => toast.error(e.message),
   });
   const update = useMutation({
-    mutationFn: ({ id, role }: { id: number; role: string }) => api.patch(`/users/${id}`, { role }),
+    mutationFn: ({ id, ...body }: { id: number; role?: string; disabled?: boolean }) => api.patch(`/users/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onError: (e) => toast.error(e.message),
+  });
+  const action = useMutation({
+    mutationFn: ({ id, path }: { id: number; path: string; done: string }) => api.post(`/users/${id}/${path}`),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success(v.done);
+    },
     onError: (e) => toast.error(e.message),
   });
   const del = useMutation({
@@ -325,16 +345,17 @@ function Team() {
           <tr>
             <th>User</th>
             <th>Role</th>
-            <th>Joined</th>
+            <th>Security</th>
+            <th>Last sign-in</th>
             <th />
           </tr>
         </thead>
         <tbody>
           {users.data!.map((u) => (
             <tr key={u.id}>
-              <td>
+              <td className={u.disabled ? "opacity-60" : undefined}>
                 <div className="font-medium">
-                  {u.name} {u.id === me.id && <Badge>you</Badge>}
+                  {u.name} {u.id === me.id && <Badge>you</Badge>} {u.disabled && <Badge tone="danger">Disabled</Badge>}
                 </div>
                 <div className="text-xs text-muted">{u.email}</div>
               </td>
@@ -348,12 +369,61 @@ function Team() {
                   </Select>
                 )}
               </td>
-              <td className="text-xs text-muted">{timeAgo(u.created_at)}</td>
+              <td>
+                <div className="flex flex-wrap gap-1">
+                  {u.totp_enabled ? (
+                    <Badge tone="success">
+                      <ShieldCheck /> 2FA
+                    </Badge>
+                  ) : (
+                    <Badge tone={u.auth_source ? "neutral" : "warning"}>
+                      <ShieldOff /> No 2FA
+                    </Badge>
+                  )}
+                  {u.auth_source && <Badge tone="info">SSO · {u.auth_source}</Badge>}
+                </div>
+              </td>
+              <td className="text-xs text-muted">{u.last_login_at ? timeAgo(u.last_login_at) : "Never"}</td>
               <td className="text-right">
-                {u.role !== "owner" && u.id !== me.id && (
-                  <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: `Remove ${u.email}?`, danger: true, confirmText: "Remove" })) && del.mutate(u.id)}>
-                    <Trash2 className="size-4 text-danger" />
-                  </Button>
+                {u.id !== me.id && (u.role !== "owner" || me.role === "owner") && (
+                  <Menu
+                    trigger={
+                      <Button size="icon-sm" variant="ghost" aria-label="Actions">
+                        <MoreHorizontal />
+                      </Button>
+                    }
+                  >
+                    <MenuItem
+                      icon={<LogOut />}
+                      onClick={async () =>
+                        (await confirm({ title: `Sign ${u.name} out everywhere?`, confirmText: "Sign out" })) && action.mutate({ id: u.id, path: "sessions/revoke", done: "All sessions signed out" })
+                      }
+                    >
+                      Sign out all sessions
+                    </MenuItem>
+                    {u.totp_enabled && (
+                      <MenuItem
+                        icon={<ShieldOff />}
+                        onClick={async () =>
+                          (await confirm({ title: `Reset 2FA for ${u.email}?`, description: "Use this when the user lost their device. They will be signed out and can enroll again.", danger: true, confirmText: "Reset 2FA" })) &&
+                          action.mutate({ id: u.id, path: "2fa/reset", done: "Two-factor authentication reset" })
+                        }
+                      >
+                        Reset two-factor
+                      </MenuItem>
+                    )}
+                    {u.role !== "owner" && (
+                      <>
+                        <MenuItem icon={<Ban />} onClick={() => update.mutate({ id: u.id, disabled: !u.disabled })}>
+                          {u.disabled ? "Enable account" : "Disable account"}
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem icon={<Trash2 />} danger onClick={async () => (await confirm({ title: `Remove ${u.email}?`, danger: true, confirmText: "Remove" })) && del.mutate(u.id)}>
+                          Remove member
+                        </MenuItem>
+                      </>
+                    )}
+                  </Menu>
                 )}
               </td>
             </tr>

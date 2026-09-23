@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
+import { MFAEnforcement } from "./security";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -301,6 +302,12 @@ export function AppLayout() {
       </div>
     );
   if (!data?.user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (data.mfa_setup_required)
+    return (
+      <UserContext.Provider value={data.user}>
+        <MFAEnforcement onLogout={logout} />
+      </UserContext.Provider>
+    );
 
   return (
     <UserContext.Provider value={data.user}>
