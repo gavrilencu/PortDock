@@ -58,6 +58,7 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
 
   release:
     needs: image

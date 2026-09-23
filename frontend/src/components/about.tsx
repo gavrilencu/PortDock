@@ -130,6 +130,7 @@ export function AboutPage() {
                 </Badge>
               ) : null}
               <Badge tone="accent">{t("Free and open source")}</Badge>
+              <Badge>Apache-2.0</Badge>
             </div>
             <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted">
               {t("A self-hosted platform for deploying and running applications, databases and services on your own servers — like Heroku or Vercel, on your infrastructure.")}
