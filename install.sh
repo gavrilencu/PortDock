@@ -20,7 +20,7 @@ port_busy() { ss -Hltn "sport = :$1" 2>/dev/null | grep -q . || docker ps --form
 # A re-install keeps the port of the running PortDock container.
 PORT="${PORTDOCK_PORT:-}"
 if [ -z "$PORT" ]; then
-  PORT=$(docker port portdock 8000/tcp 2>/dev/null | head -1 | sed 's/.*://')
+  PORT=$(docker port portdock 8000/tcp 2>/dev/null | head -1 | sed "s/.*://" || true)
 fi
 if [ -z "$PORT" ]; then
   PORT=8000
@@ -29,13 +29,14 @@ if [ -z "$PORT" ]; then
 fi
 
 if [ -z "$PUBLIC_URL" ]; then
-  IP=$(curl -fsS4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+  IP=$(curl -fsS4 --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || true)
+  IP=${IP:-localhost}
   PUBLIC_URL="http://${IP}:${PORT}"
 fi
 
 # Version and update source come from the checkout, so in-app updates work out of the box.
 VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
-REPO=$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(\.git)?$##; s#^.*github\.com[:/]##')
+REPO=$(git config --get remote.origin.url 2>/dev/null | sed -E 's#(\.git)?$##; s#^.*github\.com[:/]##' || true)
 
 echo "==> Building and starting PortDock ${VERSION} (${PUBLIC_URL})"
 PORTDOCK_PORT="$PORT" PORTDOCK_PUBLIC_URL="$PUBLIC_URL" PORTDOCK_VERSION="$VERSION" PORTDOCK_UPDATE_REPO="$REPO"   docker compose up -d --build
