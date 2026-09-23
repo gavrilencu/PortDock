@@ -22,7 +22,8 @@ func (s *Server) userCount(r *http.Request) int {
 }
 
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) error {
-	res := map[string]any{"setup_required": s.userCount(r) == 0, "version": Version}
+	// repo is the GitHub repository of this build (shown on the About page).
+	res := map[string]any{"setup_required": s.userCount(r) == 0, "version": Version, "repo": s.updateRepo(r.Context())}
 	if u, sess, err := s.auth.AuthenticateSession(r); err == nil {
 		res["user"] = toUserOut(u)
 		res["mfa_setup_required"] = s.needsMFASetup(r.Context(), u, sess)

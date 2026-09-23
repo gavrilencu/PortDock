@@ -8,6 +8,7 @@ import { ProviderMark } from "../components/sso";
 import { LogoMark, useAuthStatus } from "../components/Layout";
 import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
 import { LanguageSelect } from "../components/LanguagePicker";
+import { Credits } from "../components/credits";
 import { t, tk, tx } from "../lib/i18n";
 
 const highlights = [
@@ -193,6 +194,7 @@ export function LoginPage() {
           </span>
           <span>v{data?.version}</span>
         </div>
+        <Credits className="mt-2" />
       </div>
 
       <div className="relative hidden overflow-hidden border-l border-border bg-canvas lg:block">
