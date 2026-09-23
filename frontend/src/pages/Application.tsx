@@ -25,6 +25,7 @@ import {
   Lock,
   ShieldCheck,
   Network,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -61,9 +62,10 @@ import { Terminal } from "../components/Terminal";
 import { domainURL, shortSha, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { ResourceTopology } from "../components/resourceTopology";
+import { VersionsBoard } from "../components/versions";
 import { t, tx } from "../lib/i18n";
 
-type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "deployments" | "logs" | "terminal" | "previews" | "webhooks";
+type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks";
 
 export function useApp(id: number) {
   return useQuery({ queryKey: ["application", id], queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`) });
@@ -177,6 +179,7 @@ export function ApplicationPage() {
           { id: "config", label: t("Configuration"), icon: <Settings2 /> },
           { id: "domains", label: t("Domains"), icon: <Globe /> },
           { id: "env", label: t("Environment"), icon: <KeyRound />, hidden: !a.access.can_write },
+          { id: "versions", label: t("Versions"), icon: <History /> },
           { id: "deployments", label: t("Deployments"), icon: <Rocket /> },
           { id: "logs", label: t("Logs"), icon: <ScrollText /> },
           { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !a.access.can_write },
@@ -196,6 +199,7 @@ export function ApplicationPage() {
       {tab === "config" && <Configuration app={a} />}
       {tab === "domains" && <DomainsTab app={a} />}
       {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} app={a} />}
+      {tab === "versions" && <VersionsBoard app={a} />}
       {tab === "deployments" && <DeploymentsList appId={id} />}
       {tab === "logs" && <AppLogs app={a} />}
       {tab === "terminal" && <AppTerminal app={a} />}

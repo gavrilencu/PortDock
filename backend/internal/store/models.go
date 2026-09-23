@@ -248,6 +248,24 @@ type Deployment struct {
 	ReviewedBy    int64  `db:"reviewed_by" json:"reviewed_by"`
 	ReviewedAt    string `db:"reviewed_at" json:"reviewed_at"`
 	ReviewComment string `db:"review_comment" json:"review_comment"`
+	// VersionID is the version a production deployment created or deployed.
+	VersionID int64 `db:"version_id" json:"version_id"`
+}
+
+// AppVersion is a deployable version of an application (see app_versions).
+type AppVersion struct {
+	ID            int64  `db:"id" json:"id"`
+	ApplicationID int64  `db:"application_id" json:"application_id"`
+	Number        int    `db:"number" json:"number"`
+	DeploymentID  int64  `db:"deployment_id" json:"deployment_id"`
+	CommitSHA     string `db:"commit_sha" json:"commit_sha"`
+	CommitMessage string `db:"commit_message" json:"commit_message"`
+	Branch        string `db:"branch" json:"branch"`
+	Image         string `db:"image" json:"image"`
+	Services      string `db:"services" json:"-"`
+	ComposeFile   string `db:"compose_file" json:"-"`
+	Status        string `db:"status" json:"status"`
+	CreatedAt     string `db:"created_at" json:"created_at"`
 }
 
 type Database struct {

@@ -237,6 +237,24 @@ CREATE TABLE IF NOT EXISTS deployments (
 );
 CREATE INDEX IF NOT EXISTS idx_deployments_app ON deployments(application_id, id DESC);
 
+-- Versions of an application: the images of each successful production build,
+-- kept for rollbacks (the live one plus the latest few, for a limited time).
+CREATE TABLE IF NOT EXISTS app_versions (
+  id             INTEGER PRIMARY KEY,
+  application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  number         INTEGER NOT NULL,                  -- shown as v<number>
+  deployment_id  INTEGER NOT NULL DEFAULT 0,        -- the build that produced it
+  commit_sha     TEXT NOT NULL DEFAULT '',
+  commit_message TEXT NOT NULL DEFAULT '',
+  branch         TEXT NOT NULL DEFAULT '',
+  image          TEXT NOT NULL DEFAULT '',          -- single-container applications
+  services       TEXT NOT NULL DEFAULT '',          -- compose: JSON {"service": "image"} of built services
+  compose_file   TEXT NOT NULL DEFAULT '',          -- compose: the compose file of that build
+  status         TEXT NOT NULL DEFAULT 'available', -- available | expired
+  created_at     TEXT NOT NULL DEFAULT '',
+  UNIQUE(application_id, number)
+);
+
 CREATE TABLE IF NOT EXISTS databases (
   id             INTEGER PRIMARY KEY,
   uuid           TEXT NOT NULL UNIQUE,

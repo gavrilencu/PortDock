@@ -117,6 +117,7 @@ func run(resetPassword, disable2FA string) error {
 	go auditStream.Run(ctx)
 	go engine.Monitor(ctx, 30*time.Second)
 	go engine.CertificateWatch(ctx, 6*time.Hour)
+	go engine.VersionRetention(ctx)
 	go func() {
 		if err := engine.ApplyDashboardRoute(ctx); err != nil && !errors.Is(err, deploy.ErrNotContainerized) {
 			slog.Warn("dashboard domain routing", "err", err)

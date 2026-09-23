@@ -60,7 +60,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		targets = targets[:1] // previews run on the primary server only
 	}
 	build := targets[0]
-	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID && app.BuildPack != "compose" && app.SourceType != "image" {
+	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID && app.BuildPack != "compose" && app.SourceType != "image" && d.RollbackOf == 0 {
 		x, srv, err := e.pool.ForID(ctx, app.BuildServerID)
 		if err != nil {
 			return fmt.Errorf("connect to build server: %w", err)
@@ -178,6 +178,9 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	}
 	if build.srv.ID != targets[0].srv.ID {
 		j.cleanupImages(context.WithoutCancel(ctx))
+	}
+	if d.PRNumber == 0 && d.RollbackOf == 0 {
+		j.recordImageVersion(context.WithoutCancel(ctx), targets, image)
 	}
 	return nil
 }
@@ -629,7 +632,12 @@ func (j *job) cleanupImages(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	imgs := store.SplitList(out)
+	var imgs []string
+	for _, img := range store.SplitList(out) {
+		if !versionTagRe.MatchString(img) { // version tags are handled by pruneVersions
+			imgs = append(imgs, img)
+		}
+	}
 	if len(imgs) <= keep {
 		return
 	}

@@ -17,7 +17,7 @@ export function ResourceIcon({ kind, className = "size-4" }: { kind: "applicatio
   return <Box className={className} />;
 }
 
-const triggerLabel: Record<string, string> = { manual: tk("Manual"), webhook: tk("Git push"), api: "API", rollback: tk("Rollback"), schedule: tk("Schedule"), config: tk("Variables") };
+const triggerLabel: Record<string, string> = { manual: tk("Manual"), webhook: tk("Git push"), api: "API", rollback: tk("Rollback"), schedule: tk("Schedule"), config: tk("Variables"), promote: tk("Version") };
 
 function Commit({ d }: { d: Deployment }) {
   return (
@@ -30,7 +30,7 @@ function Commit({ d }: { d: Deployment }) {
             <GitPullRequest />#{d.pr_number}
           </Badge>
         )}
-        {d.rollback_of > 0 && d.trigger !== "config" && (
+        {d.rollback_of > 0 && d.trigger !== "config" && d.trigger !== "promote" && (
           <Badge tone="warning">
             <Undo2 />
             {t("Rollback of #{id}", { id: d.rollback_of })}

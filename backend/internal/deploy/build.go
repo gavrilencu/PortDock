@@ -343,6 +343,8 @@ type ComposeUp struct {
 	// own `environment:` (PortDock values win). The main service also gets Env.
 	// Used with FileRoutes; other callers pass Env through an env file.
 	ServiceEnv map[string]map[string]string
+	// Images pins services to existing images (a version's), so nothing is built or pulled for them.
+	Images map[string]string
 	Env      map[string]string
 	Kind     string // application | service
 	Resource string
@@ -430,6 +432,9 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 		if n == main || slices.Contains(c.Routed, n) {
 			svc["networks"] = []string{"default", c.Network}
 		}
+		if img := c.Images[n]; img != "" {
+			svc["image"], svc["pull_policy"] = img, "never"
+		}
 		if c.FileRoutes {
 			env := map[string]string{}
 			if n == main {
@@ -492,15 +497,26 @@ func (j *job) deployComposeAll(ctx context.Context, targets []target) error {
 		j.d.Image = tj.d.Image
 	}
 	j.workdir = ""
+	if j.d.PRNumber == 0 && j.d.RollbackOf == 0 {
+		j.recordComposeVersion(context.WithoutCancel(ctx), targets)
+	}
 	return nil
 }
 
 func (j *job) deployCompose(ctx context.Context) error {
-	// A configuration change (new variables) restarts the deployed version
-	// without fetching or building anything.
-	reuse := j.d.RollbackOf != 0 && j.d.Trigger == TriggerConfig
+	// Deploying a saved version, or restarting with changed variables, fetches
+	// and builds nothing: the version's compose file runs with its images.
+	reuse := j.d.RollbackOf != 0 && (j.d.Trigger == TriggerConfig || j.d.VersionID != 0)
 	if j.d.RollbackOf != 0 && !reuse {
-		return errors.New("rollback is not supported for docker compose applications; redeploy a previous commit instead")
+		return errors.New("deploy a saved version from the Versions tab to go back with docker compose applications")
+	}
+	var version *store.AppVersion
+	if reuse && j.d.VersionID != 0 {
+		v, err := store.ByID[store.AppVersion](ctx, j.e.db, "app_versions", j.d.VersionID)
+		if err != nil {
+			return fmt.Errorf("load version: %w", err)
+		}
+		version = &v
 	}
 	// Compose checkouts are kept so relative bind mounts and build contexts stay valid.
 	j.workdir = path.Join(j.e.cfg.DataDir, "apps", j.app.UUID, "compose")
@@ -535,6 +551,16 @@ func (j *job) deployCompose(ctx context.Context) error {
 		}
 	}
 	file := path.Join(j.ctxDir, strings.TrimPrefix(j.app.ComposePath, "/"))
+	var images map[string]string
+	if version != nil && version.ComposeFile != "" {
+		// Next to the original so relative paths (bind mounts, build contexts) resolve the same.
+		file = path.Join(path.Dir(file), ".portdock.version.yml")
+		if err := executor.WriteFile(ctx, j.x, file, []byte(version.ComposeFile), "0644"); err != nil {
+			return err
+		}
+		images = VersionServices(*version)
+		j.log.Printf("Deploying version %s (%d service image(s)).", versionTag(version.Number), len(images))
+	}
 	// Resolve which service and port each domain targets before starting anything.
 	raw, err := executor.Output(ctx, j.x, "cat "+q(file))
 	if err != nil {
@@ -554,7 +580,7 @@ func (j *job) deployCompose(ctx context.Context) error {
 	if _, err := RunComposeUp(ctx, ComposeUp{
 		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir, File: file,
 		Service: main, Port: mainPort, FileRoutes: true, Routed: routedServices(routes),
-		Env: vars, ServiceEnv: j.env.Services, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
+		Env: vars, ServiceEnv: j.env.Services, Images: images, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
 		Build: !reuse, Timeout: j.app.HealthCheckTimeout, Log: j.log,
 	}); err != nil {
 		return err

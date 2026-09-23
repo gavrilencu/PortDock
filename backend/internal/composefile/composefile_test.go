@@ -35,7 +35,7 @@ services:
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Service{{"api", 3000, nil}, {"bound", 5001, nil}, {"db", 0, nil}, {"multi", 0, nil}, {"web", 80, nil}, {"worker", 9000, nil}}
+	want := []Service{{"api", 3000, nil, false}, {"bound", 5001, nil, false}, {"db", 0, nil, false}, {"multi", 0, nil, false}, {"web", 80, nil, false}, {"worker", 9000, nil, false}}
 	if len(got) != len(want) {
 		t.Fatalf("got %v", got)
 	}
@@ -49,6 +49,9 @@ services:
 	}
 	if e := got[4].Env; e["API_URL"] != "https://api.example.com" || e["DEBUG"] != "" || len(e) != 2 {
 		t.Errorf("map environment: %v", e)
+	}
+	if !got[0].Build || !got[4].Build || got[2].Build {
+		t.Errorf("build flags: api=%v web=%v db=%v", got[0].Build, got[4].Build, got[2].Build)
 	}
 	if got[2].Env != nil {
 		t.Errorf("no environment: %v", got[2].Env)
