@@ -103,7 +103,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
       interval: 5s
       retries: 10
 volumes:
@@ -201,7 +201,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U n8n"]
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
       interval: 5s
       retries: 10
 volumes:
@@ -281,7 +281,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U umami"]
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
       interval: 5s
       retries: 10
 volumes:
@@ -400,7 +400,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U metabase"]
+      test: ["CMD-SHELL", "pg_isready -U metabase -d metabase"]
       interval: 5s
       retries: 10
 volumes:
@@ -455,7 +455,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nocodb"]
+      test: ["CMD-SHELL", "pg_isready -U nocodb -d nocodb"]
       interval: 5s
       retries: 10
 volumes:
