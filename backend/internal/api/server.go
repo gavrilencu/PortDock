@@ -429,6 +429,7 @@ func (s *Server) Handler() http.Handler {
 	g("POST /api/applications/{id}/domains/check", "application", permRead, s.checkAllDomains)
 	g("POST /api/applications/{id}/domains/https", "application", permWrite, s.setAppHTTPS)
 	g("GET /api/applications/{id}/domains/suggest", "application", permRead, s.suggestDomain)
+	g("GET /api/applications/{id}/compose-services", "application", permRead, s.composeServices)
 	g("GET /api/applications/{id}/dns-records", "application", permRead, s.dnsRecords)
 	g("PATCH /api/domains/{id}", "domain", permWrite, s.updateDomain)
 	g("DELETE /api/domains/{id}", "domain", permWrite, s.deleteDomain)

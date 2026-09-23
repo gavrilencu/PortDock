@@ -573,8 +573,15 @@ export interface BuildSuggestion {
   start_command?: string;
   publish_directory?: string;
   compose_path?: string;
+  compose_services?: ComposeService[];
   framework?: string;
   files: string[];
+}
+
+/** A service of a compose file and the container port it declares (0 = unknown). */
+export interface ComposeService {
+  name: string;
+  port: number;
 }
 
 export interface CatalogEnv {
@@ -614,6 +621,8 @@ export interface AppDomain {
   host: string;
   path: string;
   port: number;
+  /** Docker Compose service receiving the traffic ("" = the main service). */
+  service: string;
   https: boolean;
   www_redirect: WWWRedirect;
   indexing: boolean;

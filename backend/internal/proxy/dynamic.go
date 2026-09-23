@@ -19,6 +19,9 @@ type DomainRoute struct {
 	Host     string
 	Path     string
 	Port     int
+	// Service routes to that Docker Compose service's containers (AppRoutes.Services)
+	// instead of AppRoutes.Upstreams.
+	Service  string
 	HTTPS    bool
 	WWW      string // none | to-www | to-apex
 	Indexing bool
@@ -32,7 +35,18 @@ type DomainRoute struct {
 type AppRoutes struct {
 	Name      string
 	Upstreams []string
-	Domains   []DomainRoute
+	// Services holds the upstreams of each compose service, for domains with a Service.
+	Services map[string][]string
+	Domains  []DomainRoute
+}
+
+func (r AppRoutes) upstreams(d DomainRoute) []string {
+	if d.Service != "" {
+		if ups, ok := r.Services[d.Service]; ok {
+			return ups
+		}
+	}
+	return r.Upstreams
 }
 
 var hostRe = regexp.MustCompile(`^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$|^localhost$|^[a-z0-9-]+\.localhost$`)
@@ -118,7 +132,7 @@ type service struct {
 // RenderDynamic returns the Traefik file-provider YAML for r, or nil when
 // there is nothing to route (no domains or no upstreams).
 func RenderDynamic(r AppRoutes) []byte {
-	if len(r.Domains) == 0 || len(r.Upstreams) == 0 {
+	if len(r.Domains) == 0 {
 		return nil
 	}
 	n := SafeName(r.Name)
@@ -129,10 +143,16 @@ func RenderDynamic(r AppRoutes) []byte {
 		n + "-gzip":    map[string]any{"compress": map[string]any{}},
 		n + "-noindex": map[string]any{"headers": map[string]any{"customResponseHeaders": map[string]string{"X-Robots-Tag": "noindex, nofollow"}}},
 	}
-	ups := append([]string{}, r.Upstreams...)
-	sort.Strings(ups)
 	for i, d := range r.Domains {
+		ups := append([]string{}, r.upstreams(d)...)
+		if len(ups) == 0 {
+			continue // nothing running to route to yet
+		}
+		sort.Strings(ups)
 		svc := n + "-p" + strconv.Itoa(d.Port)
+		if d.Service != "" {
+			svc = n + "-" + SafeName(d.Service) + "-p" + strconv.Itoa(d.Port)
+		}
 		if _, ok := services[svc]; !ok {
 			var s service
 			for _, u := range ups {
@@ -163,6 +183,9 @@ func RenderDynamic(r AppRoutes) []byte {
 		} else {
 			routers[base+"-http"] = router{Rule: rule, EntryPoints: []string{"web"}, Service: svc, Middlewares: chain}
 		}
+	}
+	if len(routers) == 0 {
+		return nil
 	}
 	out, _ := yaml.Marshal(map[string]any{"http": map[string]any{"routers": routers, "services": services, "middlewares": mws}})
 	return append([]byte("# Managed by PortDock. Manual edits are overwritten.\n"), out...)

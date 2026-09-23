@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Check, CircleHelp, Globe, Pencil, Plus, RefreshCw, Rocket, Search, Trash2, X, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, CircleHelp, Globe, Pencil, Plus, RefreshCw, Search, Trash2, X, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { ApplicationDetail, AppDomain, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect, CertMode } from "../lib/types";
+import type { ApplicationDetail, AppDomain, ComposeService, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect, CertMode } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
 import { intlLocale, t, tk, tx } from "../lib/i18n";
 import { Badge, Button, Card, CopyButton, Empty, Field, Input, Loading, Menu, MenuItem, Modal, Select, Switch, Table, useConfirm } from "./ui";
@@ -43,6 +43,7 @@ interface DomainForm {
   id?: number;
   domain: string;
   port: string;
+  service: string;
   https: boolean;
   www_redirect: WWWRedirect;
   indexing: boolean;
@@ -83,10 +84,22 @@ export function CertBadge({ d }: { d: Pick<AppDomain, "https" | "cert_status" | 
   );
 }
 
+/** Services of a compose application's deployed compose file (empty before the first deploy). */
+function useComposeServices(app: ApplicationDetail) {
+  return useQuery({
+    queryKey: ["compose-services", app.id],
+    queryFn: () => api.get<{ services: ComposeService[] }>(`/applications/${app.id}/compose-services`),
+    enabled: app.build_pack === "compose",
+    staleTime: 60_000,
+  });
+}
+
 export function DomainsTab({ app }: { app: ApplicationDetail }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const { data, isLoading } = useDomains(app.id);
+  const compose = app.build_pack === "compose";
+  const services = useComposeServices(app).data?.services ?? [];
   const [q, setQ] = useState("");
   const [form, setForm] = useState<DomainForm | null>(null);
   const [showRecords, setShowRecords] = useState(false);
@@ -100,7 +113,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
 
   const save = useMutation({
     mutationFn: (f: DomainForm) => {
-      const body = { domain: f.domain, port: f.port ? Number(f.port) : 0, https: f.https, www_redirect: f.www_redirect, indexing: f.indexing, cert_mode: f.cert_mode };
+      const body = { domain: f.domain, port: f.port ? Number(f.port) : 0, https: f.https, www_redirect: f.www_redirect, indexing: f.indexing, cert_mode: f.cert_mode, ...(compose && { service: f.service }) };
       return f.id ? api.patch<DomainsResponse>(`/domains/${f.id}`, body) : api.post<DomainsResponse>(`/applications/${app.id}/domains`, body);
     },
     onSuccess: (r, f) => {
@@ -154,22 +167,18 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     },
     onError: (e) => toast.error(e.message),
   });
-  const deploy = useMutation({
-    mutationFn: () => api.post(`/applications/${app.id}/deploy`),
-    onSuccess: () => toast.success(t("Deployment queued")),
-  });
-
   const list = useMemo(() => (data?.domains ?? []).filter((d) => (d.host + d.path).includes(q.toLowerCase())), [data, q]);
   if (isLoading) return <Loading />;
   const domains = data!.domains;
   const allHTTPS = domains.length > 0 && domains.every((d) => d.https);
 
-  const openNew = () => setForm({ domain: "", port: "", https: app.https, www_redirect: "none", indexing: true, cert_mode: "auto" });
+  const openNew = () => setForm({ domain: "", port: "", service: "", https: app.https, www_redirect: "none", indexing: true, cert_mode: "auto" });
+  const portOf = (d: AppDomain) => d.port || (compose ? services.find((s) => s.name === (d.service || app.compose_service))?.port || "—" : app.port);
   const suggest = useSuggestDomain(app.id);
   const openGenerated = async () => {
     try {
       const s = await suggest();
-      setForm({ domain: s.domain, port: "", https: s.domain.startsWith("https://"), www_redirect: "none", indexing: s.kind !== "localhost", cert_mode: "auto" });
+      setForm({ domain: s.domain, port: "", service: "", https: s.domain.startsWith("https://"), www_redirect: "none", indexing: s.kind !== "localhost", cert_mode: "auto" });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -203,16 +212,6 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
           </Button>
         </div>
       </div>
-
-      {data!.requires_deploy && (
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-info/25 bg-info-soft px-4 py-2.5 text-[13px]">
-          <Rocket className="size-4 text-info" />
-          <span className="flex-1 text-muted">{t("Docker Compose applications pick up domain changes on the next deployment.")}</span>
-          <Button size="sm" onClick={() => deploy.mutate()} loading={deploy.isPending}>
-            {t("Redeploy now")}
-          </Button>
-        </div>
-      )}
 
       {domains.length > 0 && (
         <div className="flex items-center justify-end gap-3">
@@ -254,6 +253,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
             <thead>
               <tr>
                 <th>{t("Domain")}</th>
+                {compose && <th>{t("Service")}</th>}
                 <th>{t("Protocol redirect")}</th>
                 <th>{t("Domain redirect")}</th>
                 <th className="!text-right">{t("Internal port")}</th>
@@ -272,6 +272,11 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                       <span className="truncate">{domainURL(d)}</span>
                     </a>
                   </td>
+                  {compose && (
+                    <td>
+                      <Badge>{d.service || app.compose_service || t("Main service")}</Badge>
+                    </td>
+                  )}
                   <td className="text-muted">
                     {d.https ? (
                       <span className="inline-flex items-center gap-1">
@@ -282,7 +287,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                     )}
                   </td>
                   <td className="text-muted">{t(wwwLabel[d.www_redirect])}</td>
-                  <td className="text-right tabular-nums">{d.port || app.port}</td>
+                  <td className="text-right tabular-nums">{portOf(d)}</td>
                   <td className="text-center">{d.indexing ? <Check className="mx-auto size-4 text-success" /> : <X className="mx-auto size-4 text-faint" />}</td>
                   <td>
                     <DNSBadge d={d} />
@@ -313,7 +318,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                         size="icon-sm"
                         variant="ghost"
                         title={t("Edit")}
-                        onClick={() => setForm({ id: d.id, domain: domainURL(d), port: d.port ? String(d.port) : "", https: d.https, www_redirect: d.www_redirect, indexing: d.indexing, cert_mode: (d.cert_mode || "auto") as CertMode })}
+                        onClick={() => setForm({ id: d.id, domain: domainURL(d), port: d.port ? String(d.port) : "", service: d.service, https: d.https, www_redirect: d.www_redirect, indexing: d.indexing, cert_mode: (d.cert_mode || "auto") as CertMode })}
                       >
                         <Pencil />
                       </Button>
@@ -348,14 +353,30 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
         </div>
       )}
 
-      <DomainModal form={form} onChange={setForm} onSave={() => form && save.mutate(form)} saving={save.isPending} appPort={app.port} />
+      <DomainModal form={form} onChange={setForm} onSave={() => form && save.mutate(form)} saving={save.isPending} appPort={app.port} compose={compose ? { services, main: app.compose_service } : null} />
       <DNSRecordsModal appId={app.id} open={showRecords} onClose={() => setShowRecords(false)} />
     </div>
   );
 }
 
-function DomainModal({ form, onChange, onSave, saving, appPort }: { form: DomainForm | null; onChange: (f: DomainForm | null) => void; onSave: () => void; saving: boolean; appPort: number }) {
+function DomainModal({
+  form,
+  onChange,
+  onSave,
+  saving,
+  appPort,
+  compose,
+}: {
+  form: DomainForm | null;
+  onChange: (f: DomainForm | null) => void;
+  onSave: () => void;
+  saving: boolean;
+  appPort: number;
+  compose: { services: ComposeService[]; main: string } | null;
+}) {
   const set = (patch: Partial<DomainForm>) => form && onChange({ ...form, ...patch });
+  const target = compose && form ? compose.services.find((s) => s.name === (form.service || compose.main)) : undefined;
+  const defaultPort = compose ? (form?.service ? target?.port || 0 : appPort || target?.port || 0) : appPort;
   const host = form?.domain.replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "") || "example.com";
   return (
     <Modal
@@ -383,9 +404,28 @@ function DomainModal({ form, onChange, onSave, saving, appPort }: { form: Domain
           <Field label={t("Domain")} required hint={t("A hostname, optionally with a path prefix, e.g. https://app.example.com or example.com/api")}>
             <Input autoFocus value={form.domain} onChange={(e) => set({ domain: e.target.value })} placeholder="https://app.example.com" />
           </Field>
+          {compose && (
+            <Field label={t("Service")} hint={t("The service of docker-compose.yml that receives this domain's traffic, e.g. the frontend or the backend.")}>
+              {compose.services.length > 0 ? (
+                <Select value={form.service} onChange={(e) => set({ service: e.target.value })}>
+                  <option value="">{compose.main ? t("Main service ({name})", { name: compose.main }) : t("Main service")}</option>
+                  {compose.services.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.port ? `${s.name} · ${s.port}` : s.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : (
+                <Input value={form.service} onChange={(e) => set({ service: e.target.value.trim() })} placeholder={t("Main service")} />
+              )}
+            </Field>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t("Internal port")} hint={t("Container port that receives the traffic. Default: {port}.", { port: appPort })}>
-              <Input type="number" value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder={String(appPort)} />
+            <Field
+              label={t("Internal port")}
+              hint={defaultPort ? t("Container port that receives the traffic. Default: {port}.", { port: defaultPort }) : t("Container port that receives the traffic. Required: the service declares no single port.")}
+            >
+              <Input type="number" value={form.port} onChange={(e) => set({ port: e.target.value })} placeholder={defaultPort ? String(defaultPort) : ""} />
             </Field>
             <Field label={t("Domain redirect")} hint={t("Serve both the apex and www names, redirecting one to the other.")}>
               <Select value={form.www_redirect} onChange={(e) => set({ www_redirect: e.target.value as WWWRedirect })}>
