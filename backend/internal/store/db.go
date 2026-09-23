@@ -69,6 +69,27 @@ var migrations = []string{
 	`ALTER TABLE sessions ADD COLUMN user_agent TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE sessions ADD COLUMN method TEXT NOT NULL DEFAULT 'password'`,
 	`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+	// registries & multi-server deployments
+	`ALTER TABLE applications ADD COLUMN registry_id INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE applications ADD COLUMN registry_image TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN build_server_id INTEGER NOT NULL DEFAULT 0`,
+	// access control, approvals, audit
+	`ALTER TABLE projects ADD COLUMN default_role TEXT NOT NULL DEFAULT 'developer'`,
+	`ALTER TABLE environments ADD COLUMN protected INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE environments ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE deployments ADD COLUMN requested_by INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE deployments ADD COLUMN reviewed_by INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE deployments ADD COLUMN reviewed_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE deployments ADD COLUMN review_comment TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE activity ADD COLUMN ip TEXT NOT NULL DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at)`,
+	// certificates
+	`ALTER TABLE app_domains ADD COLUMN cert_mode TEXT NOT NULL DEFAULT 'auto'`,
+	`ALTER TABLE app_domains ADD COLUMN cert_status TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE app_domains ADD COLUMN cert_issuer TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE app_domains ADD COLUMN cert_expires_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE app_domains ADD COLUMN cert_checked_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE app_domains ADD COLUMN cert_error TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }
@@ -249,6 +270,26 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
+type clientIPKey struct{}
+
+// WithClientIP records the caller's address for audit entries.
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	return context.WithValue(ctx, clientIPKey{}, ip)
+}
+
+// OnActivity, when set, receives every audit entry after it is stored
+// (used to stream the audit log to a SIEM). It must not block.
+var OnActivity func(Activity)
+
 func (db *DB) LogActivity(ctx context.Context, userID int64, action, target string) {
-	_, _ = db.ExecContext(ctx, "INSERT INTO activity(user_id, action, target, created_at) VALUES(?,?,?,?)", userID, action, target, Now())
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	a := Activity{UserID: userID, Action: action, Target: target, IP: ip, CreatedAt: Now()}
+	res, err := db.ExecContext(ctx, "INSERT INTO activity(user_id, action, target, ip, created_at) VALUES(?,?,?,?,?)", userID, action, target, ip, a.CreatedAt)
+	if err != nil {
+		return
+	}
+	a.ID, _ = res.LastInsertId()
+	if OnActivity != nil {
+		OnActivity(a)
+	}
 }

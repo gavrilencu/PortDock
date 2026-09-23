@@ -161,6 +161,20 @@ func (e *Engine) reconcile(ctx context.Context) {
 			slog.Debug("reconcile", "server", srv.Name, "err", err)
 		}
 	}
+	// Applications on several servers: status is aggregated over all of them.
+	apps, err := store.Select[store.Application](ctx, e.db,
+		"SELECT * FROM applications WHERE id IN (SELECT application_id FROM application_servers) AND status NOT IN ('deploying', 'queued')")
+	if err != nil {
+		return
+	}
+	for _, app := range apps {
+		status := e.liveStatus(ctx, app)
+		if status == "unknown" || (status == "stopped" && app.Status == "failed") || status == app.Status {
+			continue
+		}
+		_, _ = e.db.ExecContext(ctx, "UPDATE applications SET status = ? WHERE id = ?", status, app.ID)
+		e.hub.Event("application", app.ID, status)
+	}
 }
 
 func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) error {
@@ -190,7 +204,11 @@ func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) error {
 		Status string `db:"status"`
 	}
 	for _, table := range []string{"applications", "databases", "services"} {
-		rows, err := store.Select[row](ctx, e.db, "SELECT id, uuid, status FROM "+table+" WHERE server_id = ?", srv.ID)
+		query := "SELECT id, uuid, status FROM " + table + " WHERE server_id = ?"
+		if table == "applications" {
+			query += " AND id NOT IN (SELECT application_id FROM application_servers)"
+		}
+		rows, err := store.Select[row](ctx, e.db, query, srv.ID)
 		if err != nil {
 			continue
 		}

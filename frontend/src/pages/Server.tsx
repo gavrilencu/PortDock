@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   Boxes,
   Cpu,
   Download,
@@ -32,8 +33,9 @@ import { ContainerTable } from "../components/ContainerTable";
 import { LogViewer } from "../components/LogViewer";
 import { Terminal } from "../components/Terminal";
 import { formatBytes, formatUptime, timeAgo } from "../lib/utils";
+import { MetricsPanel } from "../components/metrics";
 
-type Tab = "overview" | "containers" | "images" | "volumes" | "networks" | "terminal" | "settings";
+type Tab = "overview" | "monitoring" | "containers" | "images" | "volumes" | "networks" | "terminal" | "settings";
 
 export function ServerPage() {
   const id = Number(useParams().id);
@@ -82,6 +84,7 @@ export function ServerPage() {
         onChange={(t) => setParams({ tab: t })}
         tabs={[
           { id: "overview", label: "Overview", icon: <LayoutGrid /> },
+          { id: "monitoring", label: "Monitoring", icon: <Activity /> },
           { id: "containers", label: "Containers", icon: <Boxes /> },
           { id: "images", label: "Images", icon: <Layers /> },
           { id: "volumes", label: "Volumes", icon: <HardDrive /> },
@@ -96,6 +99,7 @@ export function ServerPage() {
         </div>
       )}
       {tab === "overview" && <Overview s={s} />}
+      {tab === "monitoring" && <MetricsPanel scope="server" id={s.id} title="Server metrics" />}
       {tab === "containers" && <Containers s={s} />}
       {tab === "images" && <Images s={s} />}
       {tab === "volumes" && <Volumes s={s} />}

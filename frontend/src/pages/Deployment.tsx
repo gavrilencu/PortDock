@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Clock, GitCommitHorizontal, GitPullRequest, Rocket, Undo2 } from "lucide-react";
+import { Ban, Check, Clock, GitCommitHorizontal, GitPullRequest, Rocket, ShieldCheck, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Deployment } from "../lib/types";
 import { useLogStream } from "../lib/sse";
-import { Badge, Button, Empty, ErrorBox, Loading, PageHeader, SegmentedControl, StatusBadge, useConfirm } from "../components/ui";
+import { Badge, Button, Empty, ErrorBox, Input, Loading, PageHeader, SegmentedControl, StatusBadge, useConfirm } from "../components/ui";
 import { LogViewer } from "../components/LogViewer";
 import { DeploymentsTable } from "../components/shared";
 import { useApp } from "./Application";
@@ -21,10 +21,22 @@ export function DeploymentPage() {
   const confirm = useConfirm();
   const app = useApp(appId);
   const dep = useQuery({ queryKey: ["deployment", depId], queryFn: () => api.get<Deployment>(`/deployments/${depId}`) });
-  const stream = useLogStream(`/deployments/${depId}/stream`);
+  // Pending/rejected deployments have no build output yet: attach once approved.
+  const waiting = dep.data?.status === "pending_approval" || dep.data?.status === "rejected";
+  const stream = useLogStream(dep.data && !waiting ? `/deployments/${depId}/stream` : null);
   const [, tick] = useState(0);
 
-  const finished = stream.status ?? (dep.data && !["queued", "running"].includes(dep.data.status) ? dep.data.status : null);
+  const finished = stream.status ?? (dep.data && !["queued", "running", "pending_approval"].includes(dep.data.status) ? dep.data.status : null);
+  const [comment, setComment] = useState("");
+  const review = useMutation({
+    mutationFn: (approve: boolean) => api.post<Deployment>(`/deployments/${depId}/${approve ? "approve" : "reject"}`, { comment }),
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["deployment", depId] });
+      qc.invalidateQueries({ queryKey: ["deployments"] });
+      toast.success(d.status === "queued" ? "Approved — the deployment is starting" : "Deployment rejected");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   useEffect(() => {
     if (stream.status) qc.invalidateQueries({ queryKey: ["deployment", depId] });
   }, [stream.status, depId, qc]);
@@ -56,6 +68,7 @@ export function DeploymentPage() {
   const a = app.data!;
   const status = stream.status ?? d.status;
   const active = status === "queued" || status === "running";
+  const pending = status === "pending_approval";
   const isCurrent = a.current_image === d.image && d.pr_number === 0;
 
   return (
@@ -96,12 +109,12 @@ export function DeploymentPage() {
         }
         actions={
           <>
-            {active && (
+            {(active || pending) && a.access.can_deploy && (
               <Button variant="danger" icon={<Ban className="size-4" />} loading={cancel.isPending} onClick={() => cancel.mutate()}>
-                Cancel
+                {pending ? "Withdraw request" : "Cancel"}
               </Button>
             )}
-            {!active && d.image && !isCurrent && status === "success" && (
+            {!active && !pending && a.access.can_deploy && d.image && !isCurrent && status === "success" && (
               <Button
                 icon={<Undo2 className="size-4" />}
                 loading={rollback.isPending}
@@ -112,15 +125,54 @@ export function DeploymentPage() {
                 Roll back to this
               </Button>
             )}
-            {!active && (
+            {!active && !pending && a.access.can_deploy && (
               <Button variant="primary" icon={<Rocket className="size-4" />} loading={redeploy.isPending} onClick={() => redeploy.mutate()}>
-                Redeploy {d.commit_sha ? shortSha(d.commit_sha) : ""}
+                {a.access.deploy_needs_approval ? "Request redeploy" : "Redeploy"} {d.commit_sha ? shortSha(d.commit_sha) : ""}
               </Button>
             )}
           </>
         }
       />
-      <LogViewer lines={stream.lines} live={active} className="h-[calc(100vh-240px)] min-h-[420px]" filename={`deployment-${d.id}.log`} emptyText={status === "queued" ? "Waiting for a build slot…" : active ? "Waiting for output…" : "No build output was recorded for this deployment."} />
+      {(pending || status === "rejected" || d.reviewed_by > 0) && (
+        <div className={`mb-4 rounded-xl border p-4 ${pending ? "border-warning/40 bg-warning-soft" : status === "rejected" ? "border-danger/30 bg-danger-soft" : "border-border bg-surface"}`}>
+          <div className="flex flex-wrap items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface">
+              <ShieldCheck className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1 text-[13px]">
+              <div className="font-semibold">
+                {pending ? "Waiting for approval" : status === "rejected" ? `Rejected by ${d.reviewed_by_name}` : `Approved by ${d.reviewed_by_name}`}
+              </div>
+              <div className="mt-0.5 text-muted">
+                Requested by {d.requested_by_name || "automation (Git push or API)"} · {timeAgo(d.created_at)}
+                {d.reviewed_at && ` · reviewed ${timeAgo(d.reviewed_at)}`}
+              </div>
+              {d.review_comment && <div className="mt-1.5 rounded-md bg-surface px-2.5 py-1.5 text-fg">“{d.review_comment}”</div>}
+              {pending && !d.can_review && <div className="mt-1.5 text-xs text-muted">A project maintainer must approve this deployment in {a.environment.name}.</div>}
+            </div>
+            {pending && d.can_review && (
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <Input className="h-8 w-full sm:w-64" placeholder="Comment (optional)" value={comment} onChange={(e) => setComment(e.target.value)} />
+                <Button icon={<X />} loading={review.isPending && review.variables === false} onClick={() => review.mutate(false)}>
+                  Reject
+                </Button>
+                <Button
+                  variant="primary"
+                  icon={<Check />}
+                  disabled={!d.can_self_approve}
+                  title={d.can_self_approve ? undefined : "You requested this deployment — another maintainer must approve it"}
+                  loading={review.isPending && review.variables === true}
+                  onClick={() => review.mutate(true)}
+                >
+                  Approve & deploy
+                </Button>
+              </div>
+            )}
+          </div>
+          {pending && d.can_review && !d.can_self_approve && <div className="mt-2 pl-12 text-xs text-muted">You requested this deployment, so another maintainer must approve it (four-eyes principle).</div>}
+        </div>
+      )}
+      <LogViewer lines={stream.lines} live={active} className="h-[calc(100vh-240px)] min-h-[420px]" filename={`deployment-${d.id}.log`} emptyText={pending ? "The build starts once the deployment is approved." : status === "rejected" ? "This deployment was rejected and never ran." : status === "queued" ? "Waiting for a build slot…" : active ? "Waiting for output…" : "No build output was recorded for this deployment."} />
     </>
   );
 }
@@ -139,6 +191,7 @@ export function DeploymentsPage() {
             { value: "", label: "All" },
             { value: "running", label: "Building" },
             { value: "queued", label: "Queued" },
+            { value: "pending_approval", label: "Awaiting approval" },
             { value: "success", label: "Ready" },
             { value: "failed", label: "Failed" },
           ]}

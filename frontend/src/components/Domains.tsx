@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Check, CircleHelp, Globe, Pencil, Plus, RefreshCw, Rocket, Search, Trash2, X } from "lucide-react";
+import { ArrowRight, Check, CircleHelp, Globe, Pencil, Plus, RefreshCw, Rocket, Search, Trash2, X, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { ApplicationDetail, AppDomain, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect } from "../lib/types";
+import type { ApplicationDetail, AppDomain, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect, CertMode } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
 import { Badge, Button, Card, CopyButton, Empty, Field, Input, Loading, Menu, MenuItem, Modal, Select, Switch, Table, useConfirm } from "./ui";
 
@@ -45,6 +45,41 @@ interface DomainForm {
   https: boolean;
   www_redirect: WWWRedirect;
   indexing: boolean;
+  cert_mode: CertMode;
+}
+
+const certTone: Record<string, "success" | "warning" | "danger" | "info" | "neutral"> = {
+  valid: "success",
+  expiring: "warning",
+  pending: "info",
+  local: "neutral",
+  expired: "danger",
+  missing: "danger",
+  error: "danger",
+};
+const certText: Record<string, string> = {
+  valid: "Valid",
+  expiring: "Expiring",
+  pending: "Issuing…",
+  local: "Self-signed",
+  expired: "Expired",
+  missing: "Not issued",
+  error: "Error",
+};
+
+export function CertBadge({ d }: { d: Pick<AppDomain, "https" | "cert_status" | "cert_expires_at" | "cert_issuer" | "cert_error"> }) {
+  if (!d.https) return <span className="text-xs text-faint">HTTP only</span>;
+  if (!d.cert_status) return <span className="text-xs text-faint">Not checked</span>;
+  const days = d.cert_expires_at ? Math.floor((new Date(d.cert_expires_at).getTime() - Date.now()) / 86_400_000) : null;
+  const title = [d.cert_issuer, d.cert_expires_at && `Expires ${new Date(d.cert_expires_at).toLocaleDateString()}`, d.cert_error].filter(Boolean).join("\n");
+  return (
+    <span className="inline-flex flex-col gap-0.5" title={title}>
+      <Badge tone={certTone[d.cert_status] ?? "neutral"}>
+        <ShieldCheck /> {certText[d.cert_status] ?? d.cert_status}
+      </Badge>
+      {days !== null && d.cert_status !== "local" && <span className="text-2xs text-muted">{days >= 0 ? `${days} days left` : `${-days} days ago`}</span>}
+    </span>
+  );
 }
 
 export function DomainsTab({ app }: { app: ApplicationDetail }) {
@@ -64,13 +99,21 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
 
   const save = useMutation({
     mutationFn: (f: DomainForm) => {
-      const body = { domain: f.domain, port: f.port ? Number(f.port) : 0, https: f.https, www_redirect: f.www_redirect, indexing: f.indexing };
+      const body = { domain: f.domain, port: f.port ? Number(f.port) : 0, https: f.https, www_redirect: f.www_redirect, indexing: f.indexing, cert_mode: f.cert_mode };
       return f.id ? api.patch<DomainsResponse>(`/domains/${f.id}`, body) : api.post<DomainsResponse>(`/applications/${app.id}/domains`, body);
     },
     onSuccess: (r, f) => {
       onResult(r);
       setForm(null);
       toast.success(f.id ? "Domain updated" : "Domain added", { description: r.requires_deploy ? "Redeploy to apply the change." : "Routing was updated — no redeploy needed." });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const renew = useMutation({
+    mutationFn: (id: number) => api.post(`/domains/${id}/renew`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["domains", app.id] });
+      toast.success("A new certificate is being requested", { description: "The proxy restarts for a few seconds; the certificate usually arrives within a minute." });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -120,12 +163,12 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
   const domains = data!.domains;
   const allHTTPS = domains.length > 0 && domains.every((d) => d.https);
 
-  const openNew = () => setForm({ domain: "", port: "", https: app.https, www_redirect: "none", indexing: true });
+  const openNew = () => setForm({ domain: "", port: "", https: app.https, www_redirect: "none", indexing: true, cert_mode: "auto" });
   const suggest = useSuggestDomain(app.id);
   const openGenerated = async () => {
     try {
       const s = await suggest();
-      setForm({ domain: s.domain, port: "", https: s.domain.startsWith("https://"), www_redirect: "none", indexing: s.kind !== "localhost" });
+      setForm({ domain: s.domain, port: "", https: s.domain.startsWith("https://"), www_redirect: "none", indexing: s.kind !== "localhost", cert_mode: "auto" });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -215,6 +258,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                 <th className="!text-right">Internal port</th>
                 <th className="!text-center">Search indexing</th>
                 <th>DNS status</th>
+                <th>Certificate</th>
                 <th className="!text-right">Actions</th>
               </tr>
             </thead>
@@ -243,7 +287,24 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                     <DNSBadge d={d} />
                   </td>
                   <td>
+                    <CertBadge d={d} />
+                  </td>
+                  <td>
                     <div className="flex justify-end gap-0.5">
+                      {d.https && d.cert_mode !== "custom" && d.cert_status !== "local" && (
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          title="Renew certificate now"
+                          loading={renew.isPending && renew.variables === d.id}
+                          onClick={async () => {
+                            if (await confirm({ title: `Renew the certificate of ${d.host}?`, description: "The proxy on the server restarts for a few seconds to request a fresh certificate. Renewals are automatic — use this only if a certificate is stuck.", confirmText: "Renew now" }))
+                              renew.mutate(d.id);
+                          }}
+                        >
+                          <ShieldCheck />
+                        </Button>
+                      )}
                       <Button size="icon-sm" variant="ghost" title="Re-check DNS" loading={checking === d.id} onClick={() => checkOne(d)}>
                         <RefreshCw />
                       </Button>
@@ -251,7 +312,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
                         size="icon-sm"
                         variant="ghost"
                         title="Edit"
-                        onClick={() => setForm({ id: d.id, domain: domainURL(d), port: d.port ? String(d.port) : "", https: d.https, www_redirect: d.www_redirect, indexing: d.indexing })}
+                        onClick={() => setForm({ id: d.id, domain: domainURL(d), port: d.port ? String(d.port) : "", https: d.https, www_redirect: d.www_redirect, indexing: d.indexing, cert_mode: (d.cert_mode || "auto") as CertMode })}
                       >
                         <Pencil />
                       </Button>
@@ -334,6 +395,15 @@ function DomainModal({ form, onChange, onSave, saving, appPort }: { form: Domain
           </div>
           <div className="space-y-4 rounded-lg border border-border bg-surface-2/40 p-4">
             <Switch checked={form.https} onChange={(v) => set({ https: v })} label="HTTPS" description="Issue a Let's Encrypt certificate and redirect HTTP → HTTPS." />
+            {form.https && (
+              <Field label="Certificate" hint={form.cert_mode === "dns" ? "Uses the DNS provider from Settings → Certificates. Required for wildcard and internal-only domains." : form.cert_mode === "custom" ? "Served from a certificate uploaded in Settings → Certificates." : "Let's Encrypt over HTTP-01; the domain must be reachable from the internet on port 80."}>
+                <Select value={form.cert_mode} onChange={(e) => set({ cert_mode: e.target.value as CertMode })}>
+                  <option value="auto">Let's Encrypt — automatic</option>
+                  <option value="dns">Let's Encrypt — DNS challenge</option>
+                  <option value="custom">Uploaded certificate</option>
+                </Select>
+              </Field>
+            )}
             <Switch checked={form.indexing} onChange={(v) => set({ indexing: v })} label="Allow search engine indexing" description="When off, responses carry X-Robots-Tag: noindex, nofollow." />
           </div>
         </form>

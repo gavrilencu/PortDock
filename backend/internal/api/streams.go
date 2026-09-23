@@ -267,6 +267,9 @@ func (s *Server) containerTerminal(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	cid := r.PathValue("cid")
+	if err := s.authorizeContainer(r, x, cid, permWrite); err != nil {
+		return err
+	}
 	s.activity(r, "terminal.container", srv.Name+"/"+cid)
 	cmd := "docker exec -it " + executor.Quote(cid) + " sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'"
 	return s.terminal(w, r, x, cmd)

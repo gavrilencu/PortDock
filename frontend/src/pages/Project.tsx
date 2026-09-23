@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FolderKanban, MoreHorizontal, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ExternalLink, FolderKanban, Lock, MoreHorizontal, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { EnvironmentResources, Project } from "../lib/types";
 import { Button, Empty, ErrorBox, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, SegmentedControl, StatusBadge, Table, Tabs, useConfirm } from "../components/ui";
 import { ResourceIcon } from "../components/shared";
+import { ProtectedBadge, RoleBadge } from "../components/access";
+import { EnvironmentSettingsModal, MembersModal } from "../components/projectAccess";
 import { domainURL, splitList, timeAgo } from "../lib/utils";
 
 type Kind = "application" | "database" | "service";
@@ -28,6 +30,8 @@ export function ProjectPage() {
   const [newEnv, setNewEnv] = useState<string | null>(null);
   const [edit, setEdit] = useState<{ name: string; description: string } | null>(null);
   const [kind, setKind] = useState<"all" | Kind>("all");
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [envSettings, setEnvSettings] = useState<number | null>(null);
   const [q, setQ] = useState("");
 
   const createEnv = useMutation({
@@ -48,7 +52,7 @@ export function ProjectPage() {
     onError: (e) => toast.error(e.message),
   });
   const updateProject = useMutation({
-    mutationFn: () => api.patch(`/projects/${id}`, edit),
+    mutationFn: () => api.patch(`/projects/${id}`, { ...edit, default_role: project.data?.default_role }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", Number(id)] });
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -82,6 +86,8 @@ export function ProjectPage() {
   const p = project.data!;
   const env = envs.find((e) => e.id === envId);
   const total = r ? r.applications.length + r.databases.length + r.services.length : 0;
+  const canManage = p.role === "admin" || p.role === "maintainer";
+  const canWrite = canManage || (p.role === "developer" && !env?.protected);
 
   return (
     <>
@@ -89,6 +95,7 @@ export function ProjectPage() {
         icon={<FolderKanban />}
         title={p.name}
         subtitle={p.description || "No description"}
+        meta={<RoleBadge role={p.role} />}
         breadcrumbs={
           <>
             <Link to="/projects">Projects</Link>
@@ -98,6 +105,12 @@ export function ProjectPage() {
         }
         actions={
           <>
+            {canManage && (
+              <Button icon={<Users />} onClick={() => setMembersOpen(true)}>
+                Access
+              </Button>
+            )}
+            {canManage && (
             <Menu
               trigger={
                 <Button size="icon" aria-label="Project actions">
@@ -107,6 +120,9 @@ export function ProjectPage() {
             >
               <MenuItem icon={<Pencil />} onClick={() => setEdit({ name: p.name, description: p.description })}>
                 Edit project
+              </MenuItem>
+              <MenuItem icon={<Shield />} onClick={() => setEnvSettings(envId)}>
+                Protect “{env?.name}”
               </MenuItem>
               <MenuItem icon={<Plus />} onClick={() => setNewEnv("")}>
                 New environment
@@ -133,11 +149,14 @@ export function ProjectPage() {
                 Delete project
               </MenuItem>
             </Menu>
-            <Link to={`/projects/${p.id}/new?env=${envId}`}>
-              <Button variant="primary" icon={<Plus />}>
-                Add resource
-              </Button>
-            </Link>
+            )}
+            {canWrite && (
+              <Link to={`/projects/${p.id}/new?env=${envId}`}>
+                <Button variant="primary" icon={<Plus />}>
+                  Add resource
+                </Button>
+              </Link>
+            )}
           </>
         }
       />
@@ -145,8 +164,22 @@ export function ProjectPage() {
       <Tabs
         value={String(envId)}
         onChange={(v) => (v === "new" ? setNewEnv("") : setParams({ env: v }))}
-        tabs={[...envs.map((e) => ({ id: String(e.id), label: e.name })), { id: "new", label: <span className="flex items-center gap-1 text-faint"><Plus className="size-3.5" />Environment</span> }]}
+        tabs={[
+          ...envs.map((e) => ({ id: String(e.id), label: e.protected ? <span className="flex items-center gap-1.5">{e.name}<Lock className="size-3 text-warning" /></span> : e.name })),
+          ...(canManage ? [{ id: "new", label: <span className="flex items-center gap-1 text-faint"><Plus className="size-3.5" />Environment</span> }] : []),
+        ]}
       />
+      {env?.protected && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <ProtectedBadge approvals={env.require_approval} />
+          {env.require_approval ? "Every deployment needs approval from a maintainer other than the requester." : "Only maintainers change this environment; developer deployments need approval."}
+          {canManage && (
+            <button className="font-medium text-fg underline-offset-2 hover:underline" onClick={() => setEnvSettings(env.id)}>
+              Settings
+            </button>
+          )}
+        </div>
+      )}
 
       {resources.isLoading ? (
         <Loading />
@@ -156,11 +189,13 @@ export function ProjectPage() {
           title={`${env?.name ?? "This environment"} is empty`}
           description="Deploy an application from Git or a Docker image, provision a database, or launch a service from the catalog."
           action={
-            <Link to={`/projects/${p.id}/new?env=${envId}`}>
-              <Button variant="primary" icon={<Plus />}>
-                Add resource
-              </Button>
-            </Link>
+            canWrite && (
+              <Link to={`/projects/${p.id}/new?env=${envId}`}>
+                <Button variant="primary" icon={<Plus />}>
+                  Add resource
+                </Button>
+              </Link>
+            )
           }
         />
       ) : (
@@ -254,6 +289,8 @@ export function ProjectPage() {
           <Input autoFocus value={newEnv ?? ""} onChange={(e) => setNewEnv(e.target.value)} placeholder="staging" />
         </Field>
       </Modal>
+      <MembersModal projectId={p.id} open={membersOpen} onClose={() => setMembersOpen(false)} />
+      <EnvironmentSettingsModal env={envs.find((e) => e.id === envSettings) ?? null} onClose={() => setEnvSettings(null)} />
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}

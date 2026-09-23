@@ -15,11 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shipyard/shipyard/internal/audit"
 	"github.com/shipyard/shipyard/internal/auth"
 	"github.com/shipyard/shipyard/internal/config"
 	"github.com/shipyard/shipyard/internal/deploy"
 	"github.com/shipyard/shipyard/internal/executor"
 	"github.com/shipyard/shipyard/internal/github"
+	"github.com/shipyard/shipyard/internal/monitor"
 	"github.com/shipyard/shipyard/internal/notify"
 	"github.com/shipyard/shipyard/internal/scheduler"
 	"github.com/shipyard/shipyard/internal/secrets"
@@ -29,18 +31,21 @@ import (
 )
 
 type Server struct {
-	cfg    config.Config
-	db     *store.DB
-	box    *secrets.Box
-	auth   *auth.Auth
-	pool   *executor.Pool
-	hub    *stream.Hub
-	engine *deploy.Engine
-	sched  *scheduler.Scheduler
-	notify *notify.Notifier
-	github *github.Client
-	ui     fs.FS
-	sec    *security
+	cfg     config.Config
+	db      *store.DB
+	box     *secrets.Box
+	auth    *auth.Auth
+	pool    *executor.Pool
+	hub     *stream.Hub
+	engine  *deploy.Engine
+	sched   *scheduler.Scheduler
+	notify  *notify.Notifier
+	github  *github.Client
+	ui      fs.FS
+	sec     *security
+	updates *updateCache
+	monitor *monitor.Monitor
+	audit   *audit.Streamer
 }
 
 type Deps struct {
@@ -54,12 +59,17 @@ type Deps struct {
 	Scheduler *scheduler.Scheduler
 	Notifier  *notify.Notifier
 	GitHub    *github.Client
+	Monitor   *monitor.Monitor
+	Audit     *audit.Streamer
 	UI        fs.FS
 }
 
 func New(d Deps) *Server {
+	if d.Audit == nil {
+		d.Audit = audit.New(d.DB, d.Box)
+	}
 	return &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
-		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity()}
+		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}}
 }
 
 // handlerFunc returns an error that is rendered as JSON.
@@ -184,6 +194,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 				slog.Debug("http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "dur", time.Since(start))
 			}
 		}()
+		r = r.WithContext(store.WithClientIP(r.Context(), auth.ClientIP(r)))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -209,6 +220,9 @@ func (s *Server) Handler() http.Handler {
 	a := func(pattern string, h handlerFunc) { mux.HandleFunc(pattern, s.authed(anyUser, h)) }
 	admin := func(pattern string, h handlerFunc) { mux.HandleFunc(pattern, s.authed(adminOnly, h)) }
 	public := func(pattern string, h handlerFunc) { mux.HandleFunc(pattern, s.wrap(h)) }
+	// g guards a resource route by project role; gp guards a project route.
+	g := func(pattern, kind string, p perm, h handlerFunc) { a(pattern, s.guard(kind, p, h)) }
+	gp := func(pattern string, p perm, h handlerFunc) { a(pattern, s.guardProject(p, h)) }
 
 	public("GET /api/health", func(w http.ResponseWriter, r *http.Request) error {
 		return ok(w, map[string]string{"status": "ok", "version": Version})
@@ -238,6 +252,25 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/dashboard", s.dashboard)
 	a("GET /api/events", s.events)
 	a("GET /api/activity", s.listActivity)
+	admin("GET /api/activity/export", s.exportActivity)
+	a("GET /api/certificates", s.listCertificates)
+	admin("POST /api/certificates/check", s.checkCertificatesNow)
+	g("POST /api/domains/{id}/renew", "domain", permWrite, s.renewDomainCertificate)
+	admin("POST /api/custom-certificates", s.uploadCustomCertificate)
+	admin("DELETE /api/custom-certificates/{id}", s.deleteCustomCertificate)
+	admin("GET /api/settings/certificates", s.getCertSettings)
+	admin("PUT /api/settings/certificates", s.updateCertSettings)
+	a("GET /api/system/update", s.getUpdate)
+	admin("POST /api/system/update/check", s.checkUpdateNow)
+	admin("PUT /api/system/update/settings", s.updateUpdateSettings)
+	admin("POST /api/system/update", s.runUpdate)
+	admin("GET /api/license", s.getLicense)
+	admin("PUT /api/license", s.installLicense)
+	admin("DELETE /api/license", s.removeLicense)
+	admin("POST /api/license/trial", s.startTrial)
+	admin("GET /api/settings/audit", s.getAuditSettings)
+	admin("PUT /api/settings/audit", s.updateAuditSettings)
+	admin("POST /api/settings/audit/test", s.testAuditStream)
 
 	// ssh keys
 	a("GET /api/ssh-keys", s.listSSHKeys)
@@ -259,13 +292,15 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/servers/{id}/containers", s.serverContainers)
 	a("POST /api/servers/{id}/containers/{cid}/{action}", s.containerAction)
 	a("GET /api/servers/{id}/containers/{cid}/inspect", s.containerInspect)
+	a("GET /api/servers/{id}/containers/{cid}/env", s.containerEnv)
+	a("GET /api/topology", s.topology)
 	a("GET /api/servers/{id}/containers/{cid}/logs", s.containerLogs)
 	a("GET /api/servers/{id}/containers/{cid}/terminal", s.containerTerminal)
 	admin("GET /api/servers/{id}/terminal", s.serverTerminal)
 	a("GET /api/servers/{id}/images", s.serverImages)
-	a("DELETE /api/servers/{id}/images/{iid}", s.deleteImage)
+	admin("DELETE /api/servers/{id}/images/{iid}", s.deleteImage)
 	a("GET /api/servers/{id}/volumes", s.serverVolumes)
-	a("DELETE /api/servers/{id}/volumes/{name}", s.deleteVolume)
+	admin("DELETE /api/servers/{id}/volumes/{name}", s.deleteVolume)
 	a("GET /api/servers/{id}/networks", s.serverNetworks)
 	admin("POST /api/servers/{id}/prune", s.pruneServer)
 	admin("POST /api/servers/{id}/proxy/{action}", s.proxyAction)
@@ -273,72 +308,78 @@ func (s *Server) Handler() http.Handler {
 	// projects & environments
 	a("GET /api/projects", s.listProjects)
 	a("POST /api/projects", s.createProject)
-	a("GET /api/projects/{id}", s.getProject)
-	a("PATCH /api/projects/{id}", s.updateProject)
-	a("DELETE /api/projects/{id}", s.deleteProject)
-	a("POST /api/projects/{id}/environments", s.createEnvironment)
-	a("DELETE /api/environments/{id}", s.deleteEnvironment)
-	a("GET /api/environments/{id}/resources", s.environmentResources)
+	gp("GET /api/projects/{id}", permRead, s.getProject)
+	gp("PATCH /api/projects/{id}", permManage, s.updateProject)
+	gp("DELETE /api/projects/{id}", permManage, s.deleteProject)
+	gp("POST /api/projects/{id}/environments", permManage, s.createEnvironment)
+	gp("GET /api/projects/{id}/members", permRead, s.listProjectMembers)
+	gp("PUT /api/projects/{id}/members", permManage, s.setProjectMembers)
+	gp("GET /api/projects/{id}/member-candidates", permManage, s.memberCandidates)
+	g("DELETE /api/environments/{id}", "environment", permManage, s.deleteEnvironment)
+	g("PATCH /api/environments/{id}", "environment", permManage, s.updateEnvironment)
+	g("GET /api/environments/{id}/resources", "environment", permRead, s.environmentResources)
 
 	// applications & deployments
 	a("GET /api/applications", s.listApplications)
 	a("POST /api/applications", s.createApplication)
-	a("GET /api/applications/{id}", s.getApplication)
-	a("PATCH /api/applications/{id}", s.updateApplication)
-	a("DELETE /api/applications/{id}", s.deleteApplication)
-	a("POST /api/applications/{id}/deploy", s.deployApplication)
-	a("POST /api/applications/{id}/{action}", s.applicationAction)
-	a("POST /api/applications/{id}/webhook-secret", s.regenerateWebhookSecret)
-	a("GET /api/applications/{id}/deployments", s.listAppDeployments)
-	a("GET /api/applications/{id}/containers", s.appContainers)
-	a("GET /api/applications/{id}/logs", s.appLogs)
-	a("GET /api/applications/{id}/previews", s.listPreviews)
-	a("DELETE /api/applications/{id}/previews/{pr}", s.deletePreview)
+	g("GET /api/applications/{id}", "application", permRead, s.getApplication)
+	g("PATCH /api/applications/{id}", "application", permWrite, s.updateApplication)
+	g("DELETE /api/applications/{id}", "application", permManage, s.deleteApplication)
+	g("POST /api/applications/{id}/deploy", "application", permDeploy, s.deployApplication)
+	g("POST /api/applications/{id}/{action}", "application", permWrite, s.applicationAction)
+	g("POST /api/applications/{id}/webhook-secret", "application", permWrite, s.regenerateWebhookSecret)
+	g("GET /api/applications/{id}/deployments", "application", permRead, s.listAppDeployments)
+	g("GET /api/applications/{id}/containers", "application", permRead, s.appContainers)
+	g("GET /api/applications/{id}/logs", "application", permRead, s.appLogs)
+	g("GET /api/applications/{id}/previews", "application", permRead, s.listPreviews)
+	g("DELETE /api/applications/{id}/previews/{pr}", "application", permWrite, s.deletePreview)
 	a("GET /api/deployments", s.listDeployments)
-	a("GET /api/deployments/{id}", s.getDeployment)
-	a("GET /api/deployments/{id}/stream", s.deploymentStream)
-	a("POST /api/deployments/{id}/cancel", s.cancelDeployment)
-	a("POST /api/deployments/{id}/rollback", s.rollbackDeployment)
+	g("GET /api/deployments/{id}", "deployment", permRead, s.getDeployment)
+	g("GET /api/deployments/{id}/stream", "deployment", permRead, s.deploymentStream)
+	g("POST /api/deployments/{id}/cancel", "deployment", permDeploy, s.cancelDeployment)
+	g("POST /api/deployments/{id}/approve", "deployment", permManage, s.approveDeployment)
+	g("POST /api/deployments/{id}/reject", "deployment", permManage, s.rejectDeployment)
+	g("POST /api/deployments/{id}/rollback", "deployment", permDeploy, s.rollbackDeployment)
 
 	// environment variables (owner: applications | services | databases)
 	for _, owner := range []string{"applications", "services", "databases"} {
-		a("GET /api/"+owner+"/{id}/envs", s.listEnvs)
-		a("POST /api/"+owner+"/{id}/envs", s.createEnv)
-		a("PUT /api/"+owner+"/{id}/envs", s.bulkEnvs)
+		g("GET /api/"+owner+"/{id}/envs", "owner", permWrite, s.listEnvs)
+		g("POST /api/"+owner+"/{id}/envs", "owner", permWrite, s.createEnv)
+		g("PUT /api/"+owner+"/{id}/envs", "owner", permWrite, s.bulkEnvs)
 	}
-	a("PATCH /api/envs/{id}", s.updateEnv)
-	a("DELETE /api/envs/{id}", s.deleteEnv)
+	g("PATCH /api/envs/{id}", "env_var", permWrite, s.updateEnv)
+	g("DELETE /api/envs/{id}", "env_var", permWrite, s.deleteEnv)
 
 	// databases & backups
 	a("GET /api/database-engines", s.listEngines)
 	a("GET /api/databases", s.listDatabases)
 	a("POST /api/databases", s.createDatabase)
-	a("GET /api/databases/{id}", s.getDatabase)
-	a("PATCH /api/databases/{id}", s.updateDatabase)
-	a("DELETE /api/databases/{id}", s.deleteDatabase)
-	a("POST /api/databases/{id}/{action}", s.databaseAction)
-	a("GET /api/databases/{id}/logs", s.databaseLogs)
-	a("GET /api/databases/{id}/backups", s.listBackups)
-	a("POST /api/databases/{id}/backups", s.createBackup)
-	a("PATCH /api/backups/{id}", s.updateBackup)
-	a("DELETE /api/backups/{id}", s.deleteBackup)
-	a("POST /api/backups/{id}/run", s.runBackup)
-	a("GET /api/backups/{id}/runs", s.listBackupRuns)
-	a("GET /api/backup-runs/{id}/download", s.downloadBackup)
-	a("POST /api/backup-runs/{id}/restore", s.restoreBackup)
+	g("GET /api/databases/{id}", "database", permRead, s.getDatabase)
+	g("PATCH /api/databases/{id}", "database", permWrite, s.updateDatabase)
+	g("DELETE /api/databases/{id}", "database", permManage, s.deleteDatabase)
+	g("POST /api/databases/{id}/{action}", "database", permWrite, s.databaseAction)
+	g("GET /api/databases/{id}/logs", "database", permRead, s.databaseLogs)
+	g("GET /api/databases/{id}/backups", "database", permRead, s.listBackups)
+	g("POST /api/databases/{id}/backups", "database", permWrite, s.createBackup)
+	g("PATCH /api/backups/{id}", "backup", permWrite, s.updateBackup)
+	g("DELETE /api/backups/{id}", "backup", permWrite, s.deleteBackup)
+	g("POST /api/backups/{id}/run", "backup", permWrite, s.runBackup)
+	g("GET /api/backups/{id}/runs", "backup", permRead, s.listBackupRuns)
+	g("GET /api/backup-runs/{id}/download", "backup_run", permWrite, s.downloadBackup)
+	g("POST /api/backup-runs/{id}/restore", "backup_run", permManage, s.restoreBackup)
 
 	// services
 	a("GET /api/service-templates", s.listServiceTemplates)
 	a("GET /api/image-catalog", func(w http.ResponseWriter, r *http.Request) error { return ok(w, templates.ImageCatalog()) })
 	a("GET /api/services", s.listServices)
 	a("POST /api/services", s.createService)
-	a("GET /api/services/{id}", s.getService)
-	a("PATCH /api/services/{id}", s.updateService)
-	a("DELETE /api/services/{id}", s.deleteService)
-	a("POST /api/services/{id}/deploy", s.deployService)
-	a("POST /api/services/{id}/{action}", s.serviceAction)
-	a("GET /api/services/{id}/containers", s.serviceContainers)
-	a("GET /api/services/{id}/stream", s.serviceStream)
+	g("GET /api/services/{id}", "service", permRead, s.getService)
+	g("PATCH /api/services/{id}", "service", permWrite, s.updateService)
+	g("DELETE /api/services/{id}", "service", permManage, s.deleteService)
+	g("POST /api/services/{id}/deploy", "service", permWrite, s.deployService)
+	g("POST /api/services/{id}/{action}", "service", permWrite, s.serviceAction)
+	g("GET /api/services/{id}/containers", "service", permRead, s.serviceContainers)
+	g("GET /api/services/{id}/stream", "service", permRead, s.serviceStream)
 
 	// settings, users, tokens, notifications
 	a("GET /api/settings", s.getSettings)
@@ -354,6 +395,25 @@ func (s *Server) Handler() http.Handler {
 	admin("PATCH /api/sso/providers/{id}", s.updateSSOProvider)
 	admin("DELETE /api/sso/providers/{id}", s.deleteSSOProvider)
 	admin("POST /api/sso/discover", s.discoverSSO)
+	admin("GET /api/ldap/directories", s.listLDAP)
+	admin("POST /api/ldap/directories", s.createLDAP)
+	admin("PATCH /api/ldap/directories/{id}", s.updateLDAP)
+	admin("DELETE /api/ldap/directories/{id}", s.deleteLDAP)
+	admin("POST /api/ldap/test", s.testLDAP)
+	a("GET /api/metrics/{scope}/{id}", s.metricsSeries)
+	a("GET /api/alerts", s.listAlerts)
+	a("POST /api/alerts/{id}/ack", s.ackAlert)
+	a("GET /api/alert-rules", s.listAlertRules)
+	admin("POST /api/alert-rules", s.createAlertRule)
+	admin("PATCH /api/alert-rules/{id}", s.updateAlertRule)
+	admin("DELETE /api/alert-rules/{id}", s.deleteAlertRule)
+	admin("PUT /api/notifications/{id}/alerts", s.setChannelAlerts)
+	a("GET /api/registries", s.listRegistries)
+	admin("POST /api/registries", s.createRegistry)
+	admin("PATCH /api/registries/{id}", s.updateRegistry)
+	admin("DELETE /api/registries/{id}", s.deleteRegistry)
+	admin("POST /api/registries/{id}/test", s.testRegistry)
+	admin("POST /api/registries/test", s.testRegistryDraft)
 	a("GET /api/tokens", s.listTokens)
 	a("POST /api/tokens", s.createToken)
 	a("DELETE /api/tokens/{id}", s.deleteToken)
@@ -364,15 +424,15 @@ func (s *Server) Handler() http.Handler {
 	admin("POST /api/notifications/{id}/test", s.testNotification)
 
 	// domains
-	a("GET /api/applications/{id}/domains", s.listDomains)
-	a("POST /api/applications/{id}/domains", s.createDomain)
-	a("POST /api/applications/{id}/domains/check", s.checkAllDomains)
-	a("POST /api/applications/{id}/domains/https", s.setAppHTTPS)
-	a("GET /api/applications/{id}/domains/suggest", s.suggestDomain)
-	a("GET /api/applications/{id}/dns-records", s.dnsRecords)
-	a("PATCH /api/domains/{id}", s.updateDomain)
-	a("DELETE /api/domains/{id}", s.deleteDomain)
-	a("POST /api/domains/{id}/check", s.checkDomainDNS)
+	g("GET /api/applications/{id}/domains", "application", permRead, s.listDomains)
+	g("POST /api/applications/{id}/domains", "application", permWrite, s.createDomain)
+	g("POST /api/applications/{id}/domains/check", "application", permRead, s.checkAllDomains)
+	g("POST /api/applications/{id}/domains/https", "application", permWrite, s.setAppHTTPS)
+	g("GET /api/applications/{id}/domains/suggest", "application", permRead, s.suggestDomain)
+	g("GET /api/applications/{id}/dns-records", "application", permRead, s.dnsRecords)
+	g("PATCH /api/domains/{id}", "domain", permWrite, s.updateDomain)
+	g("DELETE /api/domains/{id}", "domain", permWrite, s.deleteDomain)
+	g("POST /api/domains/{id}/check", "domain", permRead, s.checkDomainDNS)
 	admin("POST /api/settings/detect-ip", s.detectPublicIPs)
 	a("GET /api/dns/check", s.checkHostDNS)
 

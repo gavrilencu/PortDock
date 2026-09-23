@@ -46,13 +46,21 @@ func (e *Engine) DomainRoutes(ctx context.Context, app store.Application) ([]pro
 	if err != nil {
 		return nil, err
 	}
+	dnsReady := e.db.Setting(ctx, "dns_provider") != ""
 	out := make([]proxy.DomainRoute, 0, len(rows))
 	for _, d := range rows {
 		port := d.Port
 		if port == 0 {
 			port = app.Port
 		}
-		out = append(out, proxy.DomainRoute{Host: d.Host, Path: d.Path, Port: port, HTTPS: d.HTTPS, WWW: d.WWWRedirect, Indexing: d.Indexing})
+		cert := ""
+		switch {
+		case d.CertMode == "custom":
+			cert = "custom"
+		case d.CertMode == "dns" && dnsReady, d.CertMode != "http" && strings.HasPrefix(d.Host, "*.") && dnsReady:
+			cert = "dns"
+		}
+		out = append(out, proxy.DomainRoute{Host: d.Host, Path: d.Path, Port: port, HTTPS: d.HTTPS, WWW: d.WWWRedirect, Indexing: d.Indexing, Cert: cert})
 	}
 	return out, nil
 }
@@ -67,34 +75,32 @@ func (e *Engine) previewRoutes(app store.Application, srv store.Server, pr int) 
 	return out
 }
 
-// ApplyRoutes rewrites the production routes of app for its running containers.
-// Compose applications are routed with labels and need a redeploy instead.
+// ApplyRoutes rewrites the production routes of app for its running containers
+// on every server. Compose applications are routed with labels and need a redeploy.
 func (e *Engine) ApplyRoutes(ctx context.Context, app store.Application) error {
 	if app.BuildPack == "compose" {
 		return nil
-	}
-	x, srv, err := e.pool.ForID(ctx, app.ServerID)
-	if err != nil {
-		return err
 	}
 	routes, err := e.DomainRoutes(ctx, app)
 	if err != nil {
 		return err
 	}
-	cs, err := docker.PS(ctx, x, false, "label="+docker.LabelResource+"="+app.UUID, "label="+docker.LabelPR+"=0")
-	if err != nil {
-		return err
-	}
-	var ups []string
-	for _, c := range cs {
-		ups = append(ups, c.Name)
-	}
-	if len(routes) > 0 && srv.ProxyEnabled {
-		if err := proxy.Ensure(ctx, x, e.ProxyOptions(ctx), false); err != nil {
-			return fmt.Errorf("start proxy: %w", err)
+	return e.eachTarget(ctx, app, func(t target) error {
+		cs, err := docker.PS(ctx, t.x, false, "label="+docker.LabelResource+"="+app.UUID, "label="+docker.LabelPR+"=0")
+		if err != nil {
+			return err
 		}
-	}
-	return writeRoutes(ctx, x, e.routesPath(app.UUID, 0), proxy.RenderDynamic(proxy.AppRoutes{Name: app.UUID, Upstreams: ups, Domains: routes}))
+		var ups []string
+		for _, c := range cs {
+			ups = append(ups, c.Name)
+		}
+		if len(routes) > 0 && t.srv.ProxyEnabled {
+			if err := proxy.Ensure(ctx, t.x, e.ProxyOptions(ctx), false); err != nil {
+				return fmt.Errorf("start proxy: %w", err)
+			}
+		}
+		return writeRoutes(ctx, t.x, e.routesPath(app.UUID, 0), proxy.RenderDynamic(proxy.AppRoutes{Name: app.UUID, Upstreams: ups, Domains: routes}))
+	})
 }
 
 // removeAllRoutes deletes the production and preview routes of an application.

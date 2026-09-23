@@ -26,6 +26,7 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) error {
 	if u, sess, err := s.auth.AuthenticateSession(r); err == nil {
 		res["user"] = toUserOut(u)
 		res["mfa_setup_required"] = s.needsMFASetup(r.Context(), u, sess)
+		res["license"] = s.licenseSummary(r.Context())
 	}
 	return ok(w, res)
 }
@@ -180,6 +181,9 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	if in.Role != "admin" {
 		in.Role = "member"
 	}
+	if err := s.checkUserLimit(r.Context()); err != nil {
+		return err
+	}
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
 		return err
@@ -234,6 +238,11 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 	if in.Disabled != nil && *in.Disabled != u.Disabled {
 		if u.Role == "owner" || u.ID == auth.UserFrom(r.Context()).ID {
 			return badRequest("you cannot disable this account")
+		}
+		if !*in.Disabled {
+			if err := s.checkUserLimit(r.Context()); err != nil {
+				return err
+			}
 		}
 		u.Disabled = *in.Disabled
 		revoke = revoke || u.Disabled
@@ -490,7 +499,7 @@ func (s *Server) createNotification(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	c := store.NotificationChannel{Enabled: true, CreatedAt: store.Now(),
-		Events: "deployment.failed,deployment.success,backup.failed,server.unreachable,server.reachable"}
+		Events: "deployment.failed,deployment.success,backup.failed,server.unreachable,server.reachable,alert.firing,alert.resolved,deployment.approval_required,certificate.expiring,certificate.failed,certificate.renewed,update.available,update.success,update.failed"}
 	if err := s.applyNotification(&c, in); err != nil {
 		return err
 	}
@@ -566,38 +575,66 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) error {
 	type recent struct {
 		store.Deployment
 		ApplicationName string `db:"application_name" json:"application_name"`
+		EnvironmentID   int64  `db:"environment_id" json:"environment_id"`
 	}
 	deps, err := store.Select[recent](ctx, s.db, `SELECT d.id, d.uuid, d.application_id, d.status, d.trigger, d.commit_sha, d.commit_message,
-		d.branch, d.pr_number, d.image, d.started_at, d.finished_at, d.created_at, a.name AS application_name
-		FROM deployments d JOIN applications a ON a.id = d.application_id ORDER BY d.id DESC LIMIT 10`)
+		d.branch, d.pr_number, d.image, d.started_at, d.finished_at, d.created_at, a.name AS application_name, a.environment_id AS environment_id
+		FROM deployments d JOIN applications a ON a.id = d.application_id ORDER BY d.id DESC LIMIT 200`)
 	if err != nil {
 		return err
 	}
+	counts := map[string]int{}
+	if u := auth.UserFrom(ctx); !u.IsAdmin() {
+		// Members: everything is counted over the projects they can see.
+		visible := s.envVisibility(ctx)
+		deps = filterBy(deps, func(d recent) bool { return visible(d.EnvironmentID) })
+		type res struct {
+			Env    int64  `db:"environment_id"`
+			Status string `db:"status"`
+		}
+		for _, t := range []string{"applications", "databases", "services"} {
+			rows, _ := store.Select[res](ctx, s.db, "SELECT environment_id, status FROM "+t)
+			for _, x := range rows {
+				if visible(x.Env) {
+					counts[t]++
+					if x.Status == "running" {
+						counts["running"]++
+					}
+				}
+			}
+		}
+		counts["projects"] = len(s.visibleProjectIDs(ctx))
+		today := time.Now().UTC().Format("2006-01-02")
+		for _, d := range deps {
+			if d.CreatedAt >= today {
+				counts["deployments_today"]++
+				if d.Status == "failed" {
+					counts["failed_today"]++
+				}
+			}
+		}
+	}
+	if len(deps) > 10 {
+		deps = deps[:10]
+	}
+	all := map[string]int{
+		"projects":          count("SELECT COUNT(*) FROM projects"),
+		"applications":      count("SELECT COUNT(*) FROM applications"),
+		"databases":         count("SELECT COUNT(*) FROM databases"),
+		"services":          count("SELECT COUNT(*) FROM services"),
+		"running":           count("SELECT (SELECT COUNT(*) FROM applications WHERE status = 'running') + (SELECT COUNT(*) FROM databases WHERE status = 'running') + (SELECT COUNT(*) FROM services WHERE status = 'running')"),
+		"deployments_today": count("SELECT COUNT(*) FROM deployments WHERE created_at >= date('now')"),
+		"failed_today":      count("SELECT COUNT(*) FROM deployments WHERE status = 'failed' AND created_at >= date('now')"),
+	}
+	if !auth.UserFrom(ctx).IsAdmin() {
+		for _, k := range []string{"projects", "applications", "databases", "services", "running", "deployments_today", "failed_today"} {
+			all[k] = counts[k]
+		}
+	}
+	all["servers"] = len(servers)
 	return ok(w, map[string]any{
-		"counts": map[string]int{
-			"projects":          count("SELECT COUNT(*) FROM projects"),
-			"applications":      count("SELECT COUNT(*) FROM applications"),
-			"databases":         count("SELECT COUNT(*) FROM databases"),
-			"services":          count("SELECT COUNT(*) FROM services"),
-			"servers":           len(servers),
-			"running":           count("SELECT (SELECT COUNT(*) FROM applications WHERE status = 'running') + (SELECT COUNT(*) FROM databases WHERE status = 'running') + (SELECT COUNT(*) FROM services WHERE status = 'running')"),
-			"deployments_today": count("SELECT COUNT(*) FROM deployments WHERE created_at >= date('now')"),
-			"failed_today":      count("SELECT COUNT(*) FROM deployments WHERE status = 'failed' AND created_at >= date('now')"),
-		},
+		"counts":             all,
 		"servers":            servers,
 		"recent_deployments": deps,
 	})
-}
-
-func (s *Server) listActivity(w http.ResponseWriter, r *http.Request) error {
-	type row struct {
-		store.Activity
-		UserName string `db:"user_name" json:"user_name"`
-	}
-	rows, err := store.Select[row](r.Context(), s.db,
-		"SELECT a.*, COALESCE(u.name, 'system') AS user_name FROM activity a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT 200")
-	if err != nil {
-		return err
-	}
-	return ok(w, rows)
 }

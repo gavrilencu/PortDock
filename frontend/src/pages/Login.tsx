@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Navigate, useSearchParams } from "react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, GitBranch, Lock, ShieldCheck, Workflow } from "lucide-react";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
+import type { LoginProviders } from "../lib/types";
+import { ProviderMark } from "../components/sso";
 import { LogoMark, useAuthStatus } from "../components/Layout";
 import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
 
@@ -16,25 +18,44 @@ export function LoginPage() {
   const { data, isLoading } = useAuthStatus();
   const [params] = useSearchParams();
   const qc = useQueryClient();
+  const providers = useQuery({ queryKey: ["login-providers"], queryFn: () => api.get<LoginProviders>("/auth/providers"), staleTime: 60_000 });
   const [form, setForm] = useState({ name: "", email: "", password: "" });
-  const [error, setError] = useState<unknown>(null);
+  const [mfa, setMfa] = useState<{ token: string; code: string; recovery: boolean } | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<unknown>(params.get("sso_error") ? new Error(params.get("sso_error")!) : null);
   const [busy, setBusy] = useState(false);
 
   if (isLoading) return null;
   const next = params.get("next") || "/";
   if (data?.user) return <Navigate to={next} replace />;
   const setup = data?.setup_required;
+  const ssoList = setup ? [] : (providers.data?.providers ?? []);
+  const ldapList = setup ? [] : (providers.data?.ldap ?? []);
+  const passwordForm = setup || providers.data?.password_login !== false || showPassword || ssoList.length === 0 || ldapList.length > 0;
 
+  const done = async () => {
+    await qc.invalidateQueries({ queryKey: ["auth-status"] });
+    location.href = next;
+  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post(setup ? "/auth/register" : "/auth/login", form);
-      await qc.invalidateQueries({ queryKey: ["auth-status"] });
-      location.href = next;
+      if (mfa) {
+        await api.post("/auth/login/mfa", { mfa_token: mfa.token, code: mfa.code });
+        await done();
+        return;
+      }
+      const res = await api.post<{ mfa_required?: boolean; mfa_token?: string }>(setup ? "/auth/register" : "/auth/login", form);
+      if (res.mfa_required && res.mfa_token) {
+        setMfa({ token: res.mfa_token, code: "", recovery: false });
+        return;
+      }
+      await done();
     } catch (err) {
       setError(err);
+      if (mfa && err instanceof ApiError && (err.status === 429 || /expired/.test(err.message))) setMfa(null);
     } finally {
       setBusy(false);
     }
@@ -48,30 +69,118 @@ export function LoginPage() {
           <span className="text-[15px] font-semibold tracking-[-0.02em]">Shipyard</span>
         </div>
         <div className="flex flex-1 items-center justify-center py-12">
-          <form onSubmit={submit} className="w-full max-w-[360px]">
-            <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? "Set up your instance" : "Sign in"}</h1>
-            <p className="mt-2 text-[13px] leading-relaxed text-subtle">
-              {setup ? "Create the owner account. You can invite your team afterwards." : "Welcome back. Enter your credentials to access your workspace."}
-            </p>
-            <div className="mt-8 space-y-4">
-              {setup && (
-                <Field label="Full name">
-                  <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Cooper" autoFocus autoComplete="name" />
+          {mfa ? (
+            <form onSubmit={submit} className="w-full max-w-[360px]">
+              <span className="flex size-10 items-center justify-center rounded-lg border border-border bg-surface-2">
+                <ShieldCheck className="size-5" />
+              </span>
+              <h1 className="mt-5 text-2xl font-semibold tracking-[-0.025em]">Two-factor authentication</h1>
+              <p className="mt-2 text-[13px] leading-relaxed text-subtle">
+                {mfa.recovery ? "Enter one of the recovery codes you saved when you set up two-factor authentication." : "Open your authenticator app and enter the 6-digit code for Shipyard."}
+              </p>
+              <div className="mt-8 space-y-4">
+                <Field label={mfa.recovery ? "Recovery code" : "Authentication code"}>
+                  {mfa.recovery ? (
+                    <Input className="h-11 font-mono tracking-wider" value={mfa.code} onChange={(e) => setMfa({ ...mfa, code: e.target.value })} placeholder="xxxxx-xxxxx" autoFocus autoComplete="off" />
+                  ) : (
+                    <Input
+                      className="h-11 text-center font-mono text-lg tracking-[0.4em]"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="000000"
+                      autoFocus
+                      value={mfa.code}
+                      onChange={(e) => setMfa({ ...mfa, code: e.target.value.replace(/\D/g, "") })}
+                    />
+                  )}
                 </Field>
+                {error ? <ErrorBox error={error} title="Verification failed" /> : null}
+                <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={busy} disabled={mfa.recovery ? mfa.code.length < 10 : mfa.code.length !== 6}>
+                  Verify
+                </Button>
+              </div>
+              <div className="mt-6 flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  className="text-muted underline-offset-2 hover:text-fg hover:underline"
+                  onClick={() => {
+                    setMfa({ ...mfa, code: "", recovery: !mfa.recovery });
+                    setError(null);
+                  }}
+                >
+                  {mfa.recovery ? "Use authenticator app" : "Use a recovery code"}
+                </button>
+                <button
+                  type="button"
+                  className="text-muted underline-offset-2 hover:text-fg hover:underline"
+                  onClick={() => {
+                    setMfa(null);
+                    setError(null);
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={submit} className="w-full max-w-[360px]">
+              <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? "Set up your instance" : "Sign in"}</h1>
+              <p className="mt-2 text-[13px] leading-relaxed text-subtle">
+                {setup ? "Create the owner account. You can invite your team afterwards." : "Welcome back. Sign in to access your workspace."}
+              </p>
+              {ssoList.length > 0 && (
+                <div className="mt-8 space-y-2">
+                  {ssoList.map((p) => (
+                    <a
+                      key={p.slug}
+                      href={`/api/auth/sso/${p.slug}/start?next=${encodeURIComponent(next)}`}
+                      className="flex h-10 w-full items-center justify-center gap-2.5 rounded-lg border border-border bg-surface text-[13px] font-medium shadow-xs transition-colors hover:border-border-strong hover:bg-surface-2"
+                    >
+                      <ProviderMark kind={p.kind} name={p.name} className="size-5 text-[9px]" />
+                      Continue with {p.name}
+                    </a>
+                  ))}
+                </div>
               )}
-              <Field label="Work email">
-                <Input className="h-10" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane@company.com" autoFocus={!setup} required autoComplete="email" />
-              </Field>
-              <Field label="Password" hint={setup ? "Use at least 8 characters." : undefined}>
-                <PasswordInput className="h-10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={setup ? 8 : undefined} autoComplete={setup ? "new-password" : "current-password"} />
-              </Field>
-              {error ? <ErrorBox error={error} title={setup ? "Could not create account" : "Sign-in failed"} /> : null}
-              <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={busy} trailing={!busy && <ArrowRight />}>
-                {setup ? "Create owner account" : "Continue"}
-              </Button>
-            </div>
-            {!setup && <p className="mt-6 text-xs leading-relaxed text-subtle">Forgot your password? Ask an administrator, or reset it on the server with <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">shipyard -reset-password</code>.</p>}
-          </form>
+              {ssoList.length > 0 && passwordForm && (
+                <div className="my-6 flex items-center gap-3 text-2xs font-medium uppercase tracking-wider text-faint">
+                  <span className="h-px flex-1 bg-border" /> or <span className="h-px flex-1 bg-border" />
+                </div>
+              )}
+              {passwordForm ? (
+                <div className={ssoList.length > 0 ? "space-y-4" : "mt-8 space-y-4"}>
+                  {setup && (
+                    <Field label="Full name">
+                      <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Cooper" autoFocus autoComplete="name" />
+                    </Field>
+                  )}
+                  <Field label={ldapList.length ? "Email or username" : "Work email"} hint={ldapList.length && !setup ? `Use your ${ldapList.map((d) => d.name).join(" / ")} account or a Shipyard account.` : undefined}>
+                    <Input className="h-10" type={ldapList.length ? "text" : "email"} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={ldapList.length ? "jdoe or jane@company.com" : "jane@company.com"} autoFocus={!setup && ssoList.length === 0} required autoComplete="username" />
+                  </Field>
+                  <Field label="Password" hint={setup ? "Use at least 8 characters." : undefined}>
+                    <PasswordInput className="h-10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={setup ? 8 : undefined} autoComplete={setup ? "new-password" : "current-password"} />
+                  </Field>
+                  {error ? <ErrorBox error={error} title={setup ? "Could not create account" : "Sign-in failed"} /> : null}
+                  <Button type="submit" variant={ssoList.length > 0 ? "secondary" : "primary"} size="lg" className="w-full justify-center" loading={busy} trailing={!busy && <ArrowRight />}>
+                    {setup ? "Create owner account" : ssoList.length > 0 ? "Continue with email" : "Continue"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  {error ? <ErrorBox error={error} title="Sign-in failed" /> : null}
+                  <button type="button" onClick={() => setShowPassword(true)} className="text-xs text-muted underline-offset-2 hover:text-fg hover:underline">
+                    Owner sign-in with password
+                  </button>
+                </div>
+              )}
+              {!setup && passwordForm && (
+                <p className="mt-6 text-xs leading-relaxed text-subtle">
+                  Forgot your password? Ask an administrator, or reset it on the server with <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">shipyard -reset-password</code>.
+                </p>
+              )}
+            </form>
+          )}
         </div>
         <div className="flex items-center justify-between text-xs text-faint">
           <span className="flex items-center gap-1.5">

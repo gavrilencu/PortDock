@@ -19,8 +19,11 @@ COPY backend/ .
 RUN rm -rf web/dist
 COPY --from=ui /ui/dist ./web/dist
 ARG VERSION=dev
+# GitHub repository (owner/name) the release was built from: instances update
+# from it automatically, without any configuration.
+ARG UPDATE_REPO=
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags="-s -w -X github.com/shipyard/shipyard/internal/api.Version=${VERSION}" \
+    -ldflags="-s -w -X github.com/shipyard/shipyard/internal/api.Version=${VERSION} -X github.com/shipyard/shipyard/internal/api.DefaultUpdateRepo=${UPDATE_REPO}" \
     -o /out/shipyard ./cmd/shipyard
 
 # ---- runtime ----

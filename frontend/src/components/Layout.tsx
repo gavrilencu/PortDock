@@ -3,6 +3,7 @@ import { MFAEnforcement } from "./security";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  BellRing,
   ChevronsUpDown,
   FolderKanban,
   KeyRound,
@@ -22,6 +23,7 @@ import {
   User as UserIcon,
   Users,
   X,
+  Network,
 } from "lucide-react";
 import { api } from "../lib/api";
 import type { AuthStatus, Server, User } from "../lib/types";
@@ -30,6 +32,8 @@ import { useTheme, type ThemeMode } from "../lib/theme";
 import { cn } from "../lib/utils";
 import { CommandPaletteProvider, useCommandPalette } from "./CommandPalette";
 import { Avatar, Button, HeaderSlotProvider, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator, Skeleton } from "./ui";
+import { useFiringAlerts } from "../pages/Alerts";
+import { SidebarUpdate } from "./updates";
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -65,12 +69,16 @@ const navGroups = [
     items: [
       { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
       { to: "/projects", label: "Projects", icon: FolderKanban },
+      { to: "/topology", label: "Topology", icon: Network },
       { to: "/deployments", label: "Deployments", icon: Rocket },
     ],
   },
   {
     label: "Infrastructure",
-    items: [{ to: "/servers", label: "Servers", icon: ServerIcon }],
+    items: [
+      { to: "/servers", label: "Servers", icon: ServerIcon },
+      { to: "/alerts", label: "Alerts", icon: BellRing },
+    ],
   },
   {
     label: "Organization",
@@ -88,6 +96,8 @@ function themeIcon(m: ThemeMode) {
 function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLogout }: { user: User; collapsed: boolean; onToggle?: () => void; onNavigate?: () => void; theme: ThemeMode; setTheme: (m: ThemeMode) => void; onLogout: () => void }) {
   const openPalette = useCommandPalette();
   const location = useLocation();
+  const firing = useFiringAlerts().data ?? [];
+  const critical = firing.some((a) => a.severity === "critical");
   return (
     <aside className={cn("flex h-full flex-col border-r border-border bg-surface transition-[width] duration-200", collapsed ? "w-[60px]" : "w-[248px]")}>
       <div className={cn("flex h-14 items-center border-b border-border", collapsed ? "justify-center px-2" : "px-3")}>
@@ -146,8 +156,14 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
                       );
                     }}
                   >
-                    <n.icon />
-                    {!collapsed && n.label}
+                    <span className="relative flex">
+                      <n.icon />
+                      {collapsed && n.to === "/alerts" && firing.length > 0 && <span className={cn("absolute -right-1 -top-1 size-2 rounded-full", critical ? "bg-danger" : "bg-warning")} />}
+                    </span>
+                    {!collapsed && <span className="flex-1">{n.label}</span>}
+                    {!collapsed && n.to === "/alerts" && firing.length > 0 && (
+                      <span className={cn("rounded px-1.5 text-2xs font-semibold leading-4 text-white", critical ? "bg-danger" : "bg-warning")}>{firing.length}</span>
+                    )}
                   </NavLink>
                 );
               })}
@@ -157,6 +173,9 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
       </nav>
 
       <div className={cn("space-y-1 border-t border-border py-2", collapsed ? "px-2" : "px-3")}>
+        <div className="pb-1">
+          <SidebarUpdate collapsed={collapsed} />
+        </div>
         {onToggle && (
           <button onClick={onToggle} className={cn("flex h-8 w-full items-center gap-2.5 rounded-md text-[13px] text-muted hover:bg-surface-2 hover:text-fg [&_svg]:size-4 [&_svg]:text-faint", collapsed ? "justify-center" : "px-2")}>
             {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
@@ -331,6 +350,18 @@ export function AppLayout() {
             <main className="min-h-0 flex-1 overflow-y-auto">
               <HeaderSlotProvider value={slot}>
                 <div className="mx-auto w-full max-w-[1320px] px-4 py-7 md:px-8">
+                  {data.license?.message && (data.user.role === "owner" || data.user.role === "admin") && (
+                    <Link
+                      to="/settings?tab=license"
+                      className={cn(
+                        "mb-5 flex items-center gap-2 rounded-lg border px-4 py-2.5 text-[13px]",
+                        data.license.expired ? "border-danger/30 bg-danger-soft text-danger" : data.license.in_grace ? "border-warning/40 bg-warning-soft text-warning" : "border-border bg-surface-2/60 text-muted",
+                      )}
+                    >
+                      <span className="flex-1">{data.license.message}</span>
+                      <span className="font-medium underline underline-offset-2">Manage license</span>
+                    </Link>
+                  )}
                   <Outlet />
                 </div>
               </HeaderSlotProvider>

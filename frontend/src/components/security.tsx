@@ -332,6 +332,7 @@ export function describeUA(ua: string): string {
 
 export function methodLabel(m: string): { label: string; tone: "neutral" | "success" | "info" | "warning" } {
   if (m.startsWith("sso:")) return { label: `SSO · ${m.slice(4)}`, tone: "info" };
+  if (m.startsWith("ldap:")) return { label: `LDAP · ${m.slice(5).replace(/\+.*/, "")}${m.includes("+totp") ? " + 2FA" : ""}`, tone: m.includes("+totp") ? "success" : "info" };
   if (m === "password+totp") return { label: "Password + 2FA", tone: "success" };
   if (m === "password+recovery") return { label: "Recovery code", tone: "warning" };
   return { label: "Password", tone: "neutral" };

@@ -40,6 +40,8 @@
   --ring: rgb(79 70 229 / 0.28);
   /* Chart palette (validated for CVD separation & contrast on light surface). */
   --chart-1: #6366f1;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
   --chart-critical: #dc2626;
   --chart-grid: #ececee;
 }
@@ -74,6 +76,8 @@
   --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.3);
   --ring: rgb(129 140 248 / 0.35);
   --chart-1: #6d6ff2;
+  --chart-2: #2dd4bf;
+  --chart-3: #fbbf24;
   --chart-critical: #ef5b5b;
   --chart-grid: #212125;
 }
@@ -214,4 +218,14 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Topology: animated edge for crash-looping containers */
+@keyframes topo-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+.topo-flow {
+  animation: topo-flow 0.8s linear infinite;
 }

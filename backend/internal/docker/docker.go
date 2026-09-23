@@ -35,6 +35,9 @@ type Container struct {
 	Networks  string            `json:"networks"`
 	CreatedAt string            `json:"created_at"`
 	Labels    map[string]string `json:"labels"`
+	// Set when containers of several servers are listed together.
+	ServerID   int64  `json:"server_id,omitempty"`
+	ServerName string `json:"server_name,omitempty"`
 }
 
 type rawContainer struct {

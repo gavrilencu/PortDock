@@ -101,6 +101,7 @@ type domainInput struct {
 	HTTPS       *bool   `json:"https"`
 	WWWRedirect *string `json:"www_redirect"`
 	Indexing    *bool   `json:"indexing"`
+	CertMode    *string `json:"cert_mode"`
 }
 
 // parseDomain accepts "app.example.com", "https://app.example.com/path", "http://…".
@@ -255,6 +256,14 @@ func applyDomainInput(d *store.AppDomain, in domainInput) error {
 			d.WWWRedirect = *in.WWWRedirect
 		default:
 			return badRequest("www_redirect must be none, to-www or to-apex")
+		}
+	}
+	if in.CertMode != nil {
+		switch *in.CertMode {
+		case "auto", "dns", "custom":
+			d.CertMode = *in.CertMode
+		default:
+			return badRequest("cert_mode must be auto, dns or custom")
 		}
 	}
 	if d.WWWRedirect != "none" && strings.HasPrefix(d.Host, "*.") {
