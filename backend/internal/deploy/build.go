@@ -339,6 +339,10 @@ type ComposeUp struct {
 	// instead of container labels; Routed services join the proxy network.
 	FileRoutes bool
 	Routed     []string
+	// ServiceEnv sets the environment of each service on top of the compose file's
+	// own `environment:` (PortDock values win). The main service also gets Env.
+	// Used with FileRoutes; other callers pass Env through an env file.
+	ServiceEnv map[string]map[string]string
 	Env      map[string]string
 	Kind     string // application | service
 	Resource string
@@ -349,6 +353,15 @@ type ComposeUp struct {
 		Write([]byte) (int, error)
 		Printf(string, ...any)
 	}
+}
+
+// escapeCompose doubles "$" so compose doesn't interpolate variable values.
+func escapeCompose(env map[string]string) map[string]string {
+	out := make(map[string]string, len(env))
+	for k, v := range env {
+		out[k] = strings.ReplaceAll(v, "$", "$$")
+	}
+	return out
 }
 
 // ComposeResult reports the main service of a deployed compose project.
@@ -417,7 +430,20 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 		if n == main || slices.Contains(c.Routed, n) {
 			svc["networks"] = []string{"default", c.Network}
 		}
-		if n == main {
+		if c.FileRoutes {
+			env := map[string]string{}
+			if n == main {
+				for k, v := range c.Env {
+					env[k] = v
+				}
+			}
+			for k, v := range c.ServiceEnv[n] {
+				env[k] = v
+			}
+			if len(env) > 0 {
+				svc["environment"] = escapeCompose(env)
+			}
+		} else if n == main {
 			svc["env_file"] = []string{envPath}
 		}
 		services[n] = svc
@@ -426,7 +452,7 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 	override["networks"] = map[string]any{c.Network: map[string]any{"external": true}}
 	ob, _ := yaml.Marshal(override)
 	overridePath := c.Dir + "/.portdock.override.yml"
-	if err := executor.WriteFile(ctx, c.X, overridePath, ob, "0644"); err != nil {
+	if err := executor.WriteFile(ctx, c.X, overridePath, ob, "0600"); err != nil { // holds variable values
 		return res, err
 	}
 
@@ -470,24 +496,37 @@ func (j *job) deployComposeAll(ctx context.Context, targets []target) error {
 }
 
 func (j *job) deployCompose(ctx context.Context) error {
-	if j.d.RollbackOf != 0 {
+	// A configuration change (new variables) restarts the deployed version
+	// without fetching or building anything.
+	reuse := j.d.RollbackOf != 0 && j.d.Trigger == TriggerConfig
+	if j.d.RollbackOf != 0 && !reuse {
 		return errors.New("rollback is not supported for docker compose applications; redeploy a previous commit instead")
 	}
 	// Compose checkouts are kept so relative bind mounts and build contexts stay valid.
 	j.workdir = path.Join(j.e.cfg.DataDir, "apps", j.app.UUID, "compose")
 	j.srcDir = j.workdir + "/src"
 	j.ctxDir = path.Join(j.srcDir, strings.Trim(j.app.BaseDirectory, "/"))
-	if err := j.checkout(ctx); err != nil {
+	if reuse {
+		j.log.Step("Applying configuration (no rebuild)")
+	} else if err := j.checkout(ctx); err != nil {
 		return err
 	}
 	j.workdir = "" // keep the checkout after deploy
 
 	j.log.Step("Docker Compose up")
-	vars := j.env.Runtime
+	// Variables for ${VAR} interpolation in the compose file: the application's,
+	// then each service's (for build args of that service).
+	vars := map[string]string{}
 	for k, v := range j.env.Build {
-		if _, ok := vars[k]; !ok {
+		vars[k] = v
+	}
+	for _, svc := range j.env.Services {
+		for k, v := range svc {
 			vars[k] = v
 		}
+	}
+	for k, v := range j.env.Runtime {
+		vars[k] = v
 	}
 	j.d.Image = "compose@" + short(j.d.CommitSHA)
 	if j.reg != nil {
@@ -499,6 +538,9 @@ func (j *job) deployCompose(ctx context.Context) error {
 	// Resolve which service and port each domain targets before starting anything.
 	raw, err := executor.Output(ctx, j.x, "cat "+q(file))
 	if err != nil {
+		if reuse {
+			return errors.New("the application has not been deployed on this server yet; deploy it first")
+		}
 		return fmt.Errorf("read compose file: %w", err)
 	}
 	main, mainPort, services, err := composeMain(raw, j.app.ComposeService, j.app.Port)
@@ -512,8 +554,8 @@ func (j *job) deployCompose(ctx context.Context) error {
 	if _, err := RunComposeUp(ctx, ComposeUp{
 		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir, File: file,
 		Service: main, Port: mainPort, FileRoutes: true, Routed: routedServices(routes),
-		Env: vars, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
-		Build: true, Timeout: j.app.HealthCheckTimeout, Log: j.log,
+		Env: vars, ServiceEnv: j.env.Services, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
+		Build: !reuse, Timeout: j.app.HealthCheckTimeout, Log: j.log,
 	}); err != nil {
 		return err
 	}
@@ -527,6 +569,8 @@ type Env struct {
 	Runtime map[string]string
 	Build   map[string]string
 	Secrets []string
+	// Services holds the variables of each Docker Compose service (compose applications).
+	Services map[string]map[string]string
 }
 
 // ResolveEnv decrypts the environment variables of a resource. Preview
@@ -536,7 +580,7 @@ func (e *Engine) ResolveEnv(ctx context.Context, ownerType string, ownerID int64
 	if err != nil {
 		return Env{}, err
 	}
-	env := Env{Runtime: map[string]string{}, Build: map[string]string{}}
+	env := Env{Runtime: map[string]string{}, Build: map[string]string{}, Services: map[string]map[string]string{}}
 	for _, v := range vars {
 		if v.IsPreview && !preview {
 			continue
@@ -545,12 +589,19 @@ func (e *Engine) ResolveEnv(ctx context.Context, ownerType string, ownerID int64
 		if err != nil {
 			return env, fmt.Errorf("decrypt %s: %w", v.Key, err)
 		}
+		if v.IsSecret {
+			env.Secrets = append(env.Secrets, val)
+		}
+		if v.Service != "" {
+			if env.Services[v.Service] == nil {
+				env.Services[v.Service] = map[string]string{}
+			}
+			env.Services[v.Service][v.Key] = val
+			continue
+		}
 		env.Runtime[v.Key] = val
 		if v.IsBuild {
 			env.Build[v.Key] = val
-		}
-		if v.IsSecret {
-			env.Secrets = append(env.Secrets, val)
 		}
 	}
 	return env, nil

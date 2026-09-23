@@ -61,6 +61,10 @@ func (e *Engine) Start(ctx context.Context) {
 	}
 }
 
+// TriggerConfig redeploys the running version (same image or compose checkout)
+// so changed environment variables take effect without a build.
+const TriggerConfig = "config"
+
 type Options struct {
 	Trigger       string
 	CommitSHA     string

@@ -99,7 +99,7 @@ export function DeploymentPage() {
             <span className="flex items-center gap-1">
               <Clock className="size-3.5" /> {timeAgo(d.created_at)} · {d.started_at ? duration(d.started_at, d.finished_at || undefined) : t("queued")}
             </span>
-            <span>{({ manual: t("Triggered by a user"), webhook: t("Triggered by a Git push"), api: t("Triggered by the API"), rollback: t("Triggered by a rollback") } as Record<string, string>)[d.trigger] ?? t("Triggered by {trigger}", { trigger: d.trigger })}</span>
+            <span>{({ manual: t("Triggered by a user"), webhook: t("Triggered by a Git push"), api: t("Triggered by the API"), rollback: t("Triggered by a rollback"), config: t("Restarted with changed variables") } as Record<string, string>)[d.trigger] ?? t("Triggered by {trigger}", { trigger: d.trigger })}</span>
           </span>
         }
         breadcrumbs={

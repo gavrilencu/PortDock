@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Code2, Eye, EyeOff, Hammer, KeyRound, Lock, Plus, Save, Trash2 } from "lucide-react";
+import { Code2, Eye, EyeOff, FileCode2, Hammer, KeyRound, Lock, Plus, RotateCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { EnvVar } from "../lib/types";
-import { Badge, Button, Card, Empty, Input, Loading, Switch, Tabs, Textarea, useConfirm } from "./ui";
+import type { ApplicationDetail, EnvVar } from "../lib/types";
+import { Badge, Button, Card, Empty, Input, Loading, SegmentedControl, Switch, Tabs, Textarea, useConfirm } from "./ui";
 import { cn } from "../lib/utils";
 import { t } from "../lib/i18n";
+import { useComposeServices } from "./Domains";
 
 function toDotEnv(vars: EnvVar[]) {
   return vars
@@ -18,11 +19,20 @@ function toDotEnv(vars: EnvVar[]) {
     .join("\n");
 }
 
-export function EnvEditor({ owner, supportsBuild = false, supportsPreview = false }: { owner: string; supportsBuild?: boolean; supportsPreview?: boolean }) {
+/**
+ * Variables of an application, service or database. For docker compose
+ * applications each compose service has its own variables (on top of the
+ * application-wide ones), and `app` enables applying changes with a restart.
+ */
+export function EnvEditor({ owner, supportsBuild = false, supportsPreview = false, app }: { owner: string; supportsBuild?: boolean; supportsPreview?: boolean; app?: ApplicationDetail }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const key = ["envs", owner];
   const { data, isLoading } = useQuery({ queryKey: key, queryFn: () => api.get<EnvVar[]>(`${owner}/envs`) });
+  const compose = app?.build_pack === "compose";
+  const services = useComposeServices(app?.id ?? 0, compose).data?.services ?? [];
+  const [service, setService] = useState("");
+  const [changed, setChanged] = useState(false);
   const [scope, setScope] = useState<"production" | "preview">("production");
   const [dev, setDev] = useState(false);
   const [bulk, setBulk] = useState("");
@@ -31,11 +41,26 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
   const [edits, setEdits] = useState<Record<number, string>>({});
 
   const isPreview = scope === "preview";
-  const vars = (data ?? []).filter((v) => v.is_preview === isPreview);
-  const refresh = () => qc.invalidateQueries({ queryKey: key });
+  const vars = (data ?? []).filter((v) => v.is_preview === isPreview && (v.service ?? "") === service);
+  const fromCompose = Object.entries(services.find((s) => s.name === service)?.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const refresh = () => {
+    setChanged(true);
+    return qc.invalidateQueries({ queryKey: key });
+  };
+
+  const apply = useMutation({
+    mutationFn: () => api.post(`/applications/${app!.id}/apply-env`),
+    onSuccess: () => {
+      setChanged(false);
+      qc.invalidateQueries({ queryKey: ["deployments"] });
+      qc.invalidateQueries({ queryKey: ["application", app!.id] });
+      toast.success(t("Restarting with the new variables"), { description: t("Follow it in Deployments. Nothing is rebuilt.") });
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const add = useMutation({
-    mutationFn: () => api.post<EnvVar>(`${owner}/envs`, { ...draft, is_preview: isPreview }),
+    mutationFn: () => api.post<EnvVar>(`${owner}/envs`, { ...draft, is_preview: isPreview, service }),
     onSuccess: () => {
       setDraft({ key: "", value: "", is_build: false, is_secret: false });
       refresh();
@@ -54,7 +79,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
     onError: (e) => toast.error(e.message),
   });
   const saveBulk = useMutation({
-    mutationFn: () => api.put<EnvVar[]>(`${owner}/envs`, { content: bulk, is_preview: isPreview }),
+    mutationFn: () => api.put<EnvVar[]>(`${owner}/envs`, { content: bulk, is_preview: isPreview, service }),
     onSuccess: () => {
       refresh();
       setDev(false);
@@ -65,8 +90,33 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
 
   if (isLoading) return <Loading />;
 
+  const serviceName = service || app?.compose_service || t("main service");
   return (
     <div className="space-y-4">
+      {compose && services.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[13px] text-muted">{t("Variables of")}</span>
+          <SegmentedControl
+            value={service}
+            onChange={(v) => {
+              setService(v);
+              setDev(false);
+            }}
+            options={[{ value: "", label: t("Application") }, ...services.map((s) => ({ value: s.name, label: s.name }))]}
+          />
+        </div>
+      )}
+      {app && !isPreview && (
+        <div className={cn("flex flex-wrap items-center gap-3 rounded-lg border px-4 py-2.5 text-[13px]", changed ? "border-info/25 bg-info-soft" : "border-border bg-surface-2/40")}>
+          <RotateCw className={cn("size-4", changed ? "text-info" : "text-faint")} />
+          <span className="flex-1 text-muted">
+            {changed ? t("Variables saved. Restart the application to use them now — the next deployment uses them anyway.") : t("Changes are saved right away and used by the next deployment. Restart to apply them now, without a rebuild.")}
+          </span>
+          <Button size="sm" variant={changed ? "primary" : "secondary"} icon={<RotateCw className="size-3.5" />} loading={apply.isPending} onClick={() => apply.mutate()}>
+            {t("Restart with new variables")}
+          </Button>
+        </div>
+      )}
       {supportsPreview && (
         <Tabs
           className="mb-2"
@@ -79,8 +129,16 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
         />
       )}
       <Card
-        title={isPreview ? t("Preview variables") : t("Environment variables")}
-        description={isPreview ? t("Override production values for pull request previews.") : t("Encrypted at rest. Changes apply on the next deployment.")}
+        title={isPreview ? t("Preview variables") : service ? t("Variables of {service}", { service }) : t("Environment variables")}
+        description={
+          isPreview
+            ? t("Override production values for pull request previews.")
+            : service
+              ? t("Given only to the {service} container. They override the values from docker-compose.yml and can be used as ${VAR} in its build args.", { service })
+              : compose
+                ? t("Available as ${VAR} in docker-compose.yml and given to the main service ({service}). Encrypted at rest.", { service: serviceName })
+                : t("Encrypted at rest. Changes apply on the next deployment.")
+        }
         actions={
           dev ? (
             <>
@@ -174,6 +232,34 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                 </div>
               );
             })}
+            {fromCompose.length > 0 && (
+              <div className="bg-surface-2/30 px-5 py-3">
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+                  <FileCode2 className="size-3.5" />
+                  {t("From docker-compose.yml")}
+                </div>
+                <div className="space-y-1.5">
+                  {fromCompose.map(([k, val]) => {
+                    const overridden = vars.some((v) => v.key === k);
+                    return (
+                      <div key={k} className="flex flex-wrap items-center gap-3">
+                        <code className={cn("w-56 shrink-0 truncate font-mono text-[13px]", overridden && "text-faint line-through")}>{k}</code>
+                        <code className={cn("min-w-48 flex-1 truncate font-mono text-[13px] text-muted", overridden && "text-faint line-through")} title={val}>
+                          {val || "—"}
+                        </code>
+                        {overridden ? (
+                          <Badge>{t("overridden")}</Badge>
+                        ) : (
+                          <Button size="sm" variant="ghost" onClick={() => setDraft({ key: k, value: val, is_build: false, is_secret: false })}>
+                            {t("Override")}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <form
               className="flex flex-wrap items-center gap-3 bg-panel-2/40 px-5 py-3"
               onSubmit={(e) => {

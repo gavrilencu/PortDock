@@ -22,8 +22,16 @@ export type UpdateInfo = {
   settings?: { repo: string; image: string; default_image: string; channel: string; auto: boolean; token_set: boolean; official_repo: string; overridden: boolean };
 };
 
+// Checked every time PortDock is opened or its tab regains focus (the server
+// asks GitHub at most every 2 minutes), and every 15 minutes while it stays open.
 export function useUpdateInfo() {
-  return useQuery({ queryKey: ["system-update"], queryFn: () => api.get<UpdateInfo>("/system/update"), refetchInterval: 30 * 60_000, staleTime: 60_000 });
+  return useQuery({
+    queryKey: ["system-update"],
+    queryFn: () => api.get<UpdateInfo>("/system/update?fresh=1"),
+    refetchInterval: 15 * 60_000,
+    refetchOnWindowFocus: "always",
+    staleTime: 60_000,
+  });
 }
 
 /** Minimal, safe rendering of release notes (headings, bullets, code, links as text). */

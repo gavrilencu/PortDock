@@ -195,7 +195,7 @@ export function ApplicationPage() {
       {tab !== "overview" && tab !== "metrics" && tab !== "deployments" && tab !== "logs" && <AccessNotice access={a.access} />}
       {tab === "config" && <Configuration app={a} />}
       {tab === "domains" && <DomainsTab app={a} />}
-      {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} />}
+      {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} app={a} />}
       {tab === "deployments" && <DeploymentsList appId={id} />}
       {tab === "logs" && <AppLogs app={a} />}
       {tab === "terminal" && <AppTerminal app={a} />}

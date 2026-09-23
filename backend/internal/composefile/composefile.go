@@ -15,6 +15,9 @@ import (
 type Service struct {
 	Name string `json:"name"`
 	Port int    `json:"port"`
+	// Env is the service's `environment:` from the compose file (values as written,
+	// ${VAR} references included).
+	Env map[string]string `json:"env,omitempty"`
 }
 
 // Services lists the services of a compose file, sorted by name.
@@ -27,7 +30,7 @@ func Services(raw string) ([]Service, error) {
 	}
 	out := make([]Service, 0, len(spec.Services))
 	for name, node := range spec.Services {
-		out = append(out, Service{Name: name, Port: ServicePort(node)})
+		out = append(out, Service{Name: name, Port: ServicePort(node), Env: serviceEnv(node)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -75,4 +78,35 @@ func ServicePort(node yaml.Node) int {
 		return p
 	}
 	return 0
+}
+
+// serviceEnv reads `environment:` in its map or list ("KEY=value") form.
+func serviceEnv(node yaml.Node) map[string]string {
+	var svc struct {
+		Environment yaml.Node `yaml:"environment"`
+	}
+	if node.Decode(&svc) != nil {
+		return nil
+	}
+	env := map[string]string{}
+	switch n := svc.Environment; n.Kind {
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			v := n.Content[i+1]
+			if v.Tag == "!!null" {
+				env[n.Content[i].Value] = ""
+			} else {
+				env[n.Content[i].Value] = v.Value
+			}
+		}
+	case yaml.SequenceNode:
+		for _, item := range n.Content {
+			k, v, _ := strings.Cut(item.Value, "=")
+			env[k] = v
+		}
+	}
+	if len(env) == 0 {
+		return nil
+	}
+	return env
 }

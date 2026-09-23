@@ -1,0 +1,36 @@
+// Translations for variables per compose service and applying them (EnvEditor.tsx, shared.tsx, Deployment.tsx).
+export const ro: Record<string, string> = {
+  "Restarting with the new variables": "Se repornește cu noile variabile",
+  "Follow it in Deployments. Nothing is rebuilt.": "Urmărește progresul în Deploy-uri. Nu se reconstruiește nimic.",
+  "main service": "serviciul principal",
+  "Variables of": "Variabilele pentru",
+  "Variables saved. Restart the application to use them now — the next deployment uses them anyway.": "Variabilele au fost salvate. Repornește aplicația ca să le folosească acum — oricum le va folosi la următorul deploy.",
+  "Changes are saved right away and used by the next deployment. Restart to apply them now, without a rebuild.": "Modificările se salvează imediat și sunt folosite la următorul deploy. Repornește ca să le aplici acum, fără rebuild.",
+  "Restart with new variables": "Repornește cu noile variabile",
+  "Variables of {service}": "Variabilele pentru {service}",
+  "Given only to the {service} container. They override the values from docker-compose.yml and can be used as ${VAR} in its build args.": "Primite doar de containerul {service}. Suprascriu valorile din docker-compose.yml și pot fi folosite ca ${VAR} în build args.",
+  "Available as ${VAR} in docker-compose.yml and given to the main service ({service}). Encrypted at rest.": "Disponibile ca ${VAR} în docker-compose.yml și primite de serviciul principal ({service}). Stocate criptat.",
+  "From docker-compose.yml": "Din docker-compose.yml",
+  overridden: "suprascrisă",
+  Override: "Suprascrie",
+  Variables: "Variabile",
+  "Restarted with changed variables": "Repornit cu variabilele modificate",
+};
+
+export const ru: Record<string, string> = {
+  "Restarting with the new variables": "Перезапуск с новыми переменными",
+  "Follow it in Deployments. Nothing is rebuilt.": "Следите за ходом в разделе «Деплои». Ничего не пересобирается.",
+  "main service": "основной сервис",
+  "Variables of": "Переменные для",
+  "Variables saved. Restart the application to use them now — the next deployment uses them anyway.": "Переменные сохранены. Перезапустите приложение, чтобы применить их сейчас — следующий деплой в любом случае их использует.",
+  "Changes are saved right away and used by the next deployment. Restart to apply them now, without a rebuild.": "Изменения сохраняются сразу и используются при следующем деплое. Перезапустите, чтобы применить их сейчас без пересборки.",
+  "Restart with new variables": "Перезапустить с новыми переменными",
+  "Variables of {service}": "Переменные {service}",
+  "Given only to the {service} container. They override the values from docker-compose.yml and can be used as ${VAR} in its build args.": "Передаются только контейнеру {service}. Переопределяют значения из docker-compose.yml и доступны как ${VAR} в его build args.",
+  "Available as ${VAR} in docker-compose.yml and given to the main service ({service}). Encrypted at rest.": "Доступны как ${VAR} в docker-compose.yml и передаются основному сервису ({service}). Хранятся в зашифрованном виде.",
+  "From docker-compose.yml": "Из docker-compose.yml",
+  overridden: "переопределена",
+  Override: "Переопределить",
+  Variables: "Переменные",
+  "Restarted with changed variables": "Перезапущено с изменёнными переменными",
+};

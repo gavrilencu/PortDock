@@ -118,16 +118,19 @@ func TestComposeOverrideForFileRoutes(t *testing.T) {
 	res, err := RunComposeUp(context.Background(), ComposeUp{
 		X: x, Project: "sy-app1", Dir: "/src", File: "/src/docker-compose.yml",
 		Service: "frontend", Port: 80, FileRoutes: true, Routed: []string{"backend", "frontend"},
-		Kind: "application", Resource: "app1", Network: "portdock", Log: printer{&log},
+		Env:        map[string]string{"API_URL": "https://api.example.com", "PRICE": "5$off"},
+		ServiceEnv: map[string]map[string]string{"backend": {"PORT": "4000", "DATABASE_URL": "postgres://db/app"}},
+		Kind:       "application", Resource: "app1", Network: "portdock", Log: printer{&log},
 	})
 	if err != nil || res.Main != "frontend" || res.Port != 80 {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	var override struct {
 		Services map[string]struct {
-			Labels   map[string]string `yaml:"labels"`
-			Networks []string          `yaml:"networks"`
-			EnvFile  []string          `yaml:"env_file"`
+			Labels      map[string]string `yaml:"labels"`
+			Networks    []string          `yaml:"networks"`
+			EnvFile     []string          `yaml:"env_file"`
+			Environment map[string]string `yaml:"environment"`
 		} `yaml:"services"`
 	}
 	if err := yaml.Unmarshal([]byte(x.written["/src/.portdock.override.yml"]), &override); err != nil {
@@ -144,8 +147,15 @@ func TestComposeOverrideForFileRoutes(t *testing.T) {
 			t.Errorf("%s: on proxy network = %v, want %v", name, onProxy, routed)
 		}
 	}
-	if len(override.Services["frontend"].EnvFile) != 1 {
-		t.Error("the main service keeps the env file")
+	fe, be, db := override.Services["frontend"], override.Services["backend"], override.Services["db"]
+	if fe.Environment["API_URL"] != "https://api.example.com" || fe.Environment["PRICE"] != "5$$off" || fe.Environment["PORT"] != "" {
+		t.Errorf("main service environment: %v", fe.Environment)
+	}
+	if be.Environment["PORT"] != "4000" || be.Environment["DATABASE_URL"] != "postgres://db/app" || be.Environment["API_URL"] != "" {
+		t.Errorf("backend gets only its own variables: %v", be.Environment)
+	}
+	if len(db.Environment) != 0 || len(fe.EnvFile)+len(be.EnvFile) != 0 {
+		t.Errorf("unexpected env for db %v / env files %v %v", db.Environment, fe.EnvFile, be.EnvFile)
 	}
 	if _, err := RunComposeUp(context.Background(), ComposeUp{X: x, Dir: "/src", File: "/src/docker-compose.yml", FileRoutes: true, Routed: []string{"nope"}, Log: printer{&log}}); err == nil {
 		t.Error("a route to a missing service must fail before compose up")

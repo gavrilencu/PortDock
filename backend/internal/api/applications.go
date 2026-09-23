@@ -701,6 +701,45 @@ func validEnvKey(k string) bool {
 	return true
 }
 
+// validEnvService checks the compose service a variable is scoped to.
+func (s *Server) validEnvService(ctx context.Context, typ string, id int64, service string) error {
+	if service == "" {
+		return nil
+	}
+	if !composeServiceRe.MatchString(service) {
+		return badRequest("invalid compose service name")
+	}
+	var pack string
+	if typ == "application" {
+		_ = s.db.QueryRowContext(ctx, "SELECT build_pack FROM applications WHERE id = ?", id).Scan(&pack)
+	}
+	if pack != "compose" {
+		return badRequest("variables per service are only available for docker compose applications")
+	}
+	return nil
+}
+
+// applyEnv redeploys the running version with the current variables, without
+// building: the same image, or the same compose checkout.
+func (s *Server) applyEnv(w http.ResponseWriter, r *http.Request) error {
+	a, err := s.loadApp(r)
+	if err != nil {
+		return err
+	}
+	last, err := store.Get[store.Deployment](r.Context(), s.db,
+		"SELECT * FROM deployments WHERE application_id = ? AND pr_number = 0 AND status = 'success' AND image != '' ORDER BY id DESC LIMIT 1", a.ID)
+	if err != nil {
+		return badRequest("the application has no successful deployment yet; deploy it first")
+	}
+	by, needs := s.deployGate(r.Context(), a)
+	d, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: deploy.TriggerConfig, RollbackOf: last.ID, RequestedBy: by, NeedsApproval: needs})
+	if err != nil {
+		return badRequest("%v", err)
+	}
+	s.activity(r, "application.apply_env", a.Name)
+	return ok(w, d)
+}
+
 func (s *Server) listEnvs(w http.ResponseWriter, r *http.Request) error {
 	typ, id, err := s.envOwner(r)
 	if err != nil {
@@ -726,6 +765,9 @@ func (s *Server) createEnv(w http.ResponseWriter, r *http.Request) error {
 	if !validEnvKey(v.Key) {
 		return badRequest("invalid variable name %q", v.Key)
 	}
+	if err := s.validEnvService(r.Context(), typ, id, v.Service); err != nil {
+		return err
+	}
 	v.ID, v.OwnerType, v.OwnerID, v.CreatedAt = 0, typ, id, store.Now()
 	plain := v.Value
 	v.Value = s.box.Encrypt(plain)
@@ -748,11 +790,15 @@ func (s *Server) bulkEnvs(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Content   string `json:"content"`
 		IsPreview bool   `json:"is_preview"`
+		Service   string `json:"service"` // compose service whose variables are replaced ("" = the application's)
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	existing, err := store.Select[store.EnvVar](r.Context(), s.db, "SELECT * FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ?", typ, id, in.IsPreview)
+	if err := s.validEnvService(r.Context(), typ, id, in.Service); err != nil {
+		return err
+	}
+	existing, err := store.Select[store.EnvVar](r.Context(), s.db, "SELECT * FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ? AND service = ?", typ, id, in.IsPreview, in.Service)
 	if err != nil {
 		return err
 	}
@@ -769,14 +815,14 @@ func (s *Server) bulkEnvs(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ?", typ, id, in.IsPreview); err != nil {
+	if _, err := tx.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ? AND service = ?", typ, id, in.IsPreview, in.Service); err != nil {
 		return err
 	}
 	for _, kv := range parsed {
 		old := prev[kv[0]]
 		if _, err := tx.ExecContext(r.Context(),
-			"INSERT INTO env_vars(owner_type, owner_id, key, value, is_build, is_preview, is_secret, created_at) VALUES(?,?,?,?,?,?,?,?)",
-			typ, id, kv[0], s.box.Encrypt(kv[1]), old.IsBuild, in.IsPreview, old.IsSecret, store.Now()); err != nil {
+			"INSERT INTO env_vars(owner_type, owner_id, service, key, value, is_build, is_preview, is_secret, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+			typ, id, in.Service, kv[0], s.box.Encrypt(kv[1]), old.IsBuild, in.IsPreview, old.IsSecret, store.Now()); err != nil {
 			return err
 		}
 	}
