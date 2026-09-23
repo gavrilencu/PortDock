@@ -2,10 +2,15 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/proxy"
@@ -31,14 +36,59 @@ type databaseDTO struct {
 	Environment store.Environment `json:"environment"`
 	ServerName  string            `json:"server_name"`
 	Access      Access            `json:"access"`
+	// PublicAddress is the host external clients connect to (see dbPublicFallback).
+	PublicAddress string `json:"public_address"`
+	// Recreated is set by an update that recreated the container to apply a new public port.
+	Recreated bool `json:"recreated,omitempty"`
+	// DNSStatus/DNSDetail are filled on GET ?dns=1 when a public host is set.
+	DNSStatus string `json:"dns_status,omitempty"`
+	DNSDetail string `json:"dns_detail,omitempty"`
+}
+
+// dbPublicFallback returns the address to advertise for a database without a public
+// host on a server whose own host is not reachable from outside: the server's
+// public IPv4 (Settings → public IP for the local server), else the instance URL's host.
+func (s *Server) dbPublicFallback(ctx context.Context, srv store.Server) string {
+	if !srv.IsLocal && srv.Host != "" && !deploy.IsLoopbackHost(srv.Host) {
+		return "" // the server host is used as is
+	}
+	var v6 string
+	for _, ip := range s.serverIPs(ctx, srv) {
+		if ip.IsLoopback() || ip.IsUnspecified() {
+			continue
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+		if v6 == "" {
+			v6 = ip.String()
+		}
+	}
+	if v6 != "" {
+		return v6
+	}
+	if u := strings.TrimSpace(s.db.Setting(ctx, "instance_url")); u != "" {
+		if !strings.Contains(u, "://") {
+			u = "http://" + u
+		}
+		if pu, err := url.Parse(u); err == nil && pu.Hostname() != "" && !deploy.IsLoopbackHost(pu.Hostname()) {
+			return pu.Hostname()
+		}
+	}
+	return ""
 }
 
 func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
 	srv, _ := store.ByID[store.Server](ctx, s.db, "servers", db.ServerID)
-	internal, public := s.engine.DatabaseURLs(db, srv)
+	fallback := ""
+	if db.PublicHost == "" {
+		fallback = s.dbPublicFallback(ctx, srv)
+	}
+	internal, public := s.engine.DatabaseURLs(db, srv, fallback)
 	eng := templates.Engines[db.Engine]
 	dto := databaseDTO{Database: db, Password: s.box.MustDecrypt(db.Password), InternalURL: internal, PublicURL: public,
-		Hostname: db.UUID, Port: eng.Port, EngineName: eng.Name, ServerName: srv.Name}
+		Hostname: db.UUID, Port: eng.Port, EngineName: eng.Name, ServerName: srv.Name,
+		PublicAddress: deploy.DatabasePublicHost(db, srv, fallback)}
 	dto.Environment, _ = store.ByID[store.Environment](ctx, s.db, "environments", db.EnvironmentID)
 	dto.Project, _ = store.ByID[store.Project](ctx, s.db, "projects", dto.Environment.ProjectID)
 	dto.Access = s.resourceAccess(ctx, db.EnvironmentID)
@@ -51,6 +101,61 @@ func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
 		dto.Password = ""
 	}
 	return dto
+}
+
+// normalizePublicHost accepts "db.example.com", "postgres://db.example.com:5432/x",
+// "DB.Example.com." and returns the bare lowercase host ("" clears it).
+func normalizePublicHost(raw string) (string, error) {
+	h := strings.ToLower(strings.TrimSpace(raw))
+	if h == "" {
+		return "", nil
+	}
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	if i := strings.IndexAny(h, "/?#"); i >= 0 {
+		h = h[:i]
+	}
+	if i := strings.LastIndex(h, "@"); i >= 0 {
+		h = h[i+1:]
+	}
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		h = host
+	}
+	h = strings.TrimSuffix(h, ".")
+	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
+		return ip.String(), nil
+	}
+	if strings.HasPrefix(h, "*.") || !proxy.ValidHost(h) {
+		return "", badRequest("invalid public host: use a domain such as db.example.com")
+	}
+	return h, nil
+}
+
+// validatePublicAccess normalizes db.PublicHost and checks that db.PublicPort is a
+// valid port not already published by another database on the same server.
+func (s *Server) validatePublicAccess(ctx context.Context, db *store.Database) error {
+	if db.PublicPort < 0 || db.PublicPort > 65535 {
+		return badRequest("invalid public port")
+	}
+	host, err := normalizePublicHost(db.PublicHost)
+	if err != nil {
+		return err
+	}
+	db.PublicHost = host
+	if db.PublicPort == 0 {
+		return nil
+	}
+	var name string
+	err = s.db.QueryRowContext(ctx, "SELECT name FROM databases WHERE server_id = ? AND public_port = ? AND id != ? LIMIT 1",
+		db.ServerID, db.PublicPort, db.ID).Scan(&name)
+	switch {
+	case err == nil:
+		return errStatus(http.StatusConflict, "port %d is already used by database %q on this server", db.PublicPort, name)
+	case !errors.Is(err, sql.ErrNoRows):
+		return err
+	}
+	return nil
 }
 
 func (s *Server) loadDB(r *http.Request) (store.Database, error) {
@@ -114,6 +219,10 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 	if pass == "" {
 		pass = secrets.RandomPassword(32)
 	}
+	db.ID = 0
+	if err := s.validatePublicAccess(r.Context(), &db); err != nil {
+		return err
+	}
 	db.ID, db.UUID, db.Password, db.Status, db.CreatedAt = 0, secrets.RandomToken(8), s.box.Encrypt(pass), "stopped", store.Now()
 	if _, err := store.Insert(r.Context(), s.db, "databases", &db); err != nil {
 		return err
@@ -131,7 +240,12 @@ func (s *Server) getDatabase(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, s.dbOut(r.Context(), db))
+	dto := s.dbOut(r.Context(), db)
+	if r.URL.Query().Get("dns") == "1" && db.PublicHost != "" && net.ParseIP(db.PublicHost) == nil {
+		srv, _ := store.ByID[store.Server](r.Context(), s.db, "servers", db.ServerID)
+		dto.DNSStatus, dto.DNSDetail = checkDNS(r.Context(), db.PublicHost, s.serverIPs(r.Context(), srv))
+	}
+	return ok(w, dto)
 }
 
 func (s *Server) updateDatabase(w http.ResponseWriter, r *http.Request) error {
@@ -152,14 +266,28 @@ func (s *Server) updateDatabase(w http.ResponseWriter, r *http.Request) error {
 		orig.ID, orig.UUID, orig.Engine, orig.ServerID, orig.CreatedAt, orig.Status, orig.Password
 	// Credentials are baked into the data volume at init time; changing them later has no effect.
 	db.Username, db.DatabaseName = orig.Username, orig.DatabaseName
-	if db.PublicPort < 0 || db.PublicPort > 65535 {
-		return badRequest("invalid public port")
+	if err := s.validatePublicAccess(r.Context(), &db); err != nil {
+		return err
 	}
 	if err := store.Update(r.Context(), s.db, "databases", &db); err != nil {
 		return err
 	}
 	s.activity(r, "database.update", db.Name)
-	return ok(w, s.dbOut(r.Context(), db))
+	// A new public port only takes effect in a new container. A stopped database
+	// picks it up on its next start (StartDatabase compares the published port).
+	recreated := false
+	if db.PublicPort != orig.PublicPort && orig.Status == "running" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		if err := s.engine.StartDatabase(ctx, db, true); err != nil {
+			return badRequest("settings saved, but the container could not be recreated with the new port: %v", err)
+		}
+		recreated = true
+		db, _ = store.ByID[store.Database](r.Context(), s.db, "databases", db.ID)
+	}
+	dto := s.dbOut(r.Context(), db)
+	dto.Recreated = recreated
+	return ok(w, dto)
 }
 
 func (s *Server) deleteDatabase(w http.ResponseWriter, r *http.Request) error {

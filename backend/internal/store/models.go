@@ -216,6 +216,8 @@ type EnvVar struct {
 	ID        int64  `db:"id" json:"id"`
 	OwnerType string `db:"owner_type" json:"owner_type"`
 	OwnerID   int64  `db:"owner_id" json:"owner_id"`
+	// Service scopes the variable to one Docker Compose service ("" = the whole application).
+	Service   string `db:"service" json:"service"`
 	Key       string `db:"key" json:"key"`
 	Value     string `db:"value" json:"value"`
 	IsBuild   bool   `db:"is_build" json:"is_build"`
@@ -261,6 +263,7 @@ type Database struct {
 	Password      string `db:"password" json:"-"`
 	DatabaseName  string `db:"database_name" json:"database_name"`
 	PublicPort    int    `db:"public_port" json:"public_port"`
+	PublicHost    string `db:"public_host" json:"public_host"` // domain external clients connect to; "" = server host/IP
 	CPULimit      string `db:"cpu_limit" json:"cpu_limit"`
 	MemoryLimit   string `db:"memory_limit" json:"memory_limit"`
 	CustomArgs    string `db:"custom_args" json:"custom_args"`

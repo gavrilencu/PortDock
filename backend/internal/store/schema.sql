@@ -207,13 +207,14 @@ CREATE TABLE IF NOT EXISTS env_vars (
   id          INTEGER PRIMARY KEY,
   owner_type  TEXT NOT NULL,             -- application | service | database
   owner_id    INTEGER NOT NULL,
+  service     TEXT NOT NULL DEFAULT '',  -- compose service of an application ('' = all)
   key         TEXT NOT NULL,
   value       TEXT NOT NULL DEFAULT '',  -- encrypted
   is_build    INTEGER NOT NULL DEFAULT 0,
   is_preview  INTEGER NOT NULL DEFAULT 0,
   is_secret   INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT '',
-  UNIQUE(owner_type, owner_id, key, is_preview)
+  UNIQUE(owner_type, owner_id, service, key, is_preview)
 );
 
 CREATE TABLE IF NOT EXISTS deployments (

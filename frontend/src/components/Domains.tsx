@@ -85,11 +85,11 @@ export function CertBadge({ d }: { d: Pick<AppDomain, "https" | "cert_status" | 
 }
 
 /** Services of a compose application's deployed compose file (empty before the first deploy). */
-function useComposeServices(app: ApplicationDetail) {
+export function useComposeServices(appId: number, compose: boolean) {
   return useQuery({
-    queryKey: ["compose-services", app.id],
-    queryFn: () => api.get<{ services: ComposeService[] }>(`/applications/${app.id}/compose-services`),
-    enabled: app.build_pack === "compose",
+    queryKey: ["compose-services", appId],
+    queryFn: () => api.get<{ services: ComposeService[] }>(`/applications/${appId}/compose-services`),
+    enabled: compose,
     staleTime: 60_000,
   });
 }
@@ -99,7 +99,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
   const confirm = useConfirm();
   const { data, isLoading } = useDomains(app.id);
   const compose = app.build_pack === "compose";
-  const services = useComposeServices(app).data?.services ?? [];
+  const services = useComposeServices(app.id, compose).data?.services ?? [];
   const [q, setQ] = useState("");
   const [form, setForm] = useState<DomainForm | null>(null);
   const [showRecords, setShowRecords] = useState(false);

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"path"
 	"strconv"
 	"strings"
@@ -119,7 +120,9 @@ func (e *Engine) CleanupPreview(ctx context.Context, app store.Application, pr i
 func (e *Engine) dbPassword(db store.Database) string { return e.box.MustDecrypt(db.Password) }
 
 // DatabaseURLs returns the internal (Docker network) and public connection URLs.
-func (e *Engine) DatabaseURLs(db store.Database, srv store.Server) (internal, public string) {
+// fallbackHost (e.g. the server's detected public IP) is used when the database has
+// no public host and the server's own host is not reachable from outside.
+func (e *Engine) DatabaseURLs(db store.Database, srv store.Server, fallbackHost string) (internal, public string) {
 	eng, ok := templates.Engines[db.Engine]
 	if !ok {
 		return "", ""
@@ -127,13 +130,35 @@ func (e *Engine) DatabaseURLs(db store.Database, srv store.Server) (internal, pu
 	pass := e.dbPassword(db)
 	internal = eng.URL(db.Username, pass, db.UUID, eng.Port, db.DatabaseName)
 	if db.PublicPort > 0 {
-		host := srv.Host
-		if srv.IsLocal || host == "" {
-			host = "localhost"
-		}
-		public = eng.URL(db.Username, pass, host, db.PublicPort, db.DatabaseName)
+		public = eng.URL(db.Username, pass, DatabasePublicHost(db, srv, fallbackHost), db.PublicPort, db.DatabaseName)
 	}
 	return
+}
+
+// DatabasePublicHost picks the host external clients use to reach a database:
+// its public host (domain) if set, else the server's host when it is reachable
+// from outside, else fallback (the server's public IP), and "localhost" last.
+func DatabasePublicHost(db store.Database, srv store.Server, fallback string) string {
+	if db.PublicHost != "" {
+		return db.PublicHost
+	}
+	if h := strings.TrimSpace(srv.Host); !srv.IsLocal && h != "" && !IsLoopbackHost(h) {
+		return h
+	}
+	if f := strings.TrimSpace(fallback); f != "" && !IsLoopbackHost(f) {
+		return f
+	}
+	return "localhost"
+}
+
+// IsLoopbackHost reports whether h only names this machine (localhost, 127.0.0.0/8, ::1).
+func IsLoopbackHost(h string) bool {
+	h = strings.ToLower(strings.Trim(h, "[]"))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
 }
 
 // StartDatabase creates the database container (or starts an existing one).
@@ -148,6 +173,9 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	}
 	if err := docker.EnsureNetwork(ctx, x, e.cfg.ProxyNetwork); err != nil {
 		return err
+	}
+	if !recreate && !publishedPortMatches(ctx, x, db) {
+		recreate = true // the public port changed while the container was stopped
 	}
 	if !recreate {
 		if state, _, err := docker.State(ctx, x, db.UUID); err == nil {
@@ -193,6 +221,30 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	}
 	e.setDBStatus(ctx, db.ID, "running")
 	return nil
+}
+
+// publishedPortMatches reports whether the existing container publishes exactly
+// db.PublicPort (or nothing when it is 0). A missing container counts as a match:
+// StartDatabase creates it with the current settings anyway.
+func publishedPortMatches(ctx context.Context, x executor.Executor, db store.Database) bool {
+	out, err := executor.Output(ctx, x, "docker inspect -f "+q(`{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostPort}} {{end}}{{end}}`)+" "+q(db.UUID))
+	if err != nil {
+		return true
+	}
+	want := ""
+	if db.PublicPort > 0 {
+		want = strconv.Itoa(db.PublicPort)
+	}
+	got := strings.Fields(strings.TrimSpace(out))
+	if want == "" {
+		return len(got) == 0
+	}
+	for _, p := range got {
+		if p != want {
+			return false
+		}
+	}
+	return len(got) > 0
 }
 
 func (e *Engine) setDBStatus(ctx context.Context, id int64, status string) {

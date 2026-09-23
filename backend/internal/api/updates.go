@@ -48,11 +48,18 @@ func (s *Server) updateImage(ctx context.Context, tag string) string {
 	return img + ":" + tag
 }
 
-// checkUpdate refreshes the latest release (cached for 6 hours unless forced).
-func (s *Server) checkUpdate(ctx context.Context, force bool) {
+// Release checks are cached so GitHub's API rate limit (60 requests/hour
+// without a token) is never reached, however many people open the dashboard.
+const (
+	updateCacheOnOpen = 2 * time.Minute // opening PortDock checks at most this often
+	updateCacheIdle   = time.Hour       // background checks
+)
+
+// checkUpdate refreshes the latest release unless the last check is younger than maxAge.
+func (s *Server) checkUpdate(ctx context.Context, maxAge time.Duration) {
 	c := s.updates
 	c.mu.Lock()
-	fresh := time.Since(c.checkedAt) < 6*time.Hour && !force
+	fresh := !c.checkedAt.IsZero() && time.Since(c.checkedAt) < maxAge
 	c.mu.Unlock()
 	if fresh {
 		return
@@ -121,8 +128,15 @@ func (s *Server) updateStatus(ctx context.Context, admin bool) map[string]any {
 	return res
 }
 
+// getUpdate reports the update status. With ?fresh=1 (sent when the dashboard
+// is opened) it first asks GitHub for the latest release, so a new version shows
+// up right away.
 func (s *Server) getUpdate(w http.ResponseWriter, r *http.Request) error {
-	go s.checkUpdate(context.WithoutCancel(r.Context()), false)
+	if r.URL.Query().Get("fresh") == "1" {
+		s.checkUpdate(r.Context(), updateCacheOnOpen)
+	} else {
+		go s.checkUpdate(context.WithoutCancel(r.Context()), updateCacheIdle)
+	}
 	return ok(w, s.updateStatus(r.Context(), s.isAdmin(r)))
 }
 
@@ -132,7 +146,7 @@ func (s *Server) isAdmin(r *http.Request) bool {
 }
 
 func (s *Server) checkUpdateNow(w http.ResponseWriter, r *http.Request) error {
-	s.checkUpdate(r.Context(), true)
+	s.checkUpdate(r.Context(), 0)
 	return ok(w, s.updateStatus(r.Context(), true))
 }
 
@@ -175,7 +189,7 @@ func (s *Server) updateUpdateSettings(w http.ResponseWriter, r *http.Request) er
 		_ = s.db.SetSetting(ctx, "update_auto", fmt.Sprint(*in.Auto))
 	}
 	s.activity(r, "update.settings", "")
-	s.checkUpdate(ctx, true)
+	s.checkUpdate(ctx, 0)
 	return ok(w, s.updateStatus(ctx, true))
 }
 
@@ -255,7 +269,7 @@ func (s *Server) runUpdate(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if in.Version == "" {
-		s.checkUpdate(r.Context(), false)
+		s.checkUpdate(r.Context(), updateCacheOnOpen)
 		s.updates.mu.Lock()
 		if s.updates.latest != nil {
 			in.Version = s.updates.latest.Tag
@@ -285,7 +299,7 @@ func (s *Server) UpdateWatch(ctx context.Context) {
 	defer t.Stop()
 	for {
 		updater.CleanupUpdaters(ctx, updater.NewDocker())
-		s.checkUpdate(ctx, false)
+		s.checkUpdate(ctx, updateCacheIdle)
 		if s.db.Setting(ctx, "update_auto") == "true" {
 			loc, err := time.LoadLocation(firstNonEmpty(s.db.Setting(ctx, "instance_timezone"), "UTC"))
 			if err != nil {

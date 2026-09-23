@@ -41,6 +41,9 @@ func Open(path string) (*DB, error) {
 			return nil, fmt.Errorf("migrate %q: %w", m, err)
 		}
 	}
+	if err := migrateEnvService(context.Background(), sqldb); err != nil {
+		return nil, err
+	}
 	db := &DB{sqldb}
 	if err := db.backfillDomains(context.Background()); err != nil {
 		return nil, fmt.Errorf("backfill domains: %w", err)
@@ -94,6 +97,7 @@ var migrations = []string{
 	`ALTER TABLE app_domains ADD COLUMN service TEXT NOT NULL DEFAULT ''`,
 	// PortDock is free and open source: drop the settings of the former licensing.
 	`DELETE FROM settings WHERE key IN ('license_key', 'license_trial_started')`,
+	`ALTER TABLE databases ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

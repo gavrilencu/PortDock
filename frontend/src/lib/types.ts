@@ -268,6 +268,8 @@ export interface EnvVar {
   id: number;
   owner_type: string;
   owner_id: number;
+  /** Docker Compose service the variable belongs to ("" = the whole application). */
+  service: string;
   key: string;
   value: string;
   is_build: boolean;
@@ -298,6 +300,7 @@ export interface Database {
   username: string;
   database_name: string;
   public_port: number;
+  public_host: string;
   cpu_limit: string;
   memory_limit: string;
   custom_args: string;
@@ -316,6 +319,10 @@ export interface DatabaseDetail extends Database {
   environment: Environment;
   server_name: string;
   access: Access;
+  public_address: string;
+  recreated?: boolean;
+  dns_status?: DNSStatus;
+  dns_detail?: string;
 }
 
 export interface Backup {
@@ -571,6 +578,8 @@ export interface BuildSuggestion {
 export interface ComposeService {
   name: string;
   port: number;
+  /** `environment:` of the service in docker-compose.yml. */
+  env?: Record<string, string>;
 }
 
 export interface CatalogEnv {
