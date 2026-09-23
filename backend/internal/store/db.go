@@ -98,6 +98,7 @@ var migrations = []string{
 	// PortDock is free and open source: drop the settings of the former licensing.
 	`DELETE FROM settings WHERE key IN ('license_key', 'license_trial_started')`,
 	`ALTER TABLE databases ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE deployments ADD COLUMN version_id INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

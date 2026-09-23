@@ -551,7 +551,11 @@ func (s *Server) rollbackDeployment(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	by, needs := s.deployGate(r.Context(), a)
-	nd, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: "rollback", RollbackOf: d.ID, RequestedBy: by, NeedsApproval: needs})
+	o := deploy.Options{Trigger: "rollback", RollbackOf: d.ID, RequestedBy: by, NeedsApproval: needs}
+	if v, err := store.ByID[store.AppVersion](r.Context(), s.db, "app_versions", d.VersionID); err == nil && v.Status == "available" {
+		o.VersionID = v.ID // its images are kept even after the build tags are cleaned up
+	}
+	nd, err := s.engine.Enqueue(r.Context(), a, o)
 	if err != nil {
 		return badRequest("%v", err)
 	}
@@ -732,7 +736,8 @@ func (s *Server) applyEnv(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("the application has no successful deployment yet; deploy it first")
 	}
 	by, needs := s.deployGate(r.Context(), a)
-	d, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: deploy.TriggerConfig, RollbackOf: last.ID, RequestedBy: by, NeedsApproval: needs})
+	// The live version (when versions exist) keeps running, only with the new variables.
+	d, err := s.engine.Enqueue(r.Context(), a, deploy.Options{Trigger: deploy.TriggerConfig, RollbackOf: last.ID, VersionID: s.engine.LiveVersionID(r.Context(), a.ID), RequestedBy: by, NeedsApproval: needs})
 	if err != nil {
 		return badRequest("%v", err)
 	}

@@ -18,6 +18,8 @@ type Service struct {
 	// Env is the service's `environment:` from the compose file (values as written,
 	// ${VAR} references included).
 	Env map[string]string `json:"env,omitempty"`
+	// Build is set when the service is built from source (it has `build:`).
+	Build bool `json:"build,omitempty"`
 }
 
 // Services lists the services of a compose file, sorted by name.
@@ -30,7 +32,11 @@ func Services(raw string) ([]Service, error) {
 	}
 	out := make([]Service, 0, len(spec.Services))
 	for name, node := range spec.Services {
-		out = append(out, Service{Name: name, Port: ServicePort(node), Env: serviceEnv(node)})
+		var b struct {
+			Build yaml.Node `yaml:"build"`
+		}
+		_ = node.Decode(&b)
+		out = append(out, Service{Name: name, Port: ServicePort(node), Env: serviceEnv(node), Build: b.Build.Kind != 0})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

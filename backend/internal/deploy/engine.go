@@ -73,6 +73,8 @@ type Options struct {
 	PRNumber      int
 	ForceRebuild  bool
 	RollbackOf    int64 // deployment whose image should be redeployed
+	// VersionID deploys that version (its images, and for compose its compose file).
+	VersionID int64
 	RequestedBy   int64 // user who triggered it (0 = automation)
 	// NeedsApproval holds the deployment as pending_approval until a maintainer approves it.
 	NeedsApproval bool
@@ -94,6 +96,14 @@ func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) 
 	if o.NeedsApproval {
 		d.Status = "pending_approval"
 	}
+	var version *store.AppVersion
+	if o.VersionID != 0 {
+		v, err := store.ByID[store.AppVersion](ctx, e.db, "app_versions", o.VersionID)
+		if err != nil || v.ApplicationID != app.ID || v.Status != "available" {
+			return d, errors.New("this version is no longer available")
+		}
+		version, o.RollbackOf, d.RollbackOf = &v, v.DeploymentID, v.DeploymentID
+	}
 	if o.RollbackOf != 0 {
 		prev, err := store.ByID[store.Deployment](ctx, e.db, "deployments", o.RollbackOf)
 		if err != nil || prev.ApplicationID != app.ID {
@@ -103,6 +113,9 @@ func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) 
 			return d, errors.New("rollback target has no image")
 		}
 		d.Image, d.CommitSHA, d.CommitMessage, d.Branch, d.PRNumber = prev.Image, prev.CommitSHA, prev.CommitMessage, prev.Branch, prev.PRNumber
+	}
+	if version != nil {
+		d.VersionID, d.Image, d.CommitSHA, d.CommitMessage, d.Branch = version.ID, version.Image, version.CommitSHA, version.CommitMessage, version.Branch
 	}
 	if _, err := store.Insert(ctx, e.db, "deployments", &d); err != nil {
 		return d, err

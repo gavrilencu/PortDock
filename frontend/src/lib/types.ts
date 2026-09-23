@@ -652,3 +652,32 @@ export interface DNSRecord {
   value: string;
   for: string;
 }
+
+/** A saved, deployable version of an application (v1, v2…). */
+export interface AppVersion {
+  id: number;
+  application_id: number;
+  number: number;
+  tag: string;
+  deployment_id: number;
+  commit_sha: string;
+  commit_message: string;
+  branch: string;
+  /** Image of single-container applications ("compose@vN" for compose). */
+  image: string;
+  /** Compose: image of each built service. */
+  services: Record<string, string>;
+  status: "available" | "expired";
+  created_at: string;
+  live: boolean;
+  /** When a previous version is removed. */
+  expires_at?: string;
+}
+
+export interface VersionsResponse {
+  versions: AppVersion[];
+  live_version_id: number;
+  kept: number;
+  max_age_days: number;
+  pending?: { deployment_id: number; version_id: number; status: string; trigger: string };
+}
