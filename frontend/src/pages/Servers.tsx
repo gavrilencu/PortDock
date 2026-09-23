@@ -109,7 +109,7 @@ function AddServerModal({ open, onClose }: { open: boolean; onClose: () => void 
       onClose={onClose}
       size="lg"
       title="Connect a server"
-      description="Shipyard connects over SSH (root or a user with Docker + sudo access)."
+      description="PortDock connects over SSH (root or a user with Docker + sudo access)."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

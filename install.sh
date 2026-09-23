@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shipyard installer: installs Docker if needed and starts Shipyard with docker compose.
+# PortDock installer: installs Docker if needed and starts PortDock with docker compose.
 # Usage (as root, from the repository root):  ./install.sh [public-url]
 set -euo pipefail
 
@@ -12,16 +12,16 @@ if ! command -v docker >/dev/null 2>&1; then
   systemctl enable --now docker 2>/dev/null || true
 fi
 
-mkdir -p /data/shipyard
+mkdir -p /data/portdock
 if [ -z "$PUBLIC_URL" ]; then
   IP=$(curl -fsS4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
   PUBLIC_URL="http://${IP}:8000"
 fi
 
-echo "==> Building and starting Shipyard (${PUBLIC_URL})"
-SHIPYARD_PUBLIC_URL="$PUBLIC_URL" docker compose up -d --build
+echo "==> Building and starting PortDock (${PUBLIC_URL})"
+PORTDOCK_PUBLIC_URL="$PUBLIC_URL" docker compose up -d --build
 
 echo
-echo "Shipyard is starting at ${PUBLIC_URL}"
+echo "PortDock is starting at ${PUBLIC_URL}"
 echo "Open it in your browser and create the admin account."
 echo "Ports 80/443 must be free for the Traefik proxy (automatic HTTPS)."

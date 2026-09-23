@@ -11,15 +11,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	CookieName  = "shipyard_session"
+	CookieName  = "portdock_session"
 	sessionTTL  = 30 * 24 * time.Hour
-	TokenPrefix = "sy_"
+	TokenPrefix = "pd_"
+	// LegacyCookieName keeps users signed in across the rename.
+	LegacyCookieName = "shipyard_session"
 )
 
 type ctxKey struct{}
@@ -50,7 +52,7 @@ func New(db *store.DB, secureCookies bool) *Auth {
 }
 
 // ClientIP returns the caller address, honouring X-Forwarded-For / X-Real-Ip
-// set by the reverse proxy in front of Shipyard.
+// set by the reverse proxy in front of PortDock.
 func ClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		return strings.TrimSpace(strings.Split(xff, ",")[0])
@@ -90,10 +92,12 @@ func (a *Auth) CreateSession(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (a *Auth) DestroySession(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(CookieName); err == nil {
-		_, _ = a.db.ExecContext(ctx, "DELETE FROM sessions WHERE token_hash = ?", secrets.Hash(c.Value))
+	for _, name := range []string{CookieName, LegacyCookieName} {
+		if c, err := r.Cookie(name); err == nil {
+			_, _ = a.db.ExecContext(ctx, "DELETE FROM sessions WHERE token_hash = ?", secrets.Hash(c.Value))
+		}
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 }
 
 // RevokeSessions deletes all sessions of a user except keepHash (may be "").
@@ -139,6 +143,9 @@ func (a *Auth) AuthenticateSession(r *http.Request) (store.User, store.Session, 
 		return u, store.Session{UserID: u.ID, Method: "token"}, nil
 	}
 	c, err := r.Cookie(CookieName)
+	if err != nil {
+		c, err = r.Cookie(LegacyCookieName)
+	}
 	if err != nil {
 		return store.User{}, store.Session{}, ErrUnauthorized
 	}

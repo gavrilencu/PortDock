@@ -219,7 +219,7 @@ function ChartCard({ title, value, children }: { title: string; value?: string; 
 export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server" | "application" | "database" | "service"; id: number; title?: string }) {
   const [range, setRange] = useState<MetricRange>(() => {
     try {
-      return (localStorage.getItem("shipyard.metrics.range") as MetricRange) || "6h";
+      return (localStorage.getItem("portdock.metrics.range") as MetricRange) || "6h";
     } catch {
       return "6h";
     }
@@ -227,7 +227,7 @@ export function MetricsPanel({ scope, id, title = "Metrics" }: { scope: "server"
   const pick = (r: MetricRange) => {
     setRange(r);
     try {
-      localStorage.setItem("shipyard.metrics.range", r);
+      localStorage.setItem("portdock.metrics.range", r);
     } catch {
       /* ignore */
     }

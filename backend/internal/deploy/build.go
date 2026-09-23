@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -51,7 +51,7 @@ func (j *job) build(ctx context.Context, image string) error {
 		return j.nixpacksBuild(ctx, image)
 	case "static":
 		j.app.Port = 80
-		if err := executor.WriteFile(ctx, j.x, j.ctxDir+"/.shipyard.nginx.conf", []byte(nginxConf), "0644"); err != nil {
+		if err := executor.WriteFile(ctx, j.x, j.ctxDir+"/.portdock.nginx.conf", []byte(nginxConf), "0644"); err != nil {
 			return err
 		}
 		df, err := j.writeDockerfile(ctx, j.staticDockerfile())
@@ -105,7 +105,7 @@ func (j *job) nixpacksBuild(ctx context.Context, image string) error {
 }
 
 func (j *job) writeDockerfile(ctx context.Context, content string) (string, error) {
-	df := j.ctxDir + "/.shipyard.Dockerfile"
+	df := j.ctxDir + "/.portdock.Dockerfile"
 	j.log.Printf("Generated Dockerfile:\n%s", content)
 	return df, executor.WriteFile(ctx, j.x, df, []byte(content), "0644")
 }
@@ -140,7 +140,7 @@ func (j *job) staticDockerfile() string {
 		if pub != "" && pub != "." {
 			src = pub
 		}
-		return fmt.Sprintf("FROM nginx:alpine\nCOPY .shipyard.nginx.conf /etc/nginx/conf.d/default.conf\nCOPY %s /usr/share/nginx/html\nEXPOSE 80\n", src)
+		return fmt.Sprintf("FROM nginx:alpine\nCOPY .portdock.nginx.conf /etc/nginx/conf.d/default.conf\nCOPY %s /usr/share/nginx/html\nEXPOSE 80\n", src)
 	}
 	install := j.app.InstallCommand
 	if install == "" {
@@ -156,7 +156,7 @@ RUN %s
 RUN %s
 
 FROM nginx:alpine
-COPY .shipyard.nginx.conf /etc/nginx/conf.d/default.conf
+COPY .portdock.nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/%s /usr/share/nginx/html
 EXPOSE 80
 `, j.buildArgLines(), install, j.app.BuildCommand, pub)
@@ -317,20 +317,20 @@ func shellForm(cmd string) string {
 func composeProject(uuid string) string { return "sy-" + strings.ToLower(uuid) }
 
 type composeSpec struct {
-	Shipyard struct {
+	PortDock struct {
 		Service string `yaml:"service"`
 		Port    int    `yaml:"port"`
-	} `yaml:"x-shipyard"`
+	} `yaml:"x-portdock"`
 	Services map[string]yaml.Node `yaml:"services"`
 }
 
-// ComposeUp deploys a compose project with Shipyard routing and labels injected via an override file.
+// ComposeUp deploys a compose project with PortDock routing and labels injected via an override file.
 type ComposeUp struct {
 	X        executor.Executor
 	Project  string
 	Dir      string // directory on the server holding the compose file
 	File     string // compose file path
-	Service  string // service to expose (defaults to x-shipyard.service)
+	Service  string // service to expose (defaults to x-portdock.service)
 	Port     int
 	Domains  []string
 	HTTPS    bool
@@ -365,7 +365,7 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 	sort.Strings(names)
 	main := c.Service
 	if main == "" {
-		main = spec.Shipyard.Service
+		main = spec.PortDock.Service
 	}
 	if main == "" {
 		main = names[0]
@@ -374,11 +374,11 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 		return fmt.Errorf("service %q not found in compose file (available: %s)", main, strings.Join(names, ", "))
 	}
 	port := c.Port
-	if spec.Shipyard.Port > 0 && (port == 0 || c.Kind == "service") {
-		port = spec.Shipyard.Port
+	if spec.PortDock.Port > 0 && (port == 0 || c.Kind == "service") {
+		port = spec.PortDock.Port
 	}
 
-	envPath := c.Dir + "/.shipyard.env"
+	envPath := c.Dir + "/.portdock.env"
 	if err := executor.WriteFile(ctx, c.X, envPath, []byte(envFile(c.Env)), "0600"); err != nil {
 		return err
 	}
@@ -404,7 +404,7 @@ func RunComposeUp(ctx context.Context, c ComposeUp) error {
 	override["services"] = services
 	override["networks"] = map[string]any{c.Network: map[string]any{"external": true}}
 	ob, _ := yaml.Marshal(override)
-	overridePath := c.Dir + "/.shipyard.override.yml"
+	overridePath := c.Dir + "/.portdock.override.yml"
 	if err := executor.WriteFile(ctx, c.X, overridePath, ob, "0644"); err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // AWS SigV4 test suite, "get-vanilla".

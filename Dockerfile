@@ -23,8 +23,8 @@ ARG VERSION=dev
 # from it automatically, without any configuration.
 ARG UPDATE_REPO=
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags="-s -w -X github.com/shipyard/shipyard/internal/api.Version=${VERSION} -X github.com/shipyard/shipyard/internal/api.DefaultUpdateRepo=${UPDATE_REPO}" \
-    -o /out/shipyard ./cmd/shipyard
+    -ldflags="-s -w -X github.com/portdock/portdock/internal/api.Version=${VERSION} -X github.com/portdock/portdock/internal/api.DefaultUpdateRepo=${UPDATE_REPO}" \
+    -o /out/portdock ./cmd/portdock
 
 # ---- runtime ----
 FROM ${BASE_REGISTRY}/alpine:3
@@ -35,10 +35,10 @@ ARG TARGETARCH
 RUN arch=$([ "$TARGETARCH" = "arm64" ] && echo aarch64 || echo x86_64) && \
     curl -fsSL "https://github.com/railwayapp/nixpacks/releases/download/${NIXPACKS_VERSION}/nixpacks-${NIXPACKS_VERSION}-${arch}-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin nixpacks && nixpacks --version
-COPY --from=api /out/shipyard /usr/local/bin/shipyard
-ENV SHIPYARD_DATA_DIR=/data/shipyard \
-    SHIPYARD_ADDR=:8000
+COPY --from=api /out/portdock /usr/local/bin/portdock
+ENV PORTDOCK_DATA_DIR=/data/portdock \
+    PORTDOCK_ADDR=:8000
 EXPOSE 8000
-VOLUME /data/shipyard
+VOLUME /data/portdock
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:8000/api/health || exit 1
-ENTRYPOINT ["shipyard"]
+ENTRYPOINT ["portdock"]

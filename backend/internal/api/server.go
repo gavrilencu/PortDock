@@ -1,4 +1,4 @@
-// Package api exposes Shipyard's REST API, SSE streams, WebSocket terminals,
+// Package api exposes PortDock's REST API, SSE streams, WebSocket terminals,
 // git webhooks and serves the embedded web UI.
 package api
 
@@ -15,19 +15,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/audit"
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/config"
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/github"
-	"github.com/shipyard/shipyard/internal/monitor"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/scheduler"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
-	"github.com/shipyard/shipyard/internal/templates"
+	"github.com/portdock/portdock/internal/audit"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/monitor"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/scheduler"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
+	"github.com/portdock/portdock/internal/templates"
 )
 
 type Server struct {
@@ -464,7 +464,7 @@ func (s *Server) Handler() http.Handler {
 	return s.middleware(mux)
 }
 
-// publicURL is the instance URL configured in Settings, or SHIPYARD_PUBLIC_URL.
+// publicURL is the instance URL configured in Settings, or PORTDOCK_PUBLIC_URL.
 func (s *Server) publicURL(ctx context.Context) string { return s.engine.PublicURL(ctx) }
 
 // Version is set at build time via -ldflags.

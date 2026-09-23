@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/templates"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/templates"
 )
 
 // ---- applications ----
@@ -68,12 +68,13 @@ func (e *Engine) removeAppFrom(ctx context.Context, x executor.Executor, app sto
 	e.removeAllRoutes(ctx, x, app.UUID)
 	script := fmt.Sprintf(
 		"docker compose -p %[1]s down -v --remove-orphans >/dev/null 2>&1; "+
-			"docker ps -aq --filter label=%[2]s=%[3]s | xargs -r docker rm -f >/dev/null 2>&1; "+
-			"docker images -q --filter label=%[2]s=%[3]s | sort -u | xargs -r docker rmi -f >/dev/null 2>&1; "+
-			"docker images --format '{{.Repository}}:{{.Tag}}' | grep '^shipyard/%[3]s' | xargs -r docker rmi -f >/dev/null 2>&1; "+
+			"%[6]s | xargs -r docker rm -f >/dev/null 2>&1; "+
+			"%[7]s | sort -u | xargs -r docker rmi -f >/dev/null 2>&1; "+
+			"docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(portdock|shipyard)/%[3]s' | xargs -r docker rmi -f >/dev/null 2>&1; "+
 			"rm -rf %[4]s %[5]s 2>/dev/null; true",
 		q(composeProject(app.UUID)), docker.LabelResource, app.UUID,
-		q(path.Join(e.cfg.DataDir, "apps", app.UUID)), q(path.Join(e.cfg.DataDir, "builds", app.UUID)))
+		q(path.Join(e.cfg.DataDir, "apps", app.UUID)), q(path.Join(e.cfg.DataDir, "builds", app.UUID)),
+		docker.IDsCmd("ps", true, "label="+docker.LabelResource+"="+app.UUID), docker.IDsCmd("images", false, "label="+docker.LabelResource+"="+app.UUID))
 	return x.Run(ctx, script, executor.RunOpts{})
 }
 
@@ -105,10 +106,10 @@ func (e *Engine) CleanupPreview(ctx context.Context, app store.Application, pr i
 	}
 	_ = writeRoutes(ctx, x, e.routesPath(app.UUID, pr), nil)
 	script := fmt.Sprintf(
-		"docker ps -aq --filter label=%s=%s --filter label=%s=%d | xargs -r docker rm -f >/dev/null 2>&1; "+
-			"docker images --format '{{.Repository}}:{{.Tag}}' | grep '^shipyard/%s-pr%d:' | xargs -r docker rmi -f >/dev/null 2>&1; "+
+		docker.IDsCmd("ps", true, "label="+docker.LabelResource+"="+app.UUID, fmt.Sprintf("label=%s=%d", docker.LabelPR, pr))+" | xargs -r docker rm -f >/dev/null 2>&1; "+
+			"docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(portdock|shipyard)/%s-pr%d:' | xargs -r docker rmi -f >/dev/null 2>&1; "+
 			"rm -f %s; true",
-		docker.LabelResource, app.UUID, docker.LabelPR, pr, app.UUID, pr,
+		app.UUID, pr,
 		q(fmt.Sprintf("%s/apps/%s/.env.pr%d", e.cfg.DataDir, app.UUID, pr)))
 	return x.Run(ctx, script, executor.RunOpts{})
 }
@@ -305,7 +306,7 @@ func (e *Engine) uploadS3(ctx context.Context, x executor.Executor, file, prefix
 	}
 	dir, name := path.Split(file)
 	cmd := fmt.Sprintf("docker run --rm -v %s:/b:ro -e AWS_ACCESS_KEY_ID=%s -e AWS_SECRET_ACCESS_KEY=%s -e AWS_DEFAULT_REGION=%s amazon/aws-cli s3 cp /b/%s %s",
-		q(dir), q(key), q(secret), q(region), q(name), q("s3://"+bucket+"/shipyard/"+prefix+"/"+name))
+		q(dir), q(key), q(secret), q(region), q(name), q("s3://"+bucket+"/portdock/"+prefix+"/"+name))
 	if endpoint != "" {
 		cmd += " --endpoint-url " + q(endpoint)
 	}

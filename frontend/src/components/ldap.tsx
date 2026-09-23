@@ -168,10 +168,10 @@ function DirectoryModal({ initial, presets, onClose }: { initial: Form | null; p
               <div className="border-b border-border px-4 py-2.5 text-[13px] font-semibold">Access & roles</div>
               <div className="grid gap-4 p-4 md:grid-cols-2">
                 <Field label="Required groups" hint="Only members may sign in. CN or full DN, comma-separated. Empty = any account.">
-                  <Input value={f.required_groups ?? ""} onChange={(e) => upd({ required_groups: e.target.value })} placeholder="Shipyard-Users" />
+                  <Input value={f.required_groups ?? ""} onChange={(e) => upd({ required_groups: e.target.value })} placeholder="PortDock-Users" />
                 </Field>
                 <Field label="Admin groups" hint="Members become admins; synced at every sign-in.">
-                  <Input value={f.admin_groups ?? ""} onChange={(e) => upd({ admin_groups: e.target.value })} placeholder="Shipyard-Admins, Domain Admins" />
+                  <Input value={f.admin_groups ?? ""} onChange={(e) => upd({ admin_groups: e.target.value })} placeholder="PortDock-Admins, Domain Admins" />
                 </Field>
                 <Switch checked={f.auto_register !== false} onChange={(v) => upd({ auto_register: v })} label="Create accounts automatically" description="On first sign-in. Otherwise only invited emails can sign in." />
                 {f.kind === "ad" && <Switch checked={f.nested_groups !== false} onChange={(v) => upd({ nested_groups: v })} label="Nested groups" description="Resolve membership through nested AD groups." />}
@@ -326,7 +326,7 @@ export function LDAPCard() {
                     <Button size="icon-sm" variant="ghost" title="Edit" onClick={() => setEdit({ ...d, bind_password: "" })}>
                       <Pencil />
                     </Button>
-                    <Button size="icon-sm" variant="ghost" title="Remove" onClick={async () => (await confirm({ title: `Remove ${d.name}?`, description: "Directory users can no longer sign in. Their Shipyard accounts are kept.", danger: true, confirmText: "Remove" })) && del.mutate(d.id)}>
+                    <Button size="icon-sm" variant="ghost" title="Remove" onClick={async () => (await confirm({ title: `Remove ${d.name}?`, description: "Directory users can no longer sign in. Their PortDock accounts are kept.", danger: true, confirmText: "Remove" })) && del.mutate(d.id)}>
                       <Trash2 className="text-danger" />
                     </Button>
                   </div>

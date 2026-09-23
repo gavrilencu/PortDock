@@ -1,9 +1,9 @@
-// Command shipyard-license is the vendor tool that creates signing keys and
-// issues Shipyard license keys. It is not shipped to customers.
+// Command portdock-license is the vendor tool that creates signing keys and
+// issues PortDock license keys. It is not shipped to customers.
 //
-//	shipyard-license keygen  -out ~/.shipyard-license
-//	shipyard-license issue   -key ~/.shipyard-license/private.key -customer "Acme" -plan enterprise -days 365
-//	shipyard-license inspect SY1....
+//	portdock-license keygen  -out ~/.portdock-license
+//	portdock-license issue   -key ~/.portdock-license/private.key -customer "Acme" -plan enterprise -days 365
+//	portdock-license inspect SY1....
 package main
 
 import (
@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/license"
+	"github.com/portdock/portdock/internal/license"
 )
 
 func main() {
@@ -43,7 +43,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: shipyard-license keygen|issue|inspect [flags]")
+	fmt.Fprintln(os.Stderr, "usage: portdock-license keygen|issue|inspect [flags]")
 	os.Exit(2)
 }
 
@@ -121,7 +121,7 @@ func issue(args []string) error {
 
 func inspect(args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: shipyard-license inspect <key>")
+		return fmt.Errorf("usage: portdock-license inspect <key>")
 	}
 	l, err := license.Parse(args[0])
 	if err != nil {

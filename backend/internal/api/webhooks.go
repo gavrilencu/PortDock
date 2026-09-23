@@ -13,8 +13,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 func (s *Server) appByUUID(r *http.Request) (store.Application, error) {
@@ -318,7 +318,7 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) error {
 
 // deployHook is a generic trigger for any CI system:
 //
-//	curl -X POST "https://shipyard.example.com/api/webhooks/deploy/<uuid>?token=<secret>&commit=<sha>&force=true"
+//	curl -X POST "https://portdock.example.com/api/webhooks/deploy/<uuid>?token=<secret>&commit=<sha>&force=true"
 func (s *Server) deployHook(w http.ResponseWriter, r *http.Request) error {
 	app, err := s.appByUUID(r)
 	if err != nil {

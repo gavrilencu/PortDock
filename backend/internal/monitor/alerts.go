@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Metrics a rule can watch, per scope.

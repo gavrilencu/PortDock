@@ -130,7 +130,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
     <div className="space-y-6">
       <Card
         title="Scheduled backups"
-        description="Dumps are stored on the server under the Shipyard data directory, with optional S3 upload."
+        description="Dumps are stored on the server under the PortDock data directory, with optional S3 upload."
         actions={
           <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEdit({ schedule: "0 3 * * *", retention: 7, enabled: true, upload_s3: false })}>
             Add schedule

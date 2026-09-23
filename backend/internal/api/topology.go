@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Topology is the live resource tree (ArgoCD-style): resource → server → containers.
@@ -122,15 +122,18 @@ func phase(c inspectJSON, now time.Time) string {
 	return "exited"
 }
 
-// managedContainers inspects every Shipyard-managed container of a server in one round trip.
+// managedContainers inspects every PortDock-managed container of a server in one round trip.
 func managedContainers(ctx context.Context, x executor.Executor) ([]inspectJSON, error) {
-	out, err := executor.Output(ctx, x, "ids=$(docker ps -aq --filter label="+docker.LabelManaged+"=true); [ -n \"$ids\" ] && docker inspect $ids || echo '[]'")
+	out, err := executor.Output(ctx, x, "ids=$("+docker.IDsCmd("ps", true, "label="+docker.LabelManaged+"=true")+"); [ -n \"$ids\" ] && docker inspect $ids || echo '[]'")
 	if err != nil {
 		return nil, err
 	}
 	var list []inspectJSON
 	if err := json.Unmarshal([]byte(out), &list); err != nil {
 		return nil, err
+	}
+	for i := range list {
+		list[i].Config.Labels = docker.NormalizeLabels(list[i].Config.Labels)
 	}
 	return list, nil
 }

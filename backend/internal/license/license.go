@@ -1,7 +1,7 @@
 // Package license verifies Ed25519-signed license keys and describes plans.
 //
 // Key format: "SY1.<base64url payload>.<base64url signature>". The payload is
-// JSON (see License). Keys are issued with cmd/shipyard-license using the
+// JSON (see License). Keys are issued with cmd/portdock-license using the
 // vendor's private key; instances only embed the public key, so keys can be
 // verified offline and cannot be forged.
 package license
@@ -17,10 +17,13 @@ import (
 )
 
 // publicKeyB64 is the vendor verification key; override at build time with
-// -ldflags "-X github.com/shipyard/shipyard/internal/license.publicKeyB64=...".
+// -ldflags "-X github.com/portdock/portdock/internal/license.publicKeyB64=...".
 var publicKeyB64 = "NWFAyNqhNkLqAAGJ+sqitbd+1OkfVzA0vfgq5ku19EE="
 
-const prefix = "SY1."
+const prefix = "PD1."
+
+// legacyPrefix is used by keys issued before the product was renamed.
+const legacyPrefix = "SY1."
 
 // GracePeriod keeps an expired license working while the customer renews.
 const GracePeriod = 14 * 24 * time.Hour
@@ -78,7 +81,7 @@ type License struct {
 }
 
 var (
-	ErrMalformed = errors.New("this is not a Shipyard license key")
+	ErrMalformed = errors.New("this is not a PortDock license key")
 	ErrSignature = errors.New("the license key signature is invalid")
 )
 
@@ -113,10 +116,13 @@ func Parse(key string) (License, error) {
 
 func parseWith(key string, pub ed25519.PublicKey) (License, error) {
 	key = strings.Join(strings.Fields(key), "") // tolerate line breaks from copy/paste
-	if !strings.HasPrefix(key, prefix) {
+	p := prefix
+	if strings.HasPrefix(key, legacyPrefix) {
+		p = legacyPrefix
+	} else if !strings.HasPrefix(key, prefix) {
 		return License{}, ErrMalformed
 	}
-	body, sigB64, ok := strings.Cut(strings.TrimPrefix(key, prefix), ".")
+	body, sigB64, ok := strings.Cut(strings.TrimPrefix(key, p), ".")
 	if !ok {
 		return License{}, ErrMalformed
 	}
@@ -129,7 +135,7 @@ func parseWith(key string, pub ed25519.PublicKey) (License, error) {
 			return License{}, err
 		}
 	}
-	if !ed25519.Verify(pub, []byte(prefix+body), sig) {
+	if !ed25519.Verify(pub, []byte(p+body), sig) {
 		return License{}, ErrSignature
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(body)

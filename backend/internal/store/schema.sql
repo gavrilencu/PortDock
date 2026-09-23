@@ -1,4 +1,4 @@
--- Shipyard schema v1. All columns are NOT NULL with defaults so they scan into plain Go types.
+-- PortDock schema v1. All columns are NOT NULL with defaults so they scan into plain Go types.
 
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY,

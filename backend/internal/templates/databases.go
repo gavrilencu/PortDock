@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/shipyard/shipyard/internal/executor"
+	"github.com/portdock/portdock/internal/executor"
 )
 
 var q = executor.Quote

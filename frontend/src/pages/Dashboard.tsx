@@ -56,7 +56,7 @@ export function DashboardPage() {
       <PageHeader title="Overview" subtitle="Health, delivery and activity across your organization." />
 
       {onboarding && (
-        <Card className="mb-6" title="Get started with Shipyard" description={`${steps.filter((s) => s.done).length} of ${steps.length} steps completed`}>
+        <Card className="mb-6" title="Get started with PortDock" description={`${steps.filter((s) => s.done).length} of ${steps.length} steps completed`}>
           <div className="grid divide-y divide-border md:grid-cols-4 md:divide-x md:divide-y-0">
             {steps.map((s, i) => (
               <Link key={s.title} to={s.to} className="group flex gap-3 p-4 transition-colors hover:bg-surface-2/50">

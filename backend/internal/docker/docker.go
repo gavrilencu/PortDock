@@ -11,19 +11,76 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/executor"
+	"github.com/portdock/portdock/internal/executor"
 )
 
 var q = executor.Quote
 
-// Labels used on every workload Shipyard manages.
+// Labels used on every workload PortDock manages.
 const (
-	LabelManaged    = "shipyard.managed"
-	LabelKind       = "shipyard.kind" // application | database | service | proxy
-	LabelResource   = "shipyard.resource"
-	LabelDeployment = "shipyard.deployment"
-	LabelPR         = "shipyard.pr"
+	LabelManaged    = "portdock.managed"
+	LabelKind       = "portdock.kind" // application | database | service | proxy
+	LabelResource   = "portdock.resource"
+	LabelDeployment = "portdock.deployment"
+	LabelPR         = "portdock.pr"
+
+	labelPrefix       = "portdock."
+	legacyLabelPrefix = "shipyard." // containers created before the rename
 )
+
+// Legacy returns the pre-rename name of a label ("portdock.resource" → "shipyard.resource").
+func Legacy(label string) string {
+	return legacyLabelPrefix + strings.TrimPrefix(label, labelPrefix)
+}
+
+// NormalizeLabels copies legacy shipyard.* labels to their portdock.* names so
+// callers only deal with the new namespace.
+func NormalizeLabels(l map[string]string) map[string]string {
+	for k, v := range l {
+		if strings.HasPrefix(k, legacyLabelPrefix) {
+			nk := labelPrefix + strings.TrimPrefix(k, legacyLabelPrefix)
+			if _, ok := l[nk]; !ok {
+				l[nk] = v
+			}
+		}
+	}
+	return l
+}
+
+// legacyFilters rewrites label filters to the legacy namespace; ok is false when none applies.
+func legacyFilters(filters []string) ([]string, bool) {
+	out := make([]string, len(filters))
+	changed := false
+	for i, f := range filters {
+		if strings.HasPrefix(f, "label="+labelPrefix) {
+			out[i] = "label=" + legacyLabelPrefix + strings.TrimPrefix(f, "label="+labelPrefix)
+			changed = true
+		} else {
+			out[i] = f
+		}
+	}
+	return out, changed
+}
+
+// IDsCmd is a shell snippet printing the IDs of containers (or images with
+// kind "images") matching filters in either label namespace.
+func IDsCmd(kind string, all bool, filters ...string) string {
+	build := func(fs []string) string {
+		c := "docker " + kind + " -q"
+		if all && kind == "ps" {
+			c += "a"
+		}
+		for _, f := range fs {
+			c += " --filter " + q(f)
+		}
+		return c
+	}
+	cmd := build(filters)
+	if legacy, ok := legacyFilters(filters); ok {
+		cmd = "{ " + cmd + "; " + build(legacy) + "; } 2>/dev/null | sort -u"
+	}
+	return cmd
+}
 
 type Container struct {
 	ID        string            `json:"id"`
@@ -84,7 +141,7 @@ func Version(ctx context.Context, e executor.Executor) (string, error) {
 	return executor.Output(ctx, e, "docker version --format '{{.Server.Version}}'")
 }
 
-// PS lists containers. Filters are passed as docker `--filter` values, e.g. "label=shipyard.resource=abc".
+// PS lists containers. Filters are passed as docker `--filter` values, e.g. "label=portdock.resource=abc".
 func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) ([]Container, error) {
 	cmd := "docker ps --no-trunc --format '{{json .}}'"
 	if all {
@@ -101,11 +158,31 @@ func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) (
 	if err != nil {
 		return nil, err
 	}
+	// Workloads created before the rename carry shipyard.* labels.
+	if legacy, ok := legacyFilters(filters); ok {
+		lcmd := "docker ps --no-trunc --format '{{json .}}'"
+		if all {
+			lcmd += " -a"
+		}
+		for _, f := range legacy {
+			lcmd += " --filter " + q(f)
+		}
+		if lout, err := executor.Output(ctx, e, lcmd); err == nil {
+			if more, err := jsonLines[rawContainer](lout); err == nil {
+				raws = append(raws, more...)
+			}
+		}
+	}
+	seen := map[string]bool{}
 	res := make([]Container, 0, len(raws))
 	for _, r := range raws {
+		if seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
 		res = append(res, Container{
 			ID: r.ID, Name: r.Names, Image: r.Image, State: r.State, Status: r.Status,
-			Ports: r.Ports, Networks: r.Networks, CreatedAt: r.CreatedAt, Labels: parseLabels(r.Labels),
+			Ports: r.Ports, Networks: r.Networks, CreatedAt: r.CreatedAt, Labels: NormalizeLabels(parseLabels(r.Labels)),
 		})
 	}
 	return res, nil

@@ -5,19 +5,19 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/secrets"
+	"github.com/portdock/portdock/internal/secrets"
 )
 
 // ServiceTemplate is a docker-compose based one-click service.
 // Placeholders rendered at creation time:
 //
-//	${SHIPYARD_FQDN}            the service domain (host only)
-//	${SHIPYARD_URL}             https://<domain>
-//	${SHIPYARD_PASSWORD_<NAME>} random 24-char password (stable per NAME)
-//	${SHIPYARD_USER_<NAME>}     random 12-char username
-//	${SHIPYARD_SECRET_<NAME>}   random 64-char hex secret
+//	${PORTDOCK_FQDN}            the service domain (host only)
+//	${PORTDOCK_URL}             https://<domain>
+//	${PORTDOCK_PASSWORD_<NAME>} random 24-char password (stable per NAME)
+//	${PORTDOCK_USER_<NAME>}     random 12-char username
+//	${PORTDOCK_SECRET_<NAME>}   random 64-char hex secret
 //
-// The top-level `x-shipyard` key tells Shipyard which service/port to expose.
+// The top-level `x-portdock` key tells PortDock which service/port to expose.
 type ServiceTemplate struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
@@ -27,7 +27,7 @@ type ServiceTemplate struct {
 	Compose     string `json:"compose"`
 }
 
-var placeholder = regexp.MustCompile(`\$\{SHIPYARD_(FQDN|URL|PASSWORD|USER|SECRET)(?:_([A-Z0-9_]+))?\}`)
+var placeholder = regexp.MustCompile(`\$\{(?:PORTDOCK|SHIPYARD)_(FQDN|URL|PASSWORD|USER|SECRET)(?:_([A-Z0-9_]+))?\}`)
 
 // Render substitutes placeholders in a compose file.
 func Render(compose, domain string) string {
@@ -76,7 +76,7 @@ var Services = map[string]ServiceTemplate{
 	"litellm": {
 		Slug: "litellm", Name: "LiteLLM", Category: "AI", Website: "https://www.litellm.ai",
 		Description: "OpenAI-compatible LLM gateway with admin UI, backed by PostgreSQL. Log in as admin with UI_PASSWORD (see Compose tab).",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: litellm
   port: 4000
 services:
@@ -84,12 +84,12 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://litellm:${SHIPYARD_PASSWORD_DB}@postgres:5432/litellm
-      LITELLM_MASTER_KEY: sk-${SHIPYARD_SECRET_MASTER}
-      LITELLM_SALT_KEY: sk-${SHIPYARD_SECRET_SALT}
+      DATABASE_URL: postgresql://litellm:${PORTDOCK_PASSWORD_DB}@postgres:5432/litellm
+      LITELLM_MASTER_KEY: sk-${PORTDOCK_SECRET_MASTER}
+      LITELLM_SALT_KEY: sk-${PORTDOCK_SECRET_SALT}
       STORE_MODEL_IN_DB: "True"
       UI_USERNAME: admin
-      UI_PASSWORD: ${SHIPYARD_PASSWORD_UI}
+      UI_PASSWORD: ${PORTDOCK_PASSWORD_UI}
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,7 +98,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       POSTGRES_DB: litellm
     volumes:
       - pg-data:/var/lib/postgresql
@@ -113,7 +113,7 @@ volumes:
 	"wordpress": {
 		Slug: "wordpress", Name: "WordPress", Category: "CMS", Website: "https://wordpress.org",
 		Description: "The world's most popular CMS, with MariaDB.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: wordpress
   port: 80
 services:
@@ -123,7 +123,7 @@ services:
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      WORDPRESS_DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       WORDPRESS_DB_NAME: wordpress
     volumes:
       - wp-data:/var/www/html
@@ -136,8 +136,8 @@ services:
     environment:
       MARIADB_DATABASE: wordpress
       MARIADB_USER: wordpress
-      MARIADB_PASSWORD: ${SHIPYARD_PASSWORD_DB}
-      MARIADB_ROOT_PASSWORD: ${SHIPYARD_PASSWORD_ROOT}
+      MARIADB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      MARIADB_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
@@ -152,7 +152,7 @@ volumes:
 	"uptime-kuma": {
 		Slug: "uptime-kuma", Name: "Uptime Kuma", Category: "Monitoring", Website: "https://uptime.kuma.pet",
 		Description: "Self-hosted uptime monitoring with status pages.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: uptime-kuma
   port: 3001
 services:
@@ -168,7 +168,7 @@ volumes:
 	"n8n": {
 		Slug: "n8n", Name: "n8n", Category: "Automation", Website: "https://n8n.io",
 		Description: "Workflow automation with 400+ integrations, backed by PostgreSQL.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: n8n
   port: 5678
 services:
@@ -176,15 +176,15 @@ services:
     image: n8nio/n8n:latest
     restart: unless-stopped
     environment:
-      N8N_HOST: ${SHIPYARD_FQDN}
+      N8N_HOST: ${PORTDOCK_FQDN}
       N8N_PROTOCOL: https
-      WEBHOOK_URL: ${SHIPYARD_URL}/
-      N8N_ENCRYPTION_KEY: ${SHIPYARD_SECRET_KEY}
+      WEBHOOK_URL: ${PORTDOCK_URL}/
+      N8N_ENCRYPTION_KEY: ${PORTDOCK_SECRET_KEY}
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
       DB_POSTGRESDB_DATABASE: n8n
       DB_POSTGRESDB_USER: n8n
-      DB_POSTGRESDB_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      DB_POSTGRESDB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       GENERIC_TIMEZONE: UTC
     volumes:
       - n8n-data:/home/node/.n8n
@@ -196,7 +196,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: n8n
-      POSTGRES_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       POSTGRES_DB: n8n
     volumes:
       - pg-data:/var/lib/postgresql
@@ -212,7 +212,7 @@ volumes:
 	"gitea": {
 		Slug: "gitea", Name: "Gitea", Category: "Development", Website: "https://gitea.com",
 		Description: "Lightweight self-hosted Git service with Actions CI.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: gitea
   port: 3000
 services:
@@ -220,9 +220,9 @@ services:
     image: gitea/gitea:1
     restart: unless-stopped
     environment:
-      GITEA__server__ROOT_URL: ${SHIPYARD_URL}/
-      GITEA__server__DOMAIN: ${SHIPYARD_FQDN}
-      GITEA__security__SECRET_KEY: ${SHIPYARD_SECRET_KEY}
+      GITEA__server__ROOT_URL: ${PORTDOCK_URL}/
+      GITEA__server__DOMAIN: ${PORTDOCK_FQDN}
+      GITEA__security__SECRET_KEY: ${PORTDOCK_SECRET_KEY}
       GITEA__database__DB_TYPE: sqlite3
     volumes:
       - data:/data
@@ -235,7 +235,7 @@ volumes:
 	"minio": {
 		Slug: "minio", Name: "MinIO", Category: "Storage", Website: "https://min.io",
 		Description: "S3-compatible object storage (console exposed on the domain, API on :9000).",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: minio
   port: 9001
 services:
@@ -244,9 +244,9 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${SHIPYARD_USER_ADMIN}
-      MINIO_ROOT_PASSWORD: ${SHIPYARD_PASSWORD_ADMIN}
-      MINIO_BROWSER_REDIRECT_URL: ${SHIPYARD_URL}
+      MINIO_ROOT_USER: ${PORTDOCK_USER_ADMIN}
+      MINIO_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+      MINIO_BROWSER_REDIRECT_URL: ${PORTDOCK_URL}
     volumes:
       - data:/data
     ports:
@@ -258,7 +258,7 @@ volumes:
 	"umami": {
 		Slug: "umami", Name: "Umami", Category: "Analytics", Website: "https://umami.is",
 		Description: "Privacy-focused, GDPR compliant web analytics.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: umami
   port: 3000
 services:
@@ -266,8 +266,8 @@ services:
     image: ghcr.io/umami-software/umami:postgresql-latest
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://umami:${SHIPYARD_PASSWORD_DB}@postgres:5432/umami
-      APP_SECRET: ${SHIPYARD_SECRET_APP}
+      DATABASE_URL: postgresql://umami:${PORTDOCK_PASSWORD_DB}@postgres:5432/umami
+      APP_SECRET: ${PORTDOCK_SECRET_APP}
     depends_on:
       postgres:
         condition: service_healthy
@@ -276,7 +276,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: umami
-      POSTGRES_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       POSTGRES_DB: umami
     volumes:
       - pg-data:/var/lib/postgresql
@@ -291,7 +291,7 @@ volumes:
 	"grafana": {
 		Slug: "grafana", Name: "Grafana", Category: "Monitoring", Website: "https://grafana.com",
 		Description: "Dashboards and observability for metrics, logs and traces.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: grafana
   port: 3000
 services:
@@ -299,9 +299,9 @@ services:
     image: grafana/grafana:latest
     restart: unless-stopped
     environment:
-      GF_SERVER_ROOT_URL: ${SHIPYARD_URL}
+      GF_SERVER_ROOT_URL: ${PORTDOCK_URL}
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${SHIPYARD_PASSWORD_ADMIN}
+      GF_SECURITY_ADMIN_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
     volumes:
       - data:/var/lib/grafana
 volumes:
@@ -311,7 +311,7 @@ volumes:
 	"vaultwarden": {
 		Slug: "vaultwarden", Name: "Vaultwarden", Category: "Security", Website: "https://github.com/dani-garcia/vaultwarden",
 		Description: "Bitwarden-compatible password manager server.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: vaultwarden
   port: 80
 services:
@@ -319,8 +319,8 @@ services:
     image: vaultwarden/server:latest
     restart: unless-stopped
     environment:
-      DOMAIN: ${SHIPYARD_URL}
-      ADMIN_TOKEN: ${SHIPYARD_SECRET_ADMIN}
+      DOMAIN: ${PORTDOCK_URL}
+      ADMIN_TOKEN: ${PORTDOCK_SECRET_ADMIN}
       SIGNUPS_ALLOWED: "true"
     volumes:
       - data:/data
@@ -331,7 +331,7 @@ volumes:
 	"ghost": {
 		Slug: "ghost", Name: "Ghost", Category: "CMS", Website: "https://ghost.org",
 		Description: "Professional publishing platform with MySQL.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: ghost
   port: 2368
 services:
@@ -339,11 +339,11 @@ services:
     image: ghost:6-alpine
     restart: unless-stopped
     environment:
-      url: ${SHIPYARD_URL}
+      url: ${PORTDOCK_URL}
       database__client: mysql
       database__connection__host: mysql
       database__connection__user: ghost
-      database__connection__password: ${SHIPYARD_PASSWORD_DB}
+      database__connection__password: ${PORTDOCK_PASSWORD_DB}
       database__connection__database: ghost
     volumes:
       - content:/var/lib/ghost/content
@@ -354,10 +354,10 @@ services:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${SHIPYARD_PASSWORD_ROOT}
+      MYSQL_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
       MYSQL_DATABASE: ghost
       MYSQL_USER: ghost
-      MYSQL_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      MYSQL_PASSWORD: ${PORTDOCK_PASSWORD_DB}
     volumes:
       - mysql:/var/lib/mysql
     healthcheck:
@@ -372,7 +372,7 @@ volumes:
 	"metabase": {
 		Slug: "metabase", Name: "Metabase", Category: "Analytics", Website: "https://metabase.com",
 		Description: "Business intelligence and dashboards for your data.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: metabase
   port: 3000
 services:
@@ -384,9 +384,9 @@ services:
       MB_DB_DBNAME: metabase
       MB_DB_PORT: "5432"
       MB_DB_USER: metabase
-      MB_DB_PASS: ${SHIPYARD_PASSWORD_DB}
+      MB_DB_PASS: ${PORTDOCK_PASSWORD_DB}
       MB_DB_HOST: postgres
-      MB_SITE_URL: ${SHIPYARD_URL}
+      MB_SITE_URL: ${PORTDOCK_URL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -395,7 +395,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: metabase
-      POSTGRES_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       POSTGRES_DB: metabase
     volumes:
       - pg-data:/var/lib/postgresql
@@ -410,7 +410,7 @@ volumes:
 	"pgadmin": {
 		Slug: "pgadmin", Name: "pgAdmin", Category: "Database", Website: "https://pgadmin.org",
 		Description: "Web administration tool for PostgreSQL.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: pgadmin
   port: 80
 services:
@@ -419,7 +419,7 @@ services:
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: ${SHIPYARD_PASSWORD_ADMIN}
+      PGADMIN_DEFAULT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
     volumes:
       - data:/var/lib/pgadmin
 volumes:
@@ -429,7 +429,7 @@ volumes:
 	"nocodb": {
 		Slug: "nocodb", Name: "NocoDB", Category: "Productivity", Website: "https://nocodb.com",
 		Description: "Open-source Airtable alternative on top of PostgreSQL.",
-		Compose: `x-shipyard:
+		Compose: `x-portdock:
   service: nocodb
   port: 8080
 services:
@@ -437,9 +437,9 @@ services:
     image: nocodb/nocodb:latest
     restart: unless-stopped
     environment:
-      NC_DB: pg://postgres:5432?u=nocodb&p=${SHIPYARD_PASSWORD_DB}&d=nocodb
-      NC_PUBLIC_URL: ${SHIPYARD_URL}
-      NC_AUTH_JWT_SECRET: ${SHIPYARD_SECRET_JWT}
+      NC_DB: pg://postgres:5432?u=nocodb&p=${PORTDOCK_PASSWORD_DB}&d=nocodb
+      NC_PUBLIC_URL: ${PORTDOCK_URL}
+      NC_AUTH_JWT_SECRET: ${PORTDOCK_SECRET_JWT}
     volumes:
       - data:/usr/app/data
     depends_on:
@@ -450,7 +450,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: nocodb
-      POSTGRES_PASSWORD: ${SHIPYARD_PASSWORD_DB}
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
       POSTGRES_DB: nocodb
     volumes:
       - pg-data:/var/lib/postgresql

@@ -67,7 +67,7 @@ function Progress({ state, target, onDone }: { state?: UpdateState; target: stri
         }
         setPhase(phase === "restarting" ? "restarting" : "working");
       } catch {
-        setPhase("restarting"); // Shipyard is being replaced
+        setPhase("restarting"); // PortDock is being replaced
       }
       setTimeout(tick, 2000);
     };
@@ -89,7 +89,7 @@ function Progress({ state, target, onDone }: { state?: UpdateState; target: stri
         {phase === "done" ? <CheckCircle2 className="size-5" /> : phase === "failed" ? <XCircle className="size-5" /> : <Loader2 className="size-5 animate-spin" />}
         <div>
           <div className="font-medium">
-            {phase === "done" ? `Updated to ${target} — reloading…` : phase === "failed" ? "The update did not complete" : phase === "restarting" ? "Restarting Shipyard…" : `Updating to ${target}…`}
+            {phase === "done" ? `Updated to ${target} — reloading…` : phase === "failed" ? "The update did not complete" : phase === "restarting" ? "Restarting PortDock…" : `Updating to ${target}…`}
           </div>
           <div className="text-xs opacity-80">
             {phase === "failed" ? error : phase === "restarting" ? "The new version is starting; this page reconnects automatically." : "Your applications keep running during the update."}
@@ -129,7 +129,7 @@ export function UpdateModal({ open, onClose, info }: { open: boolean; onClose: (
       open={open}
       onClose={running ? () => undefined : onClose}
       size="lg"
-      title={`Shipyard ${rel.tag}`}
+      title={`PortDock ${rel.tag}`}
       description={`Installed: ${info.current}${rel.published_at ? ` · released ${timeAgo(rel.published_at)}` : ""}`}
       footer={
         !running && (
@@ -159,7 +159,7 @@ export function UpdateModal({ open, onClose, info }: { open: boolean; onClose: (
                 <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" />
                 <span>
                   Your data stays where it is. The database and encryption key are backed up first, the new version is started next to the old one's configuration (volumes, ports, networks,
-                  environment), and if it doesn't become healthy Shipyard rolls back automatically. Running applications are not restarted.
+                  environment), and if it doesn't become healthy PortDock rolls back automatically. Running applications are not restarted.
                   {force && <strong className="mt-1 block text-warning">Deployments are running — updating now interrupts them.</strong>}
                 </span>
               </div>
@@ -210,7 +210,7 @@ export function SidebarUpdate({ collapsed }: { collapsed: boolean }) {
         </button>
       ) : (
         <div className="flex items-center justify-between px-2 text-2xs text-faint" title={info.checked_at ? `Checked ${timeAgo(info.checked_at)}` : undefined}>
-          <span>Shipyard {info.current}</span>
+          <span>PortDock {info.current}</span>
           {info.latest && <span className="flex items-center gap-1 text-success"><CheckCircle2 className="size-3" /> Up to date</span>}
         </div>
       )}
@@ -242,7 +242,7 @@ export function UpdateSettings() {
     mutationFn: () => api.post<UpdateInfo>("/system/update/check"),
     onSuccess: (d) => {
       qc.setQueryData(["system-update"], d);
-      d.error ? toast.error(d.error) : d.update_available ? toast.success(`${d.latest?.tag} is available`) : toast.success("Shipyard is up to date");
+      d.error ? toast.error(d.error) : d.update_available ? toast.success(`${d.latest?.tag} is available`) : toast.success("PortDock is up to date");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -258,7 +258,7 @@ export function UpdateSettings() {
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-lg font-semibold tracking-[-0.02em]">
-              Shipyard {d.current}
+              PortDock {d.current}
               {d.update_available ? <Badge tone="accent">{d.latest?.tag} available</Badge> : d.latest ? <Badge tone="success">Up to date</Badge> : null}
             </div>
             <div className="mt-1 text-[13px] text-muted">
@@ -289,7 +289,7 @@ export function UpdateSettings() {
               <a href={`https://github.com/${d.settings.repo}/releases`} target="_blank" rel="noreferrer" className="font-medium text-fg underline underline-offset-2">
                 github.com/{d.settings.repo}
               </a>
-              {d.settings.overridden ? " (custom source)" : ""} — nothing to configure. Shipyard checks every 6 hours.
+              {d.settings.overridden ? " (custom source)" : ""} — nothing to configure. PortDock checks every 6 hours.
             </>
           ) : (
             "This is a development build. Installations from a published release find their updates automatically."
@@ -316,7 +316,7 @@ export function UpdateSettings() {
           <summary className="cursor-pointer select-none px-5 py-3 text-xs font-medium text-muted hover:text-fg">Advanced: custom release source (forks, private mirrors)</summary>
           <div className="grid gap-4 px-5 pb-5 md:grid-cols-2">
             <Field label="GitHub repository" hint={`owner/name. Leave empty to use the official source${d.settings?.official_repo ? ` (${d.settings.official_repo})` : ""}.`}>
-              <Input value={f.repo === d.settings?.official_repo ? "" : f.repo} onChange={(e) => setF({ ...f, repo: e.target.value })} placeholder={d.settings?.official_repo || "acme/shipyard"} className="font-mono text-xs" />
+              <Input value={f.repo === d.settings?.official_repo ? "" : f.repo} onChange={(e) => setF({ ...f, repo: e.target.value })} placeholder={d.settings?.official_repo || "acme/portdock"} className="font-mono text-xs" />
             </Field>
             <Field label="Container image" hint={`Without tag. Default: ${d.settings?.default_image || "ghcr.io/<owner>/<repo>"}`}>
               <Input value={f.image} onChange={(e) => setF({ ...f, image: e.target.value })} placeholder={d.settings?.default_image} className="font-mono text-xs" />

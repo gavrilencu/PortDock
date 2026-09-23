@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
-	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/stream"
 )
 
 const sampleOut = `#cpu

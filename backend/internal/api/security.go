@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/ldapauth"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/sso"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/ldapauth"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/sso"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // ---- short-lived server-side state (MFA challenges, SSO logins) ----
@@ -302,7 +302,7 @@ func (s *Server) twoFactorSetup(w http.ResponseWriter, r *http.Request) error {
 	}
 	issuer := s.db.Setting(r.Context(), "instance_name")
 	if issuer == "" {
-		issuer = "Shipyard"
+		issuer = "PortDock"
 	}
 	return ok(w, map[string]string{"secret": secret, "otpauth_url": auth.TOTPURL(issuer, u.Email, secret)})
 }
@@ -484,7 +484,7 @@ func (s *Server) ssoRedirectURI(ctx context.Context, slug string) string {
 	return strings.TrimRight(s.publicURL(ctx), "/") + "/api/auth/sso/" + slug + "/callback"
 }
 
-const ssoCookie = "shipyard_sso"
+const ssoCookie = "portdock_sso"
 
 // safeNext keeps post-login redirects on this site.
 func safeNext(next string) string {

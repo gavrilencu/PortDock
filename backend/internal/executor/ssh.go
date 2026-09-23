@@ -78,7 +78,7 @@ func keepAlive(c *ssh.Client) {
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for range t.C {
-		if _, _, err := c.SendRequest("keepalive@shipyard", true, nil); err != nil {
+		if _, _, err := c.SendRequest("keepalive@portdock", true, nil); err != nil {
 			_ = c.Close()
 			return
 		}

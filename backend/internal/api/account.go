@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/store"
 )
 
 func (s *Server) userCount(r *http.Request) int {
@@ -80,14 +80,14 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, toUserOut(u))
 }
 
-// ensureLocalServer registers the machine running Shipyard as the default server.
+// ensureLocalServer registers the machine running PortDock as the default server.
 func (s *Server) ensureLocalServer(r *http.Request) error {
 	var n int
 	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE is_local = 1").Scan(&n)
 	if n > 0 {
 		return nil
 	}
-	srv := store.Server{Name: "localhost", Description: "The server running Shipyard", Host: "localhost", Port: 22,
+	srv := store.Server{Name: "localhost", Description: "The server running PortDock", Host: "localhost", Port: 22,
 		User: "root", IsLocal: true, Status: "unknown", ProxyEnabled: true, ProxyStatus: "unknown", CreatedAt: store.Now()}
 	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
@@ -378,7 +378,7 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) error {
 	}
 	if s.db.Setting(r.Context(), "instance_url") != prevURL || s.db.Setting(r.Context(), "instance_https") != prevHTTPS {
 		if err := s.engine.ApplyDashboardRoute(r.Context()); err != nil {
-			w.Header().Set("X-Shipyard-Warning", err.Error())
+			w.Header().Set("X-PortDock-Warning", err.Error())
 			_ = s.db.SetSetting(r.Context(), "instance_route_error", err.Error())
 		} else {
 			_ = s.db.SetSetting(r.Context(), "instance_route_error", "")
@@ -552,7 +552,7 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) error 
 		return err
 	}
 	if err := s.notify.SendTo(r.Context(), c, notify.Event{
-		Name: "test", Title: "Shipyard test notification", Message: "If you can read this, notifications work! 🎉", Success: true,
+		Name: "test", Title: "PortDock test notification", Message: "If you can read this, notifications work! 🎉", Success: true,
 	}); err != nil {
 		return badRequest("sending failed: %v", err)
 	}

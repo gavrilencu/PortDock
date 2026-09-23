@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // licenseState resolves the instance's current entitlement.

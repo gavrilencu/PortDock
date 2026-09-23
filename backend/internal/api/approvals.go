@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // deployGate decides whether a user-triggered deployment of app needs approval.

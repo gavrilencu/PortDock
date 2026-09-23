@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 func selfSigned(t *testing.T, names []string, notAfter time.Time) (certPEM, keyPEM []byte) {

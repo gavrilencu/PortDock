@@ -82,12 +82,12 @@ func TestExchangeAndVerify(t *testing.T) {
 	idp.claims = map[string]any{"iss": idp.URL, "aud": "client-1", "sub": "user-42", "nonce": "n1",
 		"exp": time.Now().Add(time.Hour).Unix(), "email": "Jane@Corp.com", "email_verified": true, "name": "Jane"}
 
-	auth, _ := url.Parse(AuthURL(m, "client-1", "https://shipyard/cb", "openid email", "st", "n1", idp.verifier))
+	auth, _ := url.Parse(AuthURL(m, "client-1", "https://portdock/cb", "openid email", "st", "n1", idp.verifier))
 	if auth.Query().Get("code_challenge_method") != "S256" || auth.Query().Get("nonce") != "n1" {
 		t.Fatalf("bad auth url %s", auth)
 	}
 
-	c, err := Exchange(ctx, m, "client-1", "secret", "https://shipyard/cb", "good-code", idp.verifier, "n1", "groups")
+	c, err := Exchange(ctx, m, "client-1", "secret", "https://portdock/cb", "good-code", idp.verifier, "n1", "groups")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,17 +96,17 @@ func TestExchangeAndVerify(t *testing.T) {
 	}
 
 	// wrong nonce, audience, expired and tampered tokens must fail
-	if _, err := Exchange(ctx, m, "client-1", "secret", "https://shipyard/cb", "good-code", idp.verifier, "other", "groups"); err == nil || !strings.Contains(err.Error(), "nonce") {
+	if _, err := Exchange(ctx, m, "client-1", "secret", "https://portdock/cb", "good-code", idp.verifier, "other", "groups"); err == nil || !strings.Contains(err.Error(), "nonce") {
 		t.Fatalf("nonce mismatch not detected: %v", err)
 	}
-	if _, err := Exchange(ctx, m, "client-2", "secret", "https://shipyard/cb", "good-code", idp.verifier, "n1", "groups"); err == nil || !strings.Contains(err.Error(), "audience") {
+	if _, err := Exchange(ctx, m, "client-2", "secret", "https://portdock/cb", "good-code", idp.verifier, "n1", "groups"); err == nil || !strings.Contains(err.Error(), "audience") {
 		t.Fatalf("audience mismatch not detected: %v", err)
 	}
-	if _, err := Exchange(ctx, m, "client-1", "secret", "https://shipyard/cb", "good-code", "wrong-verifier", "n1", "groups"); err == nil {
+	if _, err := Exchange(ctx, m, "client-1", "secret", "https://portdock/cb", "good-code", "wrong-verifier", "n1", "groups"); err == nil {
 		t.Fatal("PKCE verifier not checked")
 	}
 	idp.claims["exp"] = time.Now().Add(-time.Hour).Unix()
-	if _, err := Exchange(ctx, m, "client-1", "secret", "https://shipyard/cb", "good-code", idp.verifier, "n1", "groups"); err == nil || !strings.Contains(err.Error(), "expired") {
+	if _, err := Exchange(ctx, m, "client-1", "secret", "https://portdock/cb", "good-code", idp.verifier, "n1", "groups"); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("expiry not detected: %v", err)
 	}
 	idp.claims["exp"] = time.Now().Add(time.Hour).Unix()

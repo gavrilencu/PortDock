@@ -6,10 +6,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Routing for applications is written as Traefik file-provider config, not
@@ -124,7 +124,7 @@ func urlOf(r proxy.DomainRoute) string {
 	return scheme + r.Host + strings.TrimSuffix(r.Path, "/")
 }
 
-// PublicURL is the externally reachable URL of this Shipyard instance.
+// PublicURL is the externally reachable URL of this PortDock instance.
 func (e *Engine) PublicURL(ctx context.Context) string {
 	if u := strings.TrimSpace(e.db.Setting(ctx, "instance_url")); u != "" {
 		return strings.TrimRight(u, "/")

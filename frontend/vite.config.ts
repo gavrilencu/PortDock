@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const backend = process.env.SHIPYARD_BACKEND ?? "http://localhost:8000";
+const backend = process.env.PORTDOCK_BACKEND ?? "http://localhost:8000";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

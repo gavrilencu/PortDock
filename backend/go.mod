@@ -1,4 +1,4 @@
-module github.com/shipyard/shipyard
+module github.com/portdock/portdock
 
 go 1.27.0
 

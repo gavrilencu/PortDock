@@ -1,36 +1,36 @@
-# Runs Shipyard on this machine. The machine itself becomes the "localhost" server.
+# Runs PortDock on this machine. The machine itself becomes the "localhost" server.
 services:
-  shipyard:
+  portdock:
     build:
       context: .
       args:
-        VERSION: ${SHIPYARD_VERSION:-dev}
-        UPDATE_REPO: ${SHIPYARD_UPDATE_REPO:-}
+        VERSION: ${PORTDOCK_VERSION:-dev}
+        UPDATE_REPO: ${PORTDOCK_UPDATE_REPO:-}
         BASE_REGISTRY: ${BASE_REGISTRY:-docker.io/library}
-    # Set SHIPYARD_IMAGE=ghcr.io/<owner>/<repo>:vX.Y.Z to run a published release
+    # Set PORTDOCK_IMAGE=ghcr.io/<owner>/<repo>:vX.Y.Z to run a published release
     # instead of building locally; in-app updates replace the container in place.
-    image: ${SHIPYARD_IMAGE:-shipyard:latest}
-    container_name: shipyard
+    image: ${PORTDOCK_IMAGE:-portdock:latest}
+    container_name: portdock
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
       # External URL of the dashboard (used to build webhook URLs).
-      SHIPYARD_PUBLIC_URL: ${SHIPYARD_PUBLIC_URL:-http://localhost:8000}
-      SHIPYARD_MAX_BUILDS: ${SHIPYARD_MAX_BUILDS:-4}
+      PORTDOCK_PUBLIC_URL: ${PORTDOCK_PUBLIC_URL:-http://localhost:8000}
+      PORTDOCK_MAX_BUILDS: ${PORTDOCK_MAX_BUILDS:-4}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Must be mounted at the SAME path as on the host: builds and backups
       # are bind-mounted into helper containers by absolute host path.
-      - /data/shipyard:/data/shipyard
+      - /data/portdock:/data/portdock
     # Optional: serve the dashboard through Traefik with HTTPS once the proxy runs.
-    # networks: [shipyard]
+    # networks: [portdock]
     # labels:
     #   traefik.enable: "true"
-    #   traefik.http.routers.shipyard.rule: Host(`shipyard.example.com`)
-    #   traefik.http.routers.shipyard.entrypoints: websecure
-    #   traefik.http.routers.shipyard.tls.certresolver: letsencrypt
-    #   traefik.http.services.shipyard.loadbalancer.server.port: "8000"
+    #   traefik.http.routers.portdock.rule: Host(`portdock.example.com`)
+    #   traefik.http.routers.portdock.entrypoints: websecure
+    #   traefik.http.routers.portdock.tls.certresolver: letsencrypt
+    #   traefik.http.services.portdock.loadbalancer.server.port: "8000"
 # networks:
-#   shipyard:
+#   portdock:
 #     external: true

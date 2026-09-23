@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/registry"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/registry"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // target is one server an application runs on.

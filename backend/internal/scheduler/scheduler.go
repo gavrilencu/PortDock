@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/store"
 	"github.com/robfig/cron/v3"
-	"github.com/shipyard/shipyard/internal/deploy"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/notify"
-	"github.com/shipyard/shipyard/internal/store"
 )
 
 type Scheduler struct {

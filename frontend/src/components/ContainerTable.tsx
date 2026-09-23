@@ -47,8 +47,8 @@ export function ContainerTable({ serverId, containers, compact = false }: { serv
         <tbody>
           {containers.map((c) => {
             const running = c.state === "running";
-            const kind = c.labels["shipyard.kind"];
-            const pr = c.labels["shipyard.pr"];
+            const kind = c.labels["portdock.kind"];
+            const pr = c.labels["portdock.pr"];
             return (
               <tr key={c.id}>
                 <td>

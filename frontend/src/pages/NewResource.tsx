@@ -226,7 +226,7 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
   return (
     <Card
       title={custom ? "Custom Docker Compose" : tpl!.name}
-      description={custom ? "Add `x-shipyard: {service, port}` to choose which service receives the domain." : tpl!.description}
+      description={custom ? "Add `x-portdock: {service, port}` to choose which service receives the domain." : tpl!.description}
       actions={
         <Button size="sm" variant="ghost" onClick={() => (setTpl(null), setCustom(false))}>
           Change
@@ -249,7 +249,7 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
         <div className="md:col-span-2">
           <Field label="docker-compose.yml">
             {custom ? (
-              <Textarea rows={16} value={f.compose} onChange={(e) => setF({ ...f, compose: e.target.value })} placeholder={"x-shipyard:\n  service: web\n  port: 80\nservices:\n  web:\n    image: nginx:alpine"} />
+              <Textarea rows={16} value={f.compose} onChange={(e) => setF({ ...f, compose: e.target.value })} placeholder={"x-portdock:\n  service: web\n  port: 80\nservices:\n  web:\n    image: nginx:alpine"} />
             ) : (
               <Textarea rows={14} value={tpl!.compose} readOnly className="opacity-80" />
             )}

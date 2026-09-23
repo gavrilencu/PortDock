@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
-	"github.com/shipyard/shipyard/internal/registry"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
+	"github.com/portdock/portdock/internal/registry"
+	"github.com/portdock/portdock/internal/store"
 )
 
 var q = executor.Quote
@@ -248,7 +248,7 @@ func (j *job) imageRepo() string {
 	if j.reg != nil && j.d.PRNumber == 0 {
 		return registry.Repository(*j.reg, j.app.RegistryImage, j.app.Name)
 	}
-	repo := "shipyard/" + j.app.UUID
+	repo := "portdock/" + j.app.UUID
 	if j.d.PRNumber > 0 {
 		repo += "-pr" + strconv.Itoa(j.d.PRNumber)
 	}
@@ -387,12 +387,18 @@ func (j *job) writeEnvFile(ctx context.Context) (string, error) {
 		file = fmt.Sprintf("%s/.env.pr%d", dir, j.d.PRNumber)
 	}
 	vars := j.env.Runtime
-	vars["SHIPYARD_APP"] = j.app.Name
-	vars["SHIPYARD_BRANCH"] = j.d.Branch
-	vars["SHIPYARD_COMMIT"] = j.d.CommitSHA
+	vars["PORTDOCK_APP"] = j.app.Name
+	vars["PORTDOCK_BRANCH"] = j.d.Branch
+	vars["PORTDOCK_COMMIT"] = j.d.CommitSHA
 	if len(j.routes) > 0 {
-		vars["SHIPYARD_FQDN"] = j.routes[0].Host
-		vars["SHIPYARD_URL"] = urlOf(j.routes[0])
+		vars["PORTDOCK_FQDN"] = j.routes[0].Host
+		vars["PORTDOCK_URL"] = urlOf(j.routes[0])
+	}
+	// Applications written before the rename may read SHIPYARD_* variables.
+	for _, k := range []string{"APP", "BRANCH", "COMMIT", "FQDN", "URL"} {
+		if v, ok := vars["PORTDOCK_"+k]; ok {
+			vars["SHIPYARD_"+k] = v
+		}
 	}
 	if _, ok := vars["PORT"]; !ok && j.app.Port > 0 {
 		vars["PORT"] = strconv.Itoa(j.app.Port)

@@ -220,7 +220,7 @@ export function ImageConfigure({ image, envId, serverId, onBack, onCreated, onMa
           <div className="flex flex-wrap items-center gap-3 border-t border-border bg-accent-soft/60 px-5 py-3 text-[13px]">
             <Database className="size-4 text-accent" />
             <span className="flex-1 text-muted">
-              Shipyard can run {image.name} as a <span className="font-medium text-fg">managed database</span> with scheduled backups, restore and connection strings.
+              PortDock can run {image.name} as a <span className="font-medium text-fg">managed database</span> with scheduled backups, restore and connection strings.
             </span>
             <Button size="sm" variant="accent" onClick={() => onManaged(image.managed!)}>
               Create managed database

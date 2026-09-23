@@ -7,7 +7,7 @@ import (
 	"runtime"
 )
 
-// Local runs commands on the machine (or container) where Shipyard runs.
+// Local runs commands on the machine (or container) where PortDock runs.
 type Local struct{}
 
 func shell() (string, string) {

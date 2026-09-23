@@ -32,7 +32,7 @@ type CatalogImage struct {
 	Env         []CatalogEnv `json:"env,omitempty"`
 	Volumes     []string     `json:"volumes,omitempty"`
 	Website     string       `json:"website,omitempty"`
-	Managed     string       `json:"managed,omitempty"` // engine id when Shipyard can run it as a managed database
+	Managed     string       `json:"managed,omitempty"` // engine id when PortDock can run it as a managed database
 }
 
 type Catalog struct {

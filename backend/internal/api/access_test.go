@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/store"
 )
 
 func (e *testEnv) login(email string) *http.Client {

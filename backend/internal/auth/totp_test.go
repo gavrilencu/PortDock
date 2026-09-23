@@ -29,8 +29,8 @@ func TestVerifyTOTP(t *testing.T) {
 	if _, ok := VerifyTOTP(s, "abc", now); ok {
 		t.Fatal("garbage accepted")
 	}
-	if !strings.HasPrefix(TOTPURL("Shipyard", "a@b.c", s), "otpauth://totp/Shipyard:a@b.c?") {
-		t.Fatal(TOTPURL("Shipyard", "a@b.c", s))
+	if !strings.HasPrefix(TOTPURL("PortDock", "a@b.c", s), "otpauth://totp/PortDock:a@b.c?") {
+		t.Fatal(TOTPURL("PortDock", "a@b.c", s))
 	}
 }
 

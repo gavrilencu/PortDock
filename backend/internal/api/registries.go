@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/registry"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/registry"
+	"github.com/portdock/portdock/internal/store"
 )
 
 type registryOut struct {

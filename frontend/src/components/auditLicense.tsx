@@ -81,8 +81,8 @@ function AuditStreaming() {
             <UpgradeNotice feature="audit_streaming">Audit log streaming is part of the</UpgradeNotice>
           </div>
         )}
-        <Field label="Webhook URL" hint="JSON POST per event, signed with HMAC-SHA256 in X-Shipyard-Signature.">
-          <Input value={f.webhook_url} onChange={(e) => setF({ ...f, webhook_url: e.target.value })} placeholder="https://siem.example.com/hooks/shipyard" />
+        <Field label="Webhook URL" hint="JSON POST per event, signed with HMAC-SHA256 in X-PortDock-Signature.">
+          <Input value={f.webhook_url} onChange={(e) => setF({ ...f, webhook_url: e.target.value })} placeholder="https://siem.example.com/hooks/portdock" />
         </Field>
         <Field label="Signing secret" hint={d.webhook_secret_set ? "A secret is stored; type to replace it." : "Optional but recommended."}>
           <PasswordInput value={f.webhook_secret} onChange={(e) => setF({ ...f, webhook_secret: e.target.value })} placeholder={d.webhook_secret_set ? "••••••••" : ""} />
@@ -354,7 +354,7 @@ export function LicenseSettings() {
         </div>
       </Card>
 
-      <Card title="Install a license key" description="Keys are verified offline with Shipyard's signing key — no connection to a license server is needed.">
+      <Card title="Install a license key" description="Keys are verified offline with PortDock's signing key — no connection to a license server is needed.">
         <div className="space-y-3 p-5">
           <Textarea rows={3} value={key} onChange={(e) => setKey(e.target.value)} placeholder="SY1.eyJpZCI6…" className="font-mono text-xs" />
           <div className="flex justify-end">

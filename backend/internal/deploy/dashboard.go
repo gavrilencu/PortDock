@@ -10,25 +10,25 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
-	"github.com/shipyard/shipyard/internal/proxy"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/proxy"
 )
 
-// ErrNotContainerized means Shipyard runs outside Docker, so Traefik cannot
+// ErrNotContainerized means PortDock runs outside Docker, so Traefik cannot
 // reach it by container name; the dashboard domain must be routed manually.
-var ErrNotContainerized = errors.New("Shipyard is not running in Docker; route the dashboard domain to it with your own reverse proxy")
+var ErrNotContainerized = errors.New("PortDock is not running in Docker; route the dashboard domain to it with your own reverse proxy")
 
 func inDocker() bool {
 	_, err := os.Stat("/.dockerenv")
 	return err == nil
 }
 
-// ApplyDashboardRoute serves the Shipyard UI on the configured instance URL
+// ApplyDashboardRoute serves the PortDock UI on the configured instance URL
 // through the local Traefik proxy (with automatic HTTPS).
 func (e *Engine) ApplyDashboardRoute(ctx context.Context) error {
 	x := executor.Local{}
-	file := path.Join(e.dynamicDir(), "shipyard-dashboard.yml")
+	file := path.Join(e.dynamicDir(), "portdock-dashboard.yml")
 	raw := strings.TrimSpace(e.db.Setting(ctx, "instance_url"))
 	u, _ := url.Parse(raw)
 	if raw == "" || u == nil || u.Hostname() == "" || u.Hostname() == "localhost" || net.ParseIP(u.Hostname()) != nil {

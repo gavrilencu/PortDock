@@ -33,10 +33,10 @@ export function QRCode({ value, size = 176 }: { value: string; size?: number }) 
 export function RecoveryCodes({ codes }: { codes: string[] }) {
   const text = codes.join("\n");
   const download = () => {
-    const blob = new Blob([`Shipyard recovery codes — ${location.host}\nEach code can be used once.\n\n${text}\n`], { type: "text/plain" });
+    const blob = new Blob([`PortDock recovery codes — ${location.host}\nEach code can be used once.\n\n${text}\n`], { type: "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "shipyard-recovery-codes.txt";
+    a.download = "portdock-recovery-codes.txt";
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -439,7 +439,7 @@ export function MFAEnforcement({ onLogout }: { onLogout: () => void }) {
           <KeyRound className="size-5" />
         </span>
         <h1 className="mt-4 text-xl font-semibold tracking-[-0.02em]">Set up two-factor authentication</h1>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-subtle">Your organization requires two-factor authentication. Set it up to continue to Shipyard.</p>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-subtle">Your organization requires two-factor authentication. Set it up to continue to PortDock.</p>
         <div className="mt-6">
           <TwoFactorSetup onDone={() => qc.invalidateQueries({ queryKey: ["auth-status"] })} />
         </div>

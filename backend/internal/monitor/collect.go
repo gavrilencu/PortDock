@@ -15,9 +15,9 @@ echo '#mem'; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo | awk '{print $2}
 echo '#disk'; df -Pk / | tail -1 | awk '{print $2, $3}'
 echo '#load'; cat /proc/loadavg; nproc
 echo '#net'; cat /proc/net/dev
-echo '#ps'; docker ps -a --no-trunc --filter label=shipyard.managed=true --format '{{.ID}}|{{.Label "shipyard.kind"}}|{{.Label "shipyard.resource"}}|{{.State}}' 2>/dev/null
+echo '#ps'; docker ps -a --no-trunc --filter label=portdock.managed=true --format '{{.ID}}|{{.Label "portdock.kind"}}|{{.Label "portdock.resource"}}|{{.State}}' 2>/dev/null; docker ps -a --no-trunc --filter label=shipyard.managed=true --format '{{.ID}}|{{.Label "shipyard.kind"}}|{{.Label "shipyard.resource"}}|{{.State}}' 2>/dev/null
 echo '#stats'; docker stats --no-stream --no-trunc --format '{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}' 2>/dev/null
-echo '#restarts'; ids=$(docker ps -aq --no-trunc --filter label=shipyard.managed=true 2>/dev/null); [ -n "$ids" ] && docker inspect -f '{{.Id}} {{.RestartCount}}' $ids 2>/dev/null
+echo '#restarts'; ids=$({ docker ps -aq --no-trunc --filter label=portdock.managed=true; docker ps -aq --no-trunc --filter label=shipyard.managed=true; } 2>/dev/null | sort -u); [ -n "$ids" ] && docker inspect -f '{{.Id}} {{.RestartCount}}' $ids 2>/dev/null
 echo '#end'`
 
 // HostSample is a point-in-time reading of a server.
@@ -172,6 +172,9 @@ func Parse(out string) Sample {
 	for _, line := range sec["ps"] {
 		p := strings.Split(line, "|")
 		if len(p) < 4 || p[2] == "" {
+			continue
+		}
+		if _, dup := byID[p[0]]; dup {
 			continue
 		}
 		byID[p[0]] = &ContainerSample{ID: p[0], Kind: p[1], Resource: p[2], Running: p[3] == "running"}

@@ -12,12 +12,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shipyard/shipyard/internal/docker"
-	"github.com/shipyard/shipyard/internal/executor"
+	"github.com/portdock/portdock/internal/docker"
+	"github.com/portdock/portdock/internal/executor"
 )
 
 const (
-	ContainerName = "shipyard-proxy"
+	ContainerName = "portdock-proxy"
+	// LegacyContainerName is the proxy of installations created before the rename.
+	LegacyContainerName = "shipyard-proxy"
 	// Image must speak the Docker Engine API of current hosts (Docker 29 dropped
 	// API < 1.44, which broke Traefik <= 3.5's docker provider).
 	Image        = "traefik:v3.7"
@@ -26,7 +28,7 @@ const (
 	DNSResolver = "letsencrypt-dns"
 	// LabelConfig stores a fingerprint of the proxy configuration so changes
 	// (email, CA, DNS provider) recreate the proxy automatically.
-	LabelConfig = "shipyard.proxy-config"
+	LabelConfig = "portdock.proxy-config"
 )
 
 var q = executor.Quote
@@ -135,7 +137,7 @@ func Ensure(ctx context.Context, e executor.Executor, o Options, recreate bool) 
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "mkdir -p %s/dynamic %s/custom && touch %s/acme.json && chmod 600 %s/acme.json && ", q(certDir), q(certDir), q(certDir), q(certDir))
-	fmt.Fprintf(&b, "(docker rm -f %s >/dev/null 2>&1 || true) && ", ContainerName)
+	fmt.Fprintf(&b, "(docker rm -f %s %s >/dev/null 2>&1 || true) && ", ContainerName, LegacyContainerName)
 	fmt.Fprintf(&b, "docker run -d --name %s --restart unless-stopped --network %s ", ContainerName, q(o.Network))
 	b.WriteString("-p 80:80 -p 443:443 -p 443:443/udp ")
 	if o.Dashboard {
@@ -164,7 +166,10 @@ func Stop(ctx context.Context, e executor.Executor) error {
 func Status(ctx context.Context, e executor.Executor) string {
 	state, _, err := docker.State(ctx, e, ContainerName)
 	if err != nil {
-		return "missing"
+		// A pre-rename proxy still serves traffic; Ensure replaces it.
+		if state, _, err = docker.State(ctx, e, LegacyContainerName); err != nil {
+			return "missing"
+		}
 	}
 	return state
 }

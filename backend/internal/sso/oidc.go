@@ -27,7 +27,7 @@ import (
 
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
-// Metadata is the subset of the discovery document Shipyard uses.
+// Metadata is the subset of the discovery document PortDock uses.
 type Metadata struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
@@ -128,7 +128,7 @@ type tokenResponse struct {
 	Description string `json:"error_description"`
 }
 
-// Claims are the identity attributes Shipyard maps to a user.
+// Claims are the identity attributes PortDock maps to a user.
 type Claims struct {
 	Subject       string
 	Email         string

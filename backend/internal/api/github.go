@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/github"
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 )
 
 type githubAppDTO struct {
@@ -118,7 +118,7 @@ func (s *Server) createGitHubManifest(w http.ResponseWriter, r *http.Request) er
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		name = "Shipyard " + secrets.RandomPassword(5)
+		name = "PortDock " + secrets.RandomPassword(5)
 	}
 	state := secrets.RandomToken(16)
 	st, _ := json.Marshal(manifestState{HTMLURL: htmlURL, APIURL: github.APIURLFor(htmlURL), Created: time.Now().Unix()})

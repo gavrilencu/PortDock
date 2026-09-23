@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Entry is the exported form of an audit event.
@@ -156,7 +156,7 @@ func (s *Streamer) Deliver(ctx context.Context, cfg Config, e Entry) error {
 	return nil
 }
 
-// Sign returns the X-Shipyard-Signature header value for body.
+// Sign returns the X-PortDock-Signature header value for body.
 func Sign(secret string, body []byte) string {
 	m := hmac.New(sha256.New, []byte(secret))
 	m.Write(body)
@@ -170,9 +170,10 @@ func (s *Streamer) webhook(ctx context.Context, cfg Config, e Entry) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Shipyard-Audit/1")
+	req.Header.Set("User-Agent", "PortDock-Audit/1")
 	if cfg.WebhookSecret != "" {
-		req.Header.Set("X-Shipyard-Signature", Sign(cfg.WebhookSecret, body))
+		req.Header.Set("X-PortDock-Signature", Sign(cfg.WebhookSecret, body))
+		req.Header.Set("X-Shipyard-Signature", Sign(cfg.WebhookSecret, body)) // pre-rename receivers
 	}
 	res, err := s.client.Do(req)
 	if err != nil {
@@ -192,7 +193,7 @@ func FormatSyslog(e Entry, hostname string) string {
 	if ts == "" {
 		ts = time.Now().UTC().Format(time.RFC3339)
 	}
-	return fmt.Sprintf("<110>1 %s %s shipyard - %s - %s", ts, hostname, sanitizeMsgID(e.Action), body)
+	return fmt.Sprintf("<110>1 %s %s portdock - %s - %s", ts, hostname, sanitizeMsgID(e.Action), body)
 }
 
 func sanitizeMsgID(s string) string {

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/shipyard/shipyard/internal/secrets"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/store"
 )
 
 // Pool hands out (and caches) executors for servers.

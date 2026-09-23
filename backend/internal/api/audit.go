@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shipyard/shipyard/internal/audit"
-	"github.com/shipyard/shipyard/internal/auth"
-	"github.com/shipyard/shipyard/internal/license"
-	"github.com/shipyard/shipyard/internal/store"
+	"github.com/portdock/portdock/internal/audit"
+	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/license"
+	"github.com/portdock/portdock/internal/store"
 )
 
 type activityRow struct {
@@ -108,7 +108,7 @@ func (s *Server) exportActivity(w http.ResponseWriter, r *http.Request) error {
 	s.activity(r, "audit.export", fmt.Sprintf("%d entries", len(rows)))
 	if r.URL.Query().Get("format") == "json" {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="shipyard-audit-`+stamp+`.json"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="portdock-audit-`+stamp+`.json"`)
 		out := make([]audit.Entry, 0, len(rows))
 		for _, a := range rows {
 			out = append(out, audit.Entry{ID: a.ID, Time: a.CreatedAt, Action: a.Action, Target: a.Target, UserID: a.UserID, UserEmail: a.UserEmail, UserName: a.UserName, IP: a.IP})
@@ -116,7 +116,7 @@ func (s *Server) exportActivity(w http.ResponseWriter, r *http.Request) error {
 		return json.NewEncoder(w).Encode(out)
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="shipyard-audit-`+stamp+`.csv"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="portdock-audit-`+stamp+`.csv"`)
 	cw := csv.NewWriter(w)
 	_ = cw.Write([]string{"id", "time", "user_id", "user_email", "user_name", "action", "target", "ip"})
 	for _, a := range rows {
@@ -206,7 +206,7 @@ func (s *Server) testAuditStream(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("configure a webhook URL or syslog target first")
 	}
 	u := auth.UserFrom(ctx)
-	e := audit.Entry{Time: store.Now(), Action: "audit.test", Target: "Test event from Shipyard", UserID: u.ID, UserEmail: u.Email, UserName: u.Name, IP: auth.ClientIP(r)}
+	e := audit.Entry{Time: store.Now(), Action: "audit.test", Target: "Test event from PortDock", UserID: u.ID, UserEmail: u.Email, UserName: u.Name, IP: auth.ClientIP(r)}
 	if err := s.audit.Deliver(ctx, cfg, e); err != nil {
 		return badRequest("delivery failed: %v", err)
 	}

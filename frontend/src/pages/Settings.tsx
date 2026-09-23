@@ -215,7 +215,7 @@ function General() {
 
   return (
     <div className="space-y-6">
-      <Card title="General" description="How this Shipyard instance is identified and reached.">
+      <Card title="General" description="How this PortDock instance is identified and reached.">
         <div className="grid gap-5 p-5 md:grid-cols-2">
           <Field
             label="URL"
@@ -240,7 +240,7 @@ function General() {
             </Select>
           </Field>
           <Field label="Name" hint="Shown in notifications and the browser title.">
-            <Input value={f.instance_name ?? ""} onChange={(e) => setF({ ...f, instance_name: e.target.value })} placeholder="Shipyard" />
+            <Input value={f.instance_name ?? ""} onChange={(e) => setF({ ...f, instance_name: e.target.value })} placeholder="PortDock" />
           </Field>
           <Field label="Instance timezone" hint="Used for scheduled jobs such as database backups.">
             <Select value={f.instance_timezone || "UTC"} onChange={(e) => setF({ ...f, instance_timezone: e.target.value })}>
@@ -499,7 +499,7 @@ function Keys() {
   return (
     <Card
       title="SSH keys"
-      description="Private keys are encrypted at rest and never leave Shipyard."
+      description="Private keys are encrypted at rest and never leave PortDock."
       actions={
         user.role !== "member" && (
           <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setF({ name: "", private_key: "" })}>
@@ -581,7 +581,7 @@ function Tokens() {
   if (tokens.isLoading) return <Loading />;
   return (
     <div className="space-y-6">
-      <Card title="API tokens" description="Use with Authorization: Bearer <token> to automate Shipyard from scripts or CI.">
+      <Card title="API tokens" description="Use with Authorization: Bearer <token> to automate PortDock from scripts or CI.">
         <form
           className="flex gap-2 border-b border-border p-5"
           onSubmit={(e) => {
@@ -647,7 +647,7 @@ const channelFields: Record<NotificationChannel["type"], { key: string; label: s
     { key: "chat_id", label: "Chat ID" },
   ],
   webhook: [
-    { key: "url", label: "URL", placeholder: "https://example.com/hooks/shipyard" },
+    { key: "url", label: "URL", placeholder: "https://example.com/hooks/portdock" },
     { key: "secret", label: "Signing secret (optional)", secret: true },
   ],
   email: [

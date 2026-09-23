@@ -18,7 +18,7 @@ func TestDeliverWebhookAndSyslog(t *testing.T) {
 	var got Entry
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		gotSig = r.Header.Get("X-Shipyard-Signature")
+		gotSig = r.Header.Get("X-PortDock-Signature")
 		if gotSig != Sign("topsecret", body) {
 			w.WriteHeader(401)
 			return
@@ -64,7 +64,7 @@ func TestDeliverWebhookAndSyslog(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg := string(buf[:n])
-	if !strings.HasPrefix(msg, "<110>1 2026-09-23T12:00:00Z ") || !strings.Contains(msg, " shipyard - deployment.approve - {") {
+	if !strings.HasPrefix(msg, "<110>1 2026-09-23T12:00:00Z ") || !strings.Contains(msg, " portdock - deployment.approve - {") {
 		t.Fatalf("syslog: %s", msg)
 	}
 
