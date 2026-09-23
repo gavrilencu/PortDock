@@ -1,0 +1,144 @@
+// Command shipyard runs the Shipyard self-hosted PaaS: API, web UI, deployment
+// workers, status monitor and backup scheduler in a single binary.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+	_ "time/tzdata" // timezones on minimal images and Windows
+
+	"github.com/shipyard/shipyard/internal/api"
+	"github.com/shipyard/shipyard/internal/auth"
+	"github.com/shipyard/shipyard/internal/config"
+	"github.com/shipyard/shipyard/internal/deploy"
+	"github.com/shipyard/shipyard/internal/executor"
+	"github.com/shipyard/shipyard/internal/github"
+	"github.com/shipyard/shipyard/internal/notify"
+	"github.com/shipyard/shipyard/internal/scheduler"
+	"github.com/shipyard/shipyard/internal/secrets"
+	"github.com/shipyard/shipyard/internal/store"
+	"github.com/shipyard/shipyard/internal/stream"
+	"github.com/shipyard/shipyard/web"
+)
+
+func main() {
+	resetPassword := flag.String("reset-password", "", "reset the password of the user with this email and exit")
+	disable2FA := flag.String("disable-2fa", "", "turn off two-factor authentication for the user with this email and exit")
+	flag.Parse()
+
+	level := slog.LevelInfo
+	if os.Getenv("SHIPYARD_DEBUG") == "1" {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+
+	if err := run(*resetPassword, *disable2FA); err != nil {
+		slog.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(resetPassword, disable2FA string) error {
+	cfg := config.Load()
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return fmt.Errorf("create data dir %s: %w", cfg.DataDir, err)
+	}
+	db, err := store.Open(cfg.DBPath())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if resetPassword != "" {
+		return doResetPassword(db, resetPassword)
+	}
+	if disable2FA != "" {
+		res, err := db.ExecContext(context.Background(),
+			"UPDATE users SET totp_enabled = 0, totp_secret = '', recovery_codes = '', totp_last_step = 0 WHERE email = ?", strings.ToLower(disable2FA))
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return fmt.Errorf("user %s not found", disable2FA)
+		}
+		db.LogActivity(context.Background(), 0, "2fa.reset", disable2FA+" (command line)")
+		fmt.Printf("Two-factor authentication disabled for %s\n", disable2FA)
+		return nil
+	}
+
+	box, err := secrets.LoadOrCreate(cfg.SecretKey, cfg.DataDir)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	hub := stream.NewHub()
+	pool := executor.NewPool(db, box)
+	notifier := notify.New(db, box)
+	gh := github.New(db, box)
+	engine := deploy.New(cfg, db, box, pool, hub, notifier, gh)
+	sched := scheduler.New(db, engine, pool, notifier)
+
+	engine.Start(ctx)
+	sched.Start(ctx)
+	go engine.Monitor(ctx, 30*time.Second)
+	go func() {
+		if err := engine.ApplyDashboardRoute(ctx); err != nil && !errors.Is(err, deploy.ErrNotContainerized) {
+			slog.Warn("dashboard domain routing", "err", err)
+		}
+	}()
+
+	srv := api.New(api.Deps{
+		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh,
+		Auth: auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
+		UI:   web.FS(),
+	})
+	httpSrv := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutdown)
+	}()
+	slog.Info("Shipyard started", "addr", cfg.Addr, "data", cfg.DataDir, "url", cfg.PublicURL, "version", api.Version)
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	slog.Info("Shipyard stopped")
+	return nil
+}
+
+func doResetPassword(db *store.DB, email string) error {
+	ctx := context.Background()
+	u, err := store.Get[store.User](ctx, db, "SELECT * FROM users WHERE email = ?", strings.ToLower(email))
+	if err != nil {
+		return fmt.Errorf("user %s not found", email)
+	}
+	pass := secrets.RandomPassword(16)
+	hash, err := auth.HashPassword(pass)
+	if err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE id = ?", hash, u.ID); err != nil {
+		return err
+	}
+	_, _ = db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", u.ID)
+	fmt.Printf("New password for %s: %s\n", u.Email, pass)
+	return nil
+}

@@ -1,0 +1,33 @@
+# Runs Shipyard on this machine. The machine itself becomes the "localhost" server.
+services:
+  shipyard:
+    build:
+      context: .
+      args:
+        VERSION: ${SHIPYARD_VERSION:-dev}
+        BASE_REGISTRY: ${BASE_REGISTRY:-docker.io/library}
+    image: shipyard:latest
+    container_name: shipyard
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # External URL of the dashboard (used to build webhook URLs).
+      SHIPYARD_PUBLIC_URL: ${SHIPYARD_PUBLIC_URL:-http://localhost:8000}
+      SHIPYARD_MAX_BUILDS: ${SHIPYARD_MAX_BUILDS:-4}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Must be mounted at the SAME path as on the host: builds and backups
+      # are bind-mounted into helper containers by absolute host path.
+      - /data/shipyard:/data/shipyard
+    # Optional: serve the dashboard through Traefik with HTTPS once the proxy runs.
+    # networks: [shipyard]
+    # labels:
+    #   traefik.enable: "true"
+    #   traefik.http.routers.shipyard.rule: Host(`shipyard.example.com`)
+    #   traefik.http.routers.shipyard.entrypoints: websecure
+    #   traefik.http.routers.shipyard.tls.certresolver: letsencrypt
+    #   traefik.http.services.shipyard.loadbalancer.server.port: "8000"
+# networks:
+#   shipyard:
+#     external: true
