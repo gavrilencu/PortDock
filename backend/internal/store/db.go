@@ -118,6 +118,7 @@ var migrations = []string{
 	`ALTER TABLE applications ADD COLUMN sast_block TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN dast_on_deploy INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE applications ADD COLUMN dast_target TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN compose_host_access INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE image_scans ADD COLUMN kind TEXT NOT NULL DEFAULT 'image'`,
 	`ALTER TABLE image_scans ADD COLUMN target TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE image_scans ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''`,

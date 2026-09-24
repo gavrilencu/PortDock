@@ -172,10 +172,13 @@ type Application struct {
 	ProxyMode string `db:"proxy_mode" json:"proxy_mode"`
 	// Static analysis of the source (Semgrep) after the checkout, which can block
 	// the deployment; dynamic scan (OWASP ZAP baseline) of the running application.
-	SastOnDeploy        bool   `db:"sast_on_deploy" json:"sast_on_deploy"`
-	SastBlock           string `db:"sast_block" json:"sast_block"`
-	DastOnDeploy        bool   `db:"dast_on_deploy" json:"dast_on_deploy"`
-	DastTarget          string `db:"dast_target" json:"dast_target"` // URL to scan; empty: the application itself
+	SastOnDeploy bool   `db:"sast_on_deploy" json:"sast_on_deploy"`
+	SastBlock    string `db:"sast_block" json:"sast_block"`
+	DastOnDeploy bool   `db:"dast_on_deploy" json:"dast_on_deploy"`
+	DastTarget   string `db:"dast_target" json:"dast_target"` // URL to scan; empty: the application itself
+	// ComposeHostAccess lets the compose file use privileged mode, host paths,
+	// devices and capabilities. Only administrators can grant it.
+	ComposeHostAccess   bool   `db:"compose_host_access" json:"compose_host_access"`
 	BuildPack           string `db:"build_pack" json:"build_pack"`
 	BaseDirectory       string `db:"base_directory" json:"base_directory"`
 	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`
