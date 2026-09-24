@@ -221,34 +221,43 @@ func (s *Server) azureHookURL(ctx context.Context, app store.Application) string
 	return s.publicURL(ctx) + "/api/webhooks/azure/" + app.UUID
 }
 
-// ensureAzureHook (re)creates the service hook that deploys app on push and
-// records the outcome on the application.
+// ensureAzureHook (re)creates the service hooks of app (pushes, pull requests)
+// and records their ids, comma separated, or the error on the application.
 func (s *Server) ensureAzureHook(ctx context.Context, app store.Application) error {
 	if app.AzureConnectionID == 0 {
 		return nil
 	}
 	c, _, err := s.azureClient(ctx, app.AzureConnectionID)
+	var ids []string
 	if err == nil {
-		if app.AzureHookID != "" {
-			_ = c.DeleteHook(ctx, app.AzureHookID) // replaced below
+		for _, id := range store.SplitList(app.AzureHookID) {
+			_ = c.DeleteHook(ctx, id) // replaced below
 		}
-		app.AzureHookID, err = c.CreatePushHook(ctx, app.AzureProjectID, app.AzureRepoID, s.azureHookURL(ctx, app), app.WebhookSecret)
+		for _, ev := range azuredevops.HookEvents {
+			var id string
+			if id, err = c.CreateHook(ctx, ev, app.AzureProjectID, app.AzureRepoID, s.azureHookURL(ctx, app), app.WebhookSecret); err != nil {
+				break
+			}
+			ids = append(ids, id)
+		}
 	}
 	msg := ""
 	if err != nil {
-		app.AzureHookID, msg = "", err.Error()
+		msg = err.Error()
 	}
-	_, _ = s.db.ExecContext(ctx, "UPDATE applications SET azure_hook_id = ?, azure_hook_error = ? WHERE id = ?", app.AzureHookID, msg, app.ID)
+	_, _ = s.db.ExecContext(ctx, "UPDATE applications SET azure_hook_id = ?, azure_hook_error = ? WHERE id = ?", strings.Join(ids, ","), msg, app.ID)
 	return err
 }
 
-// removeAzureHook deletes the service hook of app (best effort).
+// removeAzureHook deletes the service hooks of app (best effort).
 func (s *Server) removeAzureHook(ctx context.Context, app store.Application) {
 	if app.AzureConnectionID == 0 || app.AzureHookID == "" {
 		return
 	}
 	if c, _, err := s.azureClient(ctx, app.AzureConnectionID); err == nil {
-		_ = c.DeleteHook(ctx, app.AzureHookID)
+		for _, id := range store.SplitList(app.AzureHookID) {
+			_ = c.DeleteHook(ctx, id)
+		}
 	}
 }
 
@@ -267,12 +276,13 @@ func (s *Server) azureHookInfo(w http.ResponseWriter, r *http.Request) error {
 		app, _ = store.ByID[store.Application](r.Context(), s.db, "applications", app.ID)
 	}
 	return ok(w, map[string]any{
-		"hook_id": app.AzureHookID, "error": app.AzureHookError,
+		"hook_id": app.AzureHookID, "hooks": len(store.SplitList(app.AzureHookID)), "events": len(azuredevops.HookEvents), "error": app.AzureHookError,
 		"url": s.azureHookURL(r.Context(), app), "header": azuredevops.HookHeader,
 	})
 }
 
-// azureWebhook receives the git.push service hook of an application.
+// azureWebhook receives the service hooks of an application: pushes deploy,
+// pull requests targeting its branch get preview deployments.
 func (s *Server) azureWebhook(w http.ResponseWriter, r *http.Request) error {
 	app, err := s.appByUUID(r)
 	if err != nil {
@@ -285,11 +295,15 @@ func (s *Server) azureWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest("could not read body")
 	}
-	var p azuredevops.Push
+	var p azuredevops.Event
 	if err := json.Unmarshal(body, &p); err != nil {
 		return badRequest("invalid payload")
 	}
-	if p.EventType != "git.push" {
+	switch p.EventType {
+	case azuredevops.EventPRCreated, azuredevops.EventPRUpdated:
+		return s.azurePullRequest(r.Context(), w, app, p)
+	case azuredevops.EventPush:
+	default:
 		return accepted(w, webhookResult{Status: "ignored", Message: "event " + p.EventType})
 	}
 	for _, ref := range p.Resource.RefUpdates {
@@ -329,4 +343,30 @@ func (s *Server) azureWebhook(w http.ResponseWriter, r *http.Request) error {
 		return s.enqueuePush(r.Context(), w, app, branch, ref.NewObjectID, msg, files)
 	}
 	return accepted(w, webhookResult{Status: "ignored", Message: "no push to " + app.GitBranch})
+}
+
+// azurePullRequest maps a pull request event to a preview deployment: active
+// pull requests deploy their latest commit, completed or abandoned ones are removed.
+func (s *Server) azurePullRequest(ctx context.Context, w http.ResponseWriter, app store.Application, p azuredevops.Event) error {
+	pr := p.Resource
+	if target := strings.TrimPrefix(pr.TargetRefName, "refs/heads/"); target != app.GitBranch {
+		return accepted(w, webhookResult{Application: app.Name, Status: "ignored", Message: "pull request does not target " + app.GitBranch})
+	}
+	branch, sha := strings.TrimPrefix(pr.SourceRefName, "refs/heads/"), pr.LastMergeSourceCommit.CommitID
+	action := "update"
+	switch pr.Status {
+	case "completed", "abandoned":
+		action = "closed"
+	case "active":
+		// Updates also fire for votes, reviewers and titles: deploy only new commits.
+		var n int
+		_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM deployments WHERE application_id = ? AND pr_number = ? AND commit_sha = ? AND status IN ('queued','running','success','pending_approval')",
+			app.ID, pr.PullRequestID, sha).Scan(&n)
+		if n > 0 && sha != "" {
+			return accepted(w, webhookResult{Application: app.Name, Status: "ignored", Message: "commit already deployed"})
+		}
+	default:
+		return accepted(w, webhookResult{Application: app.Name, Status: "ignored", Message: "pull request " + pr.Status})
+	}
+	return s.handlePullRequest(ctx, w, app, action, pr.PullRequestID, branch, sha, pr.Title)
 }

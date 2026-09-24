@@ -37,19 +37,23 @@ export const ro: Record<string, string> = {
     "Sfat: {github} sau {azure} ca să navighezi prin repozitorii și să faci deploy automat la fiecare push.",
   "Connected through Azure DevOps. New commits on the branch deploy automatically.": "Conectat prin Azure DevOps. Commit-urile noi pe branch fac deploy automat.",
   // CI/CD tab
-  "A service hook in the repository's project sends every push to PortDock.": "Un service hook în proiectul repozitoriului trimite fiecare push către PortDock.",
-  "Create service hook": "Creează service hook-ul",
-  "Recreate service hook": "Recreează service hook-ul",
+  "Service hooks in the repository's project send pushes and pull requests to PortDock, which reports each deployment on the commit and the pull request.":
+    "Service hook-urile din proiectul repozitoriului trimit push-urile și pull request-urile către PortDock, care raportează fiecare deploy pe commit și pe pull request.",
+  "Create service hooks": "Creează service hook-urile",
+  "Recreate service hooks": "Recreează service hook-urile",
   "Service hook created": "Service hook creat",
-  "Service hook active": "Service hook activ",
+  "Service hooks active": "Service hook-uri active",
+  "{n} of {total} service hooks active": "{n} din {total} service hook-uri active",
   "No service hook": "Fără service hook",
-  "The service hook could not be created": "Service hook-ul nu a putut fi creat",
-  "You can also add it by hand: in {path}, add a {type} subscription for {event} on this repository and branch, with this URL and HTTP header.":
-    "Îl poți adăuga și manual: în {path}, adaugă un abonament {type} pentru {event} pe acest repozitoriu și branch, cu acest URL și header HTTP.",
+  "The service hooks could not be created": "Service hook-urile nu au putut fi create",
+  "You can also add them by hand: in {path}, add a {type} subscription on this repository for each of {events}, with this URL and HTTP header.":
+    "Le poți adăuga și manual: în {path}, adaugă pe acest repozitoriu câte un abonament {type} pentru fiecare dintre {events}, cu acest URL și header HTTP.",
   "Project settings → Service hooks": "Project settings → Service hooks",
   "HTTP headers": "Headere HTTP",
-  "Pushes to {branch} deploy when {auto} is on. Pull request previews are not available for Azure DevOps yet.":
-    "Push-urile pe {branch} fac deploy când {auto} este activ. Preview-urile pentru pull request-uri nu sunt încă disponibile pentru Azure DevOps.",
+  "Pushes to {branch} deploy when {auto} is on; pull requests targeting it get a preview when previews are enabled. Statuses show as {status} (the token needs the Code: Status scope).":
+    "Push-urile pe {branch} fac deploy când {auto} este activ; pull request-urile către el primesc un preview dacă preview-urile sunt activate. Statusurile apar ca {status} (tokenul are nevoie de scope-ul Code: Status).",
+  "In the Teams channel: ⋯ → Workflows → “Post to a channel when a webhook request is received”, then copy the URL. Incoming webhook URLs work too.":
+    "În canalul Teams: ⋯ → Workflows → „Post to a channel when a webhook request is received”, apoi copiază URL-ul. Merg și URL-urile de incoming webhook.",
   // Fixed server messages
   "organization and personal access token are required": "organizația și personal access token-ul sunt obligatorii",
   "enter the organization, e.g. contoso or https://dev.azure.com/contoso": "introdu organizația, de ex. contoso sau https://dev.azure.com/contoso",
@@ -100,19 +104,23 @@ export const ru: Record<string, string> = {
     "Совет: {github} или {azure}, чтобы выбирать репозитории и деплоить автоматически при каждом push.",
   "Connected through Azure DevOps. New commits on the branch deploy automatically.": "Подключено через Azure DevOps. Новые коммиты в ветке деплоятся автоматически.",
   // CI/CD tab
-  "A service hook in the repository's project sends every push to PortDock.": "Service hook в проекте репозитория отправляет каждый push в PortDock.",
-  "Create service hook": "Создать service hook",
-  "Recreate service hook": "Пересоздать service hook",
+  "Service hooks in the repository's project send pushes and pull requests to PortDock, which reports each deployment on the commit and the pull request.":
+    "Service hooks в проекте репозитория отправляют push и pull request в PortDock, а PortDock сообщает о каждом деплое в коммите и в pull request.",
+  "Create service hooks": "Создать service hooks",
+  "Recreate service hooks": "Пересоздать service hooks",
   "Service hook created": "Service hook создан",
-  "Service hook active": "Service hook активен",
+  "Service hooks active": "Service hooks активны",
+  "{n} of {total} service hooks active": "Активно service hooks: {n} из {total}",
   "No service hook": "Нет service hook",
-  "The service hook could not be created": "Не удалось создать service hook",
-  "You can also add it by hand: in {path}, add a {type} subscription for {event} on this repository and branch, with this URL and HTTP header.":
-    "Его можно добавить и вручную: в {path} добавьте подписку {type} на событие {event} для этого репозитория и ветки, с этим URL и HTTP-заголовком.",
+  "The service hooks could not be created": "Не удалось создать service hooks",
+  "You can also add them by hand: in {path}, add a {type} subscription on this repository for each of {events}, with this URL and HTTP header.":
+    "Их можно добавить и вручную: в {path} добавьте для этого репозитория подписку {type} на каждое из событий {events}, с этим URL и HTTP-заголовком.",
   "Project settings → Service hooks": "Project settings → Service hooks",
   "HTTP headers": "HTTP-заголовки",
-  "Pushes to {branch} deploy when {auto} is on. Pull request previews are not available for Azure DevOps yet.":
-    "Push в {branch} запускает деплой, когда включено «{auto}». Превью для pull request пока недоступны для Azure DevOps.",
+  "Pushes to {branch} deploy when {auto} is on; pull requests targeting it get a preview when previews are enabled. Statuses show as {status} (the token needs the Code: Status scope).":
+    "Push в {branch} запускает деплой, когда включено «{auto}»; pull request в эту ветку получают превью, если превью включены. Статусы отображаются как {status} (токену нужна область Code: Status).",
+  "In the Teams channel: ⋯ → Workflows → “Post to a channel when a webhook request is received”, then copy the URL. Incoming webhook URLs work too.":
+    "В канале Teams: ⋯ → Workflows → «Post to a channel when a webhook request is received», затем скопируйте URL. URL входящих вебхуков тоже подходят.",
   // Fixed server messages
   "organization and personal access token are required": "укажите организацию и персональный токен доступа",
   "enter the organization, e.g. contoso or https://dev.azure.com/contoso": "укажите организацию, например contoso или https://dev.azure.com/contoso",

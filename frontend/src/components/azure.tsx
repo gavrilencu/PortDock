@@ -161,7 +161,7 @@ export function AzureRepoLink({ url }: { url: string }) {
 
 // ---------- Settings: Git sources → Azure DevOps ----------
 
-const scopes = "Code: Read · Service Hooks: Read, query & manage";
+const scopes = "Code: Read, Status · Service Hooks: Read, query & manage";
 
 export function AzureDevOpsSettings() {
   const qc = useQueryClient();
@@ -377,34 +377,36 @@ export function AzureHookCard({ app }: { app: ApplicationDetail }) {
   return (
     <Card
       title="Azure DevOps"
-      description={t("A service hook in the repository's project sends every push to PortDock.")}
+      description={t("Service hooks in the repository's project send pushes and pull requests to PortDock, which reports each deployment on the commit and the pull request.")}
       actions={
         <Button size="sm" icon={<RefreshCw />} loading={recreate.isPending} onClick={() => recreate.mutate()}>
-          {h?.hook_id ? t("Recreate service hook") : t("Create service hook")}
+          {h?.hook_id ? t("Recreate service hooks") : t("Create service hooks")}
         </Button>
       }
     >
       <div className="space-y-4 p-5">
         <div className="flex flex-wrap items-center gap-3 text-[13px]">
           <AzureRepoLink url={repoURL} />
-          {hook.isLoading ? null : h?.hook_id ? (
+          {hook.isLoading || !h ? null : h.hooks >= h.events ? (
             <Badge tone="success">
-              <Webhook className="size-3" /> {t("Service hook active")}
+              <Webhook className="size-3" /> {t("Service hooks active")}
             </Badge>
+          ) : h.hooks > 0 ? (
+            <Badge tone="warning">{t("{n} of {total} service hooks active", { n: h.hooks, total: h.events })}</Badge>
           ) : (
             <Badge tone="warning">{t("No service hook")}</Badge>
           )}
         </div>
         {h?.error && (
           <div className="rounded-lg border border-danger/25 bg-danger-soft px-4 py-3 text-xs text-danger">
-            <div className="font-medium">{t("The service hook could not be created")}</div>
+            <div className="font-medium">{t("The service hooks could not be created")}</div>
             <div className="mt-0.5 break-words">{tMaybe(h.error)}</div>
           </div>
         )}
-        {h && !h.hook_id && (
+        {h && h.hooks < h.events && (
           <div className="space-y-3">
             <p className="text-xs leading-relaxed text-muted">
-              {tx("You can also add it by hand: in {path}, add a {type} subscription for {event} on this repository and branch, with this URL and HTTP header.", {
+              {tx("You can also add them by hand: in {path}, add a {type} subscription on this repository for each of {events}, with this URL and HTTP header.", {
                 path: project ? (
                   <a href={`${project}/_settings/serviceHooks`} target="_blank" rel="noreferrer" className="font-medium text-fg underline">
                     {t("Project settings → Service hooks")}
@@ -413,7 +415,7 @@ export function AzureHookCard({ app }: { app: ApplicationDetail }) {
                   <span className="font-medium text-fg">{t("Project settings → Service hooks")}</span>
                 ),
                 type: <span className="font-medium text-fg">Web Hooks</span>,
-                event: <span className="font-medium text-fg">Code pushed</span>,
+                events: <span className="font-medium text-fg">Code pushed, Pull request created, Pull request updated</span>,
               })}
             </p>
             <CopyField label={t("URL")} value={h.url} />
@@ -421,9 +423,10 @@ export function AzureHookCard({ app }: { app: ApplicationDetail }) {
           </div>
         )}
         <p className="text-xs text-subtle">
-          {tx("Pushes to {branch} deploy when {auto} is on. Pull request previews are not available for Azure DevOps yet.", {
+          {tx("Pushes to {branch} deploy when {auto} is on; pull requests targeting it get a preview when previews are enabled. Statuses show as {status} (the token needs the Code: Status scope).", {
             branch: <code className="font-mono text-fg">{app.git_branch}</code>,
             auto: <span className="font-medium text-fg">{t("Deploy on push")}</span>,
+            status: <code className="font-mono text-fg">portdock/deploy</code>,
           })}
         </p>
       </div>

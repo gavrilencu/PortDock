@@ -692,7 +692,7 @@ function Previews({ app }: { app: ApplicationDetail }) {
     <div className="space-y-6">
       <Card title={t("Pull request previews")} description={t("Every PR targeting the production branch gets its own deployment and URL. Closed PRs are cleaned up automatically.")}>
         <div className="space-y-4 p-5">
-          <Switch checked={f.preview_enabled} onChange={(v) => setF({ ...f, preview_enabled: v })} label={t("Enable preview deployments")} description={t("Requires the GitHub/GitLab/Gitea webhook with pull request events.")} />
+          <Switch checked={f.preview_enabled} onChange={(v) => setF({ ...f, preview_enabled: v })} label={t("Enable preview deployments")} description={t("Requires the GitHub/GitLab/Gitea webhook with pull request events, or the Azure DevOps service hooks.")} />
           <Field label={t("Preview domain template")} hint={t("Use {token} for the PR number. Empty = <app>-pr-N.<server wildcard domain>.", { token: "{{pr}}" })}>
             <Input value={f.preview_domain} onChange={(e) => setF({ ...f, preview_domain: e.target.value })} placeholder="pr-{{pr}}.preview.example.com" />
           </Field>

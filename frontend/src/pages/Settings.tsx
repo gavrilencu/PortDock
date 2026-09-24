@@ -677,9 +677,18 @@ function Tokens() {
   );
 }
 
-const channelFields: Record<NotificationChannel["type"], { key: string; label: string; secret?: boolean; placeholder?: string }[]> = {
+const channelFields: Record<NotificationChannel["type"], { key: string; label: string; secret?: boolean; placeholder?: string; hint?: string }[]> = {
   discord: [{ key: "webhook_url", label: tk("Webhook URL"), secret: true, placeholder: "https://discord.com/api/webhooks/…" }],
   slack: [{ key: "webhook_url", label: tk("Webhook URL"), secret: true, placeholder: "https://hooks.slack.com/services/…" }],
+  teams: [
+    {
+      key: "webhook_url",
+      label: tk("Webhook URL"),
+      secret: true,
+      placeholder: "https://….logic.azure.com/workflows/…",
+      hint: tk("In the Teams channel: ⋯ → Workflows → “Post to a channel when a webhook request is received”, then copy the URL. Incoming webhook URLs work too."),
+    },
+  ],
   telegram: [
     { key: "bot_token", label: tk("Bot token"), secret: true },
     { key: "chat_id", label: tk("Chat ID") },
@@ -698,7 +707,7 @@ const channelFields: Record<NotificationChannel["type"], { key: string; label: s
   ],
 };
 
-const channelTypeLabels: Record<string, string> = { webhook: tk("webhook"), email: tk("email") };
+const channelTypeLabels: Record<string, string> = { teams: "Microsoft Teams", webhook: tk("webhook"), email: tk("email") };
 
 const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed"];
 
@@ -791,7 +800,7 @@ function Notifications() {
               </Field>
             </div>
             {channelFields[edit.type!].map((fld) => (
-              <Field key={fld.key} label={t(fld.label)}>
+              <Field key={fld.key} label={t(fld.label)} hint={fld.hint ? t(fld.hint) : undefined}>
                 {fld.secret ? (
                   <PasswordInput value={edit.config?.[fld.key] ?? ""} placeholder={fld.placeholder} onChange={(e) => setEdit({ ...edit, config: { ...edit.config, [fld.key]: e.target.value } })} />
                 ) : (
