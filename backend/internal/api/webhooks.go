@@ -21,6 +21,19 @@ func (s *Server) appByUUID(r *http.Request) (store.Application, error) {
 	return store.Get[store.Application](r.Context(), s.db, "SELECT * FROM applications WHERE uuid = ?", r.PathValue("uuid"))
 }
 
+// webhookSecret is the shared secret of an application's git webhooks and
+// deploy hook (stored encrypted; rows from before the encryption are plain).
+func (s *Server) webhookSecret(app store.Application) string {
+	return s.box.MustDecrypt(app.WebhookSecret)
+}
+
+// hookTokenOK compares a presented token with the application's secret in
+// constant time; an application without a secret accepts nothing.
+func (s *Server) hookTokenOK(app store.Application, token string) bool {
+	secret := s.webhookSecret(app)
+	return secret != "" && subtle.ConstantTimeCompare([]byte(token), []byte(secret)) == 1
+}
+
 func readBody(r *http.Request) ([]byte, error) {
 	return io.ReadAll(http.MaxBytesReader(nil, r.Body, 25<<20))
 }
@@ -207,7 +220,7 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 	if sig == "" {
 		sig = r.Header.Get("X-Gitea-Signature")
 	}
-	if !validHMAC(app.WebhookSecret, body, sig) {
+	if !validHMAC(s.webhookSecret(app), body, sig) {
 		return errStatus(401, "invalid signature")
 	}
 	event := r.Header.Get("X-GitHub-Event")
@@ -267,7 +280,7 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Gitlab-Token")), []byte(app.WebhookSecret)) != 1 {
+	if !s.hookTokenOK(app, r.Header.Get("X-Gitlab-Token")) {
 		return errStatus(401, "invalid token")
 	}
 	body, err := readBody(r)
@@ -328,7 +341,7 @@ func (s *Server) deployHook(w http.ResponseWriter, r *http.Request) error {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		token = strings.TrimPrefix(h, "Bearer ")
 	}
-	if subtle.ConstantTimeCompare([]byte(token), []byte(app.WebhookSecret)) != 1 {
+	if !s.hookTokenOK(app, token) {
 		return errStatus(401, "invalid token")
 	}
 	q := r.URL.Query()

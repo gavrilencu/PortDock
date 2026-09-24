@@ -2,7 +2,9 @@ package api
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -76,4 +78,51 @@ func TestBuildPathsStayInRepository(t *testing.T) {
 	if app["base_directory"] != "apps/web" || app["dockerfile_path"] != "docker/Dockerfile" || app["compose_path"] != "docker-compose.yml" || app["publish_directory"] != "" {
 		t.Fatalf("normalized paths: %v %v %v %v", app["base_directory"], app["dockerfile_path"], app["compose_path"], app["publish_directory"])
 	}
+}
+
+// The webhook secret is only shown to users with write access, is stored
+// encrypted, and the deploy hook accepts POST only.
+func TestWebhookSecretVisibility(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	viewerUser := e.user("viewer@corp.com", "correct-horse", "member")
+	if _, err := e.db.Exec("INSERT INTO servers(id, name, host, status) VALUES (1, 'local', 'localhost', 'reachable')"); err != nil {
+		t.Fatal(err)
+	}
+	owner := e.login("owner@corp.com")
+	p := e.expect(owner, "POST", "/api/projects", map[string]any{"name": "shop", "default_role": "viewer"}, 200)
+	pid := int64(p["id"].(float64))
+	env := p["environments"].([]any)[0].(map[string]any)["id"]
+	e.expect(owner, "PUT", fmt.Sprintf("/api/projects/%d/members", pid), map[string]any{"members": []map[string]any{{"user_id": viewerUser.ID, "role": "viewer"}}}, 200)
+	app := e.expect(owner, "POST", "/api/applications", map[string]any{"name": "web", "environment_id": env, "server_id": 1, "source_type": "image", "docker_image": "nginx"}, 200)
+	id := int64(app["id"].(float64))
+	secret, _ := app["webhook_secret"].(string)
+	if len(secret) != 40 {
+		t.Fatalf("owner should see the secret: %v", app["webhook_secret"])
+	}
+	var stored string
+	_ = e.db.QueryRow("SELECT webhook_secret FROM applications WHERE id = ?", id).Scan(&stored)
+	if stored == secret || stored == "" {
+		t.Fatalf("secret stored in plaintext: %q", stored)
+	}
+
+	viewer := e.login("viewer@corp.com")
+	got := e.expect(viewer, "GET", fmt.Sprintf("/api/applications/%d", id), nil, 200)
+	if _, ok := got["webhook_secret"]; ok {
+		t.Fatalf("viewer sees the webhook secret: %v", got["webhook_secret"])
+	}
+	if strings.Contains(got["webhooks"].(map[string]any)["deploy"].(string), "token=") {
+		t.Fatalf("viewer sees the deploy hook token: %v", got["webhooks"])
+	}
+	resp, _ := viewer.Get(e.srv.URL + "/api/applications")
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(body), secret) || strings.Contains(string(body), "webhook_secret") {
+		t.Fatalf("list leaks the secret: %s", body)
+	}
+
+	uuid := app["uuid"].(string)
+	e.expect(e.client(), "POST", "/api/webhooks/deploy/"+uuid+"?token="+secret, nil, 202)
+	e.expect(e.client(), "POST", "/api/webhooks/deploy/"+uuid+"?token=wrong", nil, 401)
+	e.expect(e.client(), "GET", "/api/webhooks/deploy/"+uuid+"?token="+secret, nil, 404)
 }

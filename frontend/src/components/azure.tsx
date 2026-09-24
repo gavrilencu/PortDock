@@ -419,7 +419,7 @@ export function AzureHookCard({ app }: { app: ApplicationDetail }) {
               })}
             </p>
             <CopyField label={t("URL")} value={h.url} />
-            <CopyField label={t("HTTP headers")} value={`${h.header}:${app.webhook_secret}`} secret />
+            {app.webhook_secret && <CopyField label={t("HTTP headers")} value={`${h.header}:${app.webhook_secret}`} secret />}
           </div>
         )}
         <p className="text-xs text-subtle">

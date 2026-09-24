@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -235,7 +234,7 @@ func (s *Server) ensureAzureHook(ctx context.Context, app store.Application) err
 		}
 		for _, ev := range azuredevops.HookEvents {
 			var id string
-			if id, err = c.CreateHook(ctx, ev, app.AzureProjectID, app.AzureRepoID, s.azureHookURL(ctx, app), app.WebhookSecret); err != nil {
+			if id, err = c.CreateHook(ctx, ev, app.AzureProjectID, app.AzureRepoID, s.azureHookURL(ctx, app), s.webhookSecret(app)); err != nil {
 				break
 			}
 			ids = append(ids, id)
@@ -288,7 +287,7 @@ func (s *Server) azureWebhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get(azuredevops.HookHeader)), []byte(app.WebhookSecret)) != 1 {
+	if !s.hookTokenOK(app, r.Header.Get(azuredevops.HookHeader)) {
 		return errStatus(401, "invalid token")
 	}
 	body, err := readBody(r)

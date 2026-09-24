@@ -518,7 +518,6 @@ func (s *Server) Handler() http.Handler {
 	public("POST /api/webhooks/gitlab/{uuid}", s.gitlabWebhook)
 	public("POST /api/webhooks/azure/{uuid}", s.azureWebhook)
 	public("POST /api/webhooks/deploy/{uuid}", s.deployHook)
-	public("GET /api/webhooks/deploy/{uuid}", s.deployHook)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]string{"error": "no such endpoint"})
