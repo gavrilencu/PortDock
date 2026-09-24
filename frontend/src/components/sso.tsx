@@ -104,7 +104,7 @@ function ProviderModal({ initial, presets, redirectBase, onClose }: { initial: F
   });
 
   const choose = (p: SSOPreset) =>
-    setF({ kind: p.kind, name: p.kind === "oidc" ? "" : p.name, issuer: p.issuer, scopes: p.scopes, groups_claim: p.groups_claim, enabled: true, trust_email: true, default_role: "member" });
+    setF({ kind: p.kind, name: p.kind === "oidc" ? "" : p.name, issuer: p.issuer, scopes: p.scopes, groups_claim: p.groups_claim, enabled: true, trust_email: false, default_role: "member" });
 
   const slug = f.slug || (f.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const redirect = redirectBase.replace("{slug}", slug || "<slug>");
@@ -187,7 +187,7 @@ function ProviderModal({ initial, presets, redirectBase, onClose }: { initial: F
               <Field label={t("Allowed email domains")} hint={t("Comma-separated. Empty allows any domain.")}>
                 <Input value={f.allowed_domains ?? ""} onChange={(e) => setF({ ...f, allowed_domains: e.target.value })} placeholder="contoso.com, contoso.eu" />
               </Field>
-              <Switch checked={f.trust_email !== false} onChange={(v) => setF({ ...f, trust_email: v })} label={t("Link existing accounts by email")} description={t("Used when the provider doesn't send email_verified (e.g. Entra ID).")} />
+              <Switch checked={f.trust_email === true} onChange={(v) => setF({ ...f, trust_email: v })} label={t("Link existing member accounts by email")} description={t("Only when the provider doesn't send email_verified (e.g. Entra ID) and every user of it is trusted. Owners and administrators always connect single sign-on from their profile.")} />
             </div>
           </div>
 

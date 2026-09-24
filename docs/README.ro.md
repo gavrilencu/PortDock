@@ -65,6 +65,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - **Politică 2FA** la nivel de organizație: opțională, obligatorie pentru admini sau pentru toți; cei care nu au 2FA sunt obligați să-l configureze la următoarea autentificare.
 - **Single sign-on (OpenID Connect)**: Microsoft Entra ID, Okta, Google Workspace, Keycloak, Authentik, GitLab sau orice furnizor OIDC. Folosește PKCE, verifică semnătura ID token-ului (JWKS), plus nonce, audience și expirarea. Conturile pot fi create automat (JIT), există restricție pe domenii de email, iar rolul de admin se mapează din grupuri la fiecare login.
 - Autentificarea cu parolă poate fi dezactivată (SSO obligatoriu); owner-ul păstrează un cont de urgență (break-glass).
+- Conturile existente se asociază după email doar pentru membri, cu email verificat; owner-ul și administratorii își conectează singuri furnizorul din **Setări → Profil**, iar administratorii asociază conturile locale cu un director LDAP din **Setări → Echipă**.
 - **Sesiuni active** per utilizator (dispozitiv, IP, metodă de login), deconectare individuală sau de pe toate celelalte sesiuni. Adminii pot dezactiva conturi, reseta 2FA și închide sesiunile unui utilizator.
 - Protecție brute-force: blocare după 10 încercări eșuate în 15 minute (per IP și per cont). Toate evenimentele ajung în audit log.
 - Recuperare din linia de comandă: `docker exec portdock portdock -disable-2fa user@example.com`.

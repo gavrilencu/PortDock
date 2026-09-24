@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, GitBranch, Network, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, GitBranch, Link2, Link2Off, Network, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
+import type { APIToken, DNSStatus, LoginProviders, NotificationChannel, Settings, SSHKey, User, UserIdentity } from "../lib/types";
 import { DNSBadge } from "../components/Domains";
 import { useUser } from "../components/Layout";
 import { GitSourcesSettings } from "../components/github";
@@ -168,8 +168,73 @@ function Profile() {
           </div>
         </div>
       </Card>
+      <SingleSignOnCard user={user} />
       <LanguageCard />
     </div>
+  );
+}
+
+/** The identity providers connected to the account: the only way an owner or administrator gets single sign-on. */
+function SingleSignOnCard({ user }: { user: User }) {
+  const qc = useQueryClient();
+  const confirm = useConfirm();
+  const [params, setParams] = useSearchParams();
+  const providers = useQuery({ queryKey: ["login-providers"], queryFn: () => api.get<LoginProviders>("/auth/providers"), staleTime: 60_000 });
+  const identities = useQuery({ queryKey: ["identities"], queryFn: () => api.get<UserIdentity[]>("/auth/identities") });
+  const unlink = useMutation({
+    mutationFn: (id: number) => api.del(`/auth/identities/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["identities"] });
+      toast.success(t("Single sign-on disconnected"));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  useEffect(() => {
+    const linked = params.get("sso_linked");
+    const error = params.get("sso_error");
+    if (!linked && !error) return;
+    if (linked) toast.success(t("{provider} connected to your account", { provider: linked }));
+    if (error) toast.error(error);
+    params.delete("sso_linked");
+    params.delete("sso_error");
+    setParams(params, { replace: true });
+    qc.invalidateQueries({ queryKey: ["identities"] });
+  }, [params, setParams, qc]);
+  const list = providers.data?.providers ?? [];
+  if (list.length === 0) return null;
+  const onlyWay = !user.has_password && !user.auth_source.startsWith("ldap:") && (identities.data?.length ?? 0) <= 1;
+  return (
+    <Card title={t("Single sign-on")} description={t("Connect an identity provider to sign in to this account with it. Providers are never connected automatically to owner and administrator accounts.")}>
+      <div className="divide-y divide-border">
+        {list.map((p) => {
+          const link = identities.data?.find((i) => i.slug === p.slug);
+          return (
+            <div key={p.slug} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{p.name}</div>
+                <div className="text-xs text-muted">{link ? t("Connected as {email}", { email: link.email }) : t("Not connected")}</div>
+              </div>
+              {link ? (
+                <Button
+                  size="sm"
+                  icon={<Link2Off className="size-3.5" />}
+                  disabled={onlyWay}
+                  title={onlyWay ? t("This is the only way to sign in to your account; set a password first.") : undefined}
+                  loading={unlink.isPending}
+                  onClick={async () => (await confirm({ title: t("Disconnect {provider}?", { provider: p.name }), confirmText: t("Disconnect") })) && unlink.mutate(link.id)}
+                >
+                  {t("Disconnect")}
+                </Button>
+              ) : (
+                <Button size="sm" icon={<Link2 className="size-3.5" />} onClick={() => (location.href = `/api/auth/sso/${p.slug}/start?link=1`)}>
+                  {t("Connect")}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 
@@ -355,6 +420,9 @@ function Team() {
   const confirm = useConfirm();
   const users = useQuery({ queryKey: ["users"], queryFn: () => api.get<User[]>("/users") });
   const [invite, setInvite] = useState<{ name: string; email: string; password: string; role: string } | null>(null);
+  const [linkUser, setLinkUser] = useState<User | null>(null);
+  const [linkDir, setLinkDir] = useState("");
+  const dirs = useQuery({ queryKey: ["ldap"], queryFn: () => api.get<{ directories: { slug: string; name: string }[] }>("/ldap/directories"), enabled: !!linkUser });
   const create = useMutation({
     mutationFn: () => api.post("/users", invite),
     onSuccess: () => {
@@ -365,7 +433,7 @@ function Team() {
     onError: (e) => toast.error(e.message),
   });
   const update = useMutation({
-    mutationFn: ({ id, ...body }: { id: number; role?: string; disabled?: boolean }) => api.patch(`/users/${id}`, body),
+    mutationFn: ({ id, ...body }: { id: number; role?: string; disabled?: boolean; auth_source?: string }) => api.patch(`/users/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
     onError: (e) => toast.error(e.message),
   });
@@ -465,6 +533,23 @@ function Team() {
                         {t("Reset two-factor")}
                       </MenuItem>
                     )}
+                    {u.auth_source.startsWith("ldap:") ? (
+                      <MenuItem icon={<Link2Off />} onClick={() => update.mutate({ id: u.id, auth_source: "" })}>
+                        {t("Unlink from directory")}
+                      </MenuItem>
+                    ) : (
+                      !u.auth_source && (
+                        <MenuItem
+                          icon={<Link2 />}
+                          onClick={() => {
+                            setLinkDir("");
+                            setLinkUser(u);
+                          }}
+                        >
+                          {t("Link to directory…")}
+                        </MenuItem>
+                      )
+                    )}
                     {u.role !== "owner" && (
                       <>
                         <MenuItem icon={<Ban />} onClick={() => update.mutate({ id: u.id, disabled: !u.disabled })}>
@@ -483,6 +568,35 @@ function Team() {
           ))}
         </tbody>
       </Table>
+      <Modal
+        open={!!linkUser}
+        onClose={() => setLinkUser(null)}
+        title={t("Link {email} to a directory", { email: linkUser?.email ?? "" })}
+        footer={
+          <Button
+            variant="primary"
+            disabled={!linkDir}
+            loading={update.isPending}
+            onClick={() => {
+              if (linkUser) update.mutate({ id: linkUser.id, auth_source: `ldap:${linkDir}` });
+              setLinkUser(null);
+            }}
+          >
+            {t("Link")}
+          </Button>
+        }
+      >
+        <Field label={t("Directory")} hint={t("The user then signs in with the directory password; the e-mail of the directory account must match.")}>
+          <Select value={linkDir} onChange={(e) => setLinkDir(e.target.value)}>
+            <option value="">{t("Choose…")}</option>
+            {(dirs.data?.directories ?? []).map((d) => (
+              <option key={d.slug} value={d.slug}>
+                {d.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Modal>
       <Modal
         open={!!invite}
         onClose={() => setInvite(null)}

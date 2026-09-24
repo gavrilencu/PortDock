@@ -84,6 +84,9 @@ type ssoLogin struct {
 	Nonce      string
 	Verifier   string
 	Next       string
+	// LinkUserID is set when a signed-in user connects the provider to their
+	// own account instead of signing in.
+	LinkUserID int64
 }
 
 type security struct {
@@ -509,6 +512,15 @@ func (s *Server) ssoStart(w http.ResponseWriter, r *http.Request) error {
 		return s.ssoFail(w, r, p.Name+" is unreachable: "+err.Error())
 	}
 	l := ssoLogin{ProviderID: p.ID, Nonce: secrets.RandomToken(16), Verifier: secrets.RandomToken(32), Next: safeNext(r.URL.Query().Get("next"))}
+	if r.URL.Query().Get("link") == "1" {
+		// Connecting a provider to the current account: the user proves they
+		// hold both the PortDock session and the identity.
+		u, _, err := s.auth.AuthenticateSession(r)
+		if err != nil {
+			return s.ssoFail(w, r, "Sign in first, then connect "+p.Name+" from your profile.")
+		}
+		l.LinkUserID, l.Next = u.ID, "/settings?tab=profile"
+	}
 	state := s.sec.logins.put(l, 10*time.Minute)
 	http.SetCookie(w, &http.Cookie{Name: ssoCookie, Value: state, Path: "/api/auth/sso/", MaxAge: 600,
 		HttpOnly: true, Secure: s.auth.SecureCookies(), SameSite: http.SameSiteLaxMode})
@@ -559,6 +571,19 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) error {
 		s.db.LogActivity(ctx, 0, "sso.failed", p.Name+": "+err.Error())
 		return s.ssoFail(w, r, err.Error())
 	}
+	if l.LinkUserID != 0 {
+		cur, _, err := s.auth.AuthenticateSession(r)
+		if err != nil || cur.ID != l.LinkUserID {
+			return s.ssoFail(w, r, "Sign in first, then connect "+p.Name+" from your profile.")
+		}
+		if err := s.ssoLinkUser(ctx, p, claims, cur); err != nil {
+			s.db.LogActivity(ctx, cur.ID, "sso.link_failed", p.Name+": "+claims.Email+": "+err.Error())
+			http.Redirect(w, r, l.Next+"&sso_error="+url.QueryEscape(err.Error()), http.StatusFound)
+			return nil
+		}
+		http.Redirect(w, r, l.Next+"&sso_linked="+url.QueryEscape(p.Name), http.StatusFound)
+		return nil
+	}
 	u, err := s.ssoResolveUser(ctx, p, claims)
 	if err != nil {
 		s.db.LogActivity(ctx, 0, "sso.denied", p.Name+": "+claims.Email+": "+err.Error())
@@ -581,8 +606,30 @@ func emailDomainAllowed(p store.SSOProvider, email string) bool {
 	return at > 0 && slices.Contains(allowed, strings.TrimPrefix(email[at+1:], "@"))
 }
 
+// ssoLinkUser connects a provider identity to the signed-in user's account.
+func (s *Server) ssoLinkUser(ctx context.Context, p store.SSOProvider, c sso.Claims, u store.User) error {
+	if c.Email != "" && !emailDomainAllowed(p, c.Email) {
+		return fmt.Errorf("accounts from %s are not allowed to sign in", c.Email[strings.LastIndex(c.Email, "@")+1:])
+	}
+	if other, err := store.Get[store.UserIdentity](ctx, s.db, "SELECT * FROM user_identities WHERE provider_id = ? AND subject = ?", p.ID, c.Subject); err == nil {
+		if other.UserID == u.ID {
+			return nil
+		}
+		return fmt.Errorf("this %s identity is already connected to another account", p.Name)
+	}
+	link := store.UserIdentity{UserID: u.ID, ProviderID: p.ID, Subject: c.Subject, Email: c.Email, CreatedAt: store.Now()}
+	if _, err := store.Insert(ctx, s.db, "user_identities", &link); err != nil {
+		return err
+	}
+	s.db.LogActivity(ctx, u.ID, "sso.linked", u.Email+" <-> "+p.Name+" ("+c.Email+")")
+	return nil
+}
+
 // ssoResolveUser maps claims to a user: an existing identity link, an existing
-// account with the same verified email, or a new account (just-in-time).
+// member account with the same verified email, or a new account (just-in-time).
+// Owners and administrators are never linked by email: an identity provider
+// (or anyone who can edit e-mail addresses there) could otherwise take over
+// the account; they connect the provider themselves from their profile.
 func (s *Server) ssoResolveUser(ctx context.Context, p store.SSOProvider, c sso.Claims) (store.User, error) {
 	if c.Email != "" && !emailDomainAllowed(p, c.Email) {
 		return store.User{}, fmt.Errorf("accounts from %s are not allowed to sign in", c.Email[strings.LastIndex(c.Email, "@")+1:])
@@ -607,6 +654,10 @@ func (s *Server) ssoResolveUser(ctx context.Context, p store.SSOProvider, c sso.
 		switch {
 		case gerr == nil && !verified:
 			return store.User{}, fmt.Errorf("%s is not verified by the identity provider, so it cannot be linked to the existing account", c.Email)
+		case gerr == nil && existing.Role != "member":
+			return store.User{}, fmt.Errorf("%s belongs to an administrator account; sign in with your password and connect %s from your profile", c.Email, p.Name)
+		case gerr == nil && existing.AuthSource != "" && existing.AuthSource != p.Slug:
+			return store.User{}, fmt.Errorf("%s already signs in through %s", c.Email, existing.AuthSource)
 		case gerr == nil:
 			u = existing
 		case !p.AutoRegister:
@@ -781,7 +832,7 @@ func (s *Server) createSSOProvider(w http.ResponseWriter, r *http.Request) error
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	p := store.SSOProvider{Enabled: true, TrustEmail: true, Scopes: "openid email profile", GroupsClaim: "groups", DefaultRole: "member", CreatedAt: store.Now()}
+	p := store.SSOProvider{Enabled: true, Scopes: "openid email profile", GroupsClaim: "groups", DefaultRole: "member", CreatedAt: store.Now()}
 	if err := s.applySSOProvider(&p, in); err != nil {
 		return err
 	}
@@ -867,5 +918,58 @@ func (s *Server) revokeUserSessions(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	s.activity(r, "session.revoke_all", u.Email)
+	return ok(w, map[string]bool{"ok": true})
+}
+
+// ---- identities of the signed-in user ----
+
+type identityOut struct {
+	ID        int64  `json:"id"`
+	Provider  string `json:"provider"`
+	Slug      string `json:"slug"`
+	Email     string `json:"email"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (s *Server) listIdentities(w http.ResponseWriter, r *http.Request) error {
+	u := auth.UserFrom(r.Context())
+	rows, err := store.Select[struct {
+		ID        int64  `db:"id"`
+		Provider  string `db:"provider"`
+		Slug      string `db:"slug"`
+		Email     string `db:"email"`
+		CreatedAt string `db:"created_at"`
+	}](r.Context(), s.db, `SELECT i.id, p.name AS provider, p.slug, i.email, i.created_at FROM user_identities i
+		JOIN sso_providers p ON p.id = i.provider_id WHERE i.user_id = ? ORDER BY i.id`, u.ID)
+	if err != nil {
+		return err
+	}
+	out := make([]identityOut, 0, len(rows))
+	for _, x := range rows {
+		out = append(out, identityOut{x.ID, x.Provider, x.Slug, x.Email, x.CreatedAt})
+	}
+	return ok(w, out)
+}
+
+// deleteIdentity disconnects a provider, unless it is the only way into the account.
+func (s *Server) deleteIdentity(w http.ResponseWriter, r *http.Request) error {
+	u := auth.UserFrom(r.Context())
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var n int
+	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM user_identities WHERE user_id = ?", u.ID).Scan(&n)
+	if !u.HasPassword() && !strings.HasPrefix(u.AuthSource, "ldap:") && n <= 1 {
+		return badRequest("this is the only way to sign in to your account; set a password first")
+	}
+	res, err := s.db.ExecContext(r.Context(), "DELETE FROM user_identities WHERE id = ? AND user_id = ?", id, u.ID)
+	if err != nil {
+		return err
+	}
+	if k, _ := res.RowsAffected(); k == 0 {
+		return store.ErrNotFound
+	}
+	s.activity(r, "sso.unlinked", u.Email)
 	return ok(w, map[string]bool{"ok": true})
 }

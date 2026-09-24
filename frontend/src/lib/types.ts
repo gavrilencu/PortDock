@@ -16,6 +16,14 @@ export interface User {
   locale: string;
 }
 
+export interface UserIdentity {
+  id: number;
+  provider: string;
+  slug: string;
+  email: string;
+  created_at: string;
+}
+
 export interface AuthStatus {
   setup_required: boolean;
   version: string;
