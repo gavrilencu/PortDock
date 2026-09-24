@@ -48,3 +48,32 @@ func TestDockerOptionsPolicy(t *testing.T) {
 	e.expect(dev, "POST", "/api/databases", map[string]any{"name": "orders", "engine": "postgres", "environment_id": env, "server_id": 1, "start": false, "custom_args": `-c "max_connections=200`}, 400)
 	e.expect(dev, "POST", "/api/databases", map[string]any{"name": "orders", "engine": "postgres", "environment_id": env, "server_id": 1, "start": false, "custom_args": `-c max_connections=200`}, 200)
 }
+
+// Paths inside the checkout cannot climb out of the repository.
+func TestBuildPathsStayInRepository(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	if _, err := e.db.Exec("INSERT INTO servers(id, name, host, status) VALUES (1, 'local', 'localhost', 'reachable')"); err != nil {
+		t.Fatal(err)
+	}
+	c := e.login("owner@corp.com")
+	p := e.expect(c, "POST", "/api/projects", map[string]any{"name": "shop"}, 200)
+	env := p["environments"].([]any)[0].(map[string]any)["id"]
+	body := func(extra map[string]any) map[string]any {
+		m := map[string]any{"name": "web", "environment_id": env, "server_id": 1, "source_type": "git", "git_repository": "https://example.com/r.git", "build_pack": "dockerfile"}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	for _, bad := range []map[string]any{
+		{"base_directory": "../../"}, {"base_directory": "apps/../../.."}, {"dockerfile_path": "../../../secret.key"},
+		{"compose_path": "../portdock.db"}, {"publish_directory": "../"},
+	} {
+		e.expect(c, "POST", "/api/applications", body(bad), 400)
+	}
+	app := e.expect(c, "POST", "/api/applications", body(map[string]any{"base_directory": "/apps/web/", "dockerfile_path": "./docker/Dockerfile", "compose_path": "", "publish_directory": "/"}), 200)
+	if app["base_directory"] != "apps/web" || app["dockerfile_path"] != "docker/Dockerfile" || app["compose_path"] != "docker-compose.yml" || app["publish_directory"] != "" {
+		t.Fatalf("normalized paths: %v %v %v %v", app["base_directory"], app["dockerfile_path"], app["compose_path"], app["publish_directory"])
+	}
+}

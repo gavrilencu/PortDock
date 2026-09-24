@@ -24,6 +24,25 @@ var q = executor.Quote
 
 const gitImage = "alpine/git:latest"
 
+// subPath joins user-typed relative paths (base directory, Dockerfile, compose
+// file) onto a checkout root and refuses anything that would leave it: with
+// "..", a Dockerfile or build context could otherwise point at the PortDock
+// data directory or any other file on the server.
+func subPath(root string, rels ...string) (string, error) {
+	p := root
+	for _, rel := range rels {
+		clean, err := store.SafeRelPath(rel)
+		if err != nil {
+			return "", err
+		}
+		p = path.Join(p, clean)
+	}
+	if p != root && !strings.HasPrefix(p, root+"/") {
+		return "", fmt.Errorf("the path %q leaves the repository", strings.Join(rels, "/"))
+	}
+	return p, nil
+}
+
 // job carries the state of a single deployment run.
 type job struct {
 	e       *Engine
@@ -85,7 +104,9 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	}
 	j.workdir = path.Join(e.cfg.DataDir, "builds", app.UUID, d.UUID)
 	j.srcDir = j.workdir + "/src"
-	j.ctxDir = path.Join(j.srcDir, strings.Trim(app.BaseDirectory, "/"))
+	if j.ctxDir, err = subPath(j.srcDir, app.BaseDirectory); err != nil {
+		return err
+	}
 
 	if j.env, err = e.ResolveEnv(ctx, "application", app.ID, d.PRNumber > 0); err != nil {
 		return err

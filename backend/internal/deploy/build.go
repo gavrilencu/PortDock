@@ -63,7 +63,11 @@ func (j *job) build(ctx context.Context, image string) error {
 	}
 	switch pack {
 	case "dockerfile":
-		return j.dockerBuild(ctx, image, path.Join(j.ctxDir, strings.TrimPrefix(j.app.DockerfilePath, "/")))
+		dockerfile, err := subPath(j.srcDir, j.app.BaseDirectory, j.app.DockerfilePath)
+		if err != nil {
+			return err
+		}
+		return j.dockerBuild(ctx, image, dockerfile)
 	case "nixpacks":
 		return j.nixpacksBuild(ctx, image)
 	case "static":
@@ -153,7 +157,7 @@ const nginxConf = `server {
 }`
 
 func (j *job) staticDockerfile() string {
-	pub := strings.Trim(j.app.PublishDirectory, "/")
+	pub, _ := store.SafeRelPath(j.app.PublishDirectory)
 	if j.app.BuildCommand == "" && j.app.InstallCommand == "" {
 		src := "."
 		if pub != "" && pub != "." {
@@ -558,7 +562,11 @@ func (j *job) deployCompose(ctx context.Context) error {
 	// Compose checkouts are kept so relative bind mounts and build contexts stay valid.
 	j.workdir = path.Join(j.e.cfg.DataDir, "apps", j.app.UUID, "compose")
 	j.srcDir = j.workdir + "/src"
-	j.ctxDir = path.Join(j.srcDir, strings.Trim(j.app.BaseDirectory, "/"))
+	ctxDir, err := subPath(j.srcDir, j.app.BaseDirectory)
+	if err != nil {
+		return err
+	}
+	j.ctxDir = ctxDir
 	if reuse {
 		j.log.Step("Applying configuration (no rebuild)")
 	} else if err := j.checkout(ctx); err != nil {
@@ -591,7 +599,10 @@ func (j *job) deployCompose(ctx context.Context) error {
 			return err
 		}
 	}
-	file := path.Join(j.ctxDir, strings.TrimPrefix(j.app.ComposePath, "/"))
+	file, err := subPath(j.srcDir, j.app.BaseDirectory, j.app.ComposePath)
+	if err != nil {
+		return err
+	}
 	var images map[string]string
 	if version != nil && version.ComposeFile != "" {
 		// Next to the original so relative paths (bind mounts, build contexts) resolve the same.

@@ -180,5 +180,9 @@ func (e *Engine) ComposeServices(ctx context.Context, app store.Application) ([]
 }
 
 func (e *Engine) composeFile(app store.Application) string {
-	return path.Join(e.cfg.DataDir, "apps", app.UUID, "compose", "src", strings.Trim(app.BaseDirectory, "/"), strings.TrimPrefix(app.ComposePath, "/"))
+	f, err := subPath(path.Join(e.cfg.DataDir, "apps", app.UUID, "compose", "src"), app.BaseDirectory, app.ComposePath)
+	if err != nil {
+		return "" // an invalid path reads as a missing file
+	}
+	return f
 }
