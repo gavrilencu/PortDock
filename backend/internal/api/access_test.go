@@ -118,8 +118,8 @@ func TestProjectRolesAndApprovals(t *testing.T) {
 	}
 
 	// Git pushes / deploy hooks also wait in require_approval environments.
-	var uuid, secret string
-	_ = e.db.QueryRow("SELECT uuid, webhook_secret FROM applications WHERE id = ?", prodApp).Scan(&uuid, &secret)
+	appRow := e.expect(maint, "GET", fmt.Sprintf("/api/applications/%d", prodApp), nil, 200)
+	uuid, secret := appRow["uuid"].(string), appRow["webhook_secret"].(string)
 	hook := e.expect(e.client(), "POST", "/api/webhooks/deploy/"+uuid+"?token="+secret, nil, 202)
 	if hook["status"] != "pending_approval" {
 		t.Fatalf("deploy hook %v", hook)

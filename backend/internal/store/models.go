@@ -198,7 +198,7 @@ type Application struct {
 	AutoDeploy          bool   `db:"auto_deploy" json:"auto_deploy"`
 	PreviewEnabled      bool   `db:"preview_enabled" json:"preview_enabled"`
 	PreviewDomain       string `db:"preview_domain" json:"preview_domain"`
-	WebhookSecret       string `db:"webhook_secret" json:"webhook_secret"`
+	WebhookSecret       string `db:"webhook_secret" json:"-"` // encrypted; shown only to writers
 	CPULimit            string `db:"cpu_limit" json:"cpu_limit"`
 	MemoryLimit         string `db:"memory_limit" json:"memory_limit"`
 	Replicas            int    `db:"replicas" json:"replicas"`

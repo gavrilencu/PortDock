@@ -23,7 +23,10 @@ var buildPacks = []string{"auto", "dockerfile", "compose", "node", "bun", "pytho
 
 type appDTO struct {
 	store.Application
-	Webhooks    map[string]string `json:"webhooks"`
+	// WebhookSecret authenticates git webhooks and the deploy hook, so it is
+	// only sent to users who may deploy by other means anyway (write access).
+	WebhookSecret string            `json:"webhook_secret,omitempty"`
+	Webhooks      map[string]string `json:"webhooks"`
 	Project     store.Project     `json:"project"`
 	Environment store.Environment `json:"environment"`
 	ServerName  string            `json:"server_name"`
@@ -50,8 +53,13 @@ func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
 		"gitlab": base + "gitlab/" + a.UUID,
 		"gitea":  base + "gitea/" + a.UUID,
 		"azure":  base + "azure/" + a.UUID,
-		"deploy": base + "deploy/" + a.UUID + "?token=" + a.WebhookSecret,
+		"deploy": base + "deploy/" + a.UUID,
 	}}
+	dto.Access = s.resourceAccess(ctx, a.EnvironmentID)
+	if dto.Access.CanWrite {
+		dto.WebhookSecret = s.webhookSecret(a)
+		dto.Webhooks["deploy"] += "?token=" + dto.WebhookSecret
+	}
 	dto.Environment, _ = store.ByID[store.Environment](ctx, s.db, "environments", a.EnvironmentID)
 	dto.Project, _ = store.ByID[store.Project](ctx, s.db, "projects", dto.Environment.ProjectID)
 	srv, _ := store.ByID[store.Server](ctx, s.db, "servers", a.ServerID)
@@ -65,7 +73,6 @@ func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
 			dto.Servers = append(dto.Servers, serverRef{ID: x.ID, Name: x.Name, Host: x.Host, Status: x.Status})
 		}
 	}
-	dto.Access = s.resourceAccess(ctx, a.EnvironmentID)
 	if reg, err := s.engine.Registry(ctx, a.RegistryID); err == nil && reg != nil {
 		dto.RegistryName = reg.Name
 		dto.RegistryRepo = registry.Repository(*reg, a.RegistryImage, a.Name)
@@ -288,7 +295,7 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	}
 	a.ID, a.Status, a.CurrentImage = 0, "stopped", ""
 	a.UUID = secrets.RandomToken(8)
-	a.WebhookSecret = secrets.RandomToken(20)
+	a.WebhookSecret = s.box.Encrypt(secrets.RandomToken(20))
 	a.CreatedAt, a.UpdatedAt = store.Now(), store.Now()
 	a.AzureHookID, a.AzureHookError = "", ""
 	if in.GitToken != nil {
@@ -508,7 +515,7 @@ func (s *Server) regenerateWebhookSecret(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		return err
 	}
-	a.WebhookSecret = secrets.RandomToken(20)
+	a.WebhookSecret = s.box.Encrypt(secrets.RandomToken(20))
 	if _, err := s.db.ExecContext(r.Context(), "UPDATE applications SET webhook_secret = ? WHERE id = ?", a.WebhookSecret, a.ID); err != nil {
 		return err
 	}

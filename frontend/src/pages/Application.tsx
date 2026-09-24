@@ -851,12 +851,12 @@ jobs:
           <CopyField label="GitHub" value={app.webhooks.github} />
           <CopyField label="GitLab" value={app.webhooks.gitlab} />
           <CopyField label="Gitea / Forgejo" value={app.webhooks.gitea} />
-          <CopyField label={t("Webhook secret (GitHub/Gitea) · Secret token (GitLab)")} value={app.webhook_secret} secret />
+          {app.webhook_secret && <CopyField label={t("Webhook secret (GitHub/Gitea) · Secret token (GitLab)")} value={app.webhook_secret} secret />}
         </div>
       </Card>
       <Card title={t("Deploy hook")} description={t("Trigger deployments from any CI pipeline (GitHub Actions, GitLab CI, Jenkins…) after your tests pass. Optional query params: commit, branch, force=true.")}>
         <div className="space-y-4 p-5">
-          <CopyField value={app.webhooks.deploy} secret />
+          <CopyField value={app.webhooks.deploy} secret={!!app.webhook_secret} />
           <div>
             <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">{t("GitHub Actions example")}</div>
             <pre className="overflow-x-auto rounded-lg border border-border bg-log p-4 font-mono text-xs text-zinc-300">{ghAction}</pre>

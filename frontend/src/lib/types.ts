@@ -187,7 +187,7 @@ export interface Application {
   auto_deploy: boolean;
   preview_enabled: boolean;
   preview_domain: string;
-  webhook_secret: string;
+  webhook_secret?: string; // only for users with write access
   cpu_limit: string;
   memory_limit: string;
   replicas: number;
