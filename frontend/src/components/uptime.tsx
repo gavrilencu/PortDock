@@ -37,10 +37,14 @@ export function UptimeBars({ days, className }: { days: UptimeDay[]; className?:
 }
 
 /** Response times of recent checks, failed ones in red. */
-export function ResponseBars({ checks, className }: { checks: { ok: boolean; response_ms: number; created_at: string }[]; className?: string }) {
+export function ResponseBars({ checks, slots, className }: { checks: { ok: boolean; response_ms: number; created_at: string }[]; slots?: number; className?: string }) {
   const maxMs = Math.max(100, ...checks.map((c) => c.response_ms));
+  const empty = Math.max(0, (slots ?? 0) - checks.length);
   return (
     <div className={cn("flex h-8 items-end gap-[2px]", className)}>
+      {Array.from({ length: empty }).map((_, i) => (
+        <div key={`e${i}`} className="h-[8%] min-w-[2px] flex-1 rounded-t-[1px] bg-border" />
+      ))}
       {checks.map((c, i) => (
         <div
           key={i}

@@ -82,6 +82,9 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 **Platformă**
 - Proiecte și medii (production, staging…), echipă cu roluri (owner/admin/member), tokenuri API, audit log.
 - Notificări: Discord, Slack, Microsoft Teams (Workflows sau incoming webhook, Adaptive Card), Telegram, email (SMTP), webhook semnat.
+- **Uptime**: monitoare pentru site-uri și API-uri (cod de status, cuvânt-cheie, timp de răspuns, expirarea certificatului TLS), incidente, alerte `monitor.down` / `monitor.up` și o **pagină de status publică** la `/status`, cu uptime-ul pe 90 de zile.
+- **Scanare de vulnerabilități cu Trivy**: la fiecare deploy sau la cerere, din tab-ul *Security* al aplicației; deploy-ul poate fi blocat la vulnerabilități critice sau ridicate.
+- **Consolă SQL** în browser pentru PostgreSQL, MySQL, MariaDB, SQL Server și ClickHouse: tabele, rezultate, export CSV; membrii fără rol de admin au acces doar de citire (sesiune care nu poate scrie), iar fiecare interogare ajunge în audit log.
 - UI în timp real (evenimente SSE), temă dark/light.
 
 ## Pornire rapidă (producție)

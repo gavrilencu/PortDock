@@ -57,6 +57,7 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
       tk("PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, MongoDB, Redis, Valkey, ClickHouse"),
       tk("Scheduled backups, locally or to S3"),
       tk("Access from outside by domain"),
+      tk("SQL console in the browser, read-only for members"),
       tk("13 one-click services and a catalog of 127 Docker images"),
     ],
   },
@@ -83,7 +84,8 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
     title: tk("Monitoring"),
     items: [
       tk("CPU, memory, disk and network metrics with history"),
-      tk("Alerts by email, Slack, Discord, Telegram or webhook"),
+      tk("Alerts by email, Slack, Microsoft Teams, Discord, Telegram or webhook"),
+      tk("Uptime monitors and a public status page"),
     ],
   },
   {
@@ -93,6 +95,7 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
       tk("Roles per organization and project, protected environments, deployment approvals"),
       tk("Two-factor authentication, single sign-on (OIDC), LDAP and Active Directory"),
       tk("Audit log with export and SIEM streaming, API tokens"),
+      tk("Vulnerability scanning of images with Trivy"),
     ],
   },
   {

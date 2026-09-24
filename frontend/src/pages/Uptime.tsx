@@ -117,7 +117,7 @@ export function UptimePage() {
                         </div>
                       </div>
                     </button>
-                    <ResponseBars checks={m.recent} className="hidden w-48 lg:flex" />
+                    <ResponseBars checks={m.recent} slots={40} className="hidden w-48 lg:flex" />
                     <div className="w-20 text-right text-xs">
                       <div className="font-medium tabular-nums">{uptimeText(m.uptime_24h)}</div>
                       <div className="text-subtle">24h</div>
