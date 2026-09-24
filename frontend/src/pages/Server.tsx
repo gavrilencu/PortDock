@@ -31,7 +31,7 @@ import { AdminOnly, useUser } from "../components/Layout";
 import { Badge, Button, Card, ErrorBox, Field, Input, Loading, Meter, PageHeader, Select, Stat, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
 import { ContainerTable } from "../components/ContainerTable";
 import { LogViewer } from "../components/LogViewer";
-import { Terminal } from "../components/Terminal";
+import { Terminal } from "../components/LazyTerminal";
 import { formatBytes, formatUptime, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { t } from "../lib/i18n";
@@ -120,7 +120,7 @@ export function ServerPage() {
 
 function Overview({ s }: { s: Server }) {
   const qc = useQueryClient();
-  const metrics = useQuery({ queryKey: ["metrics", s.id], queryFn: () => api.get<Metrics>(`/servers/${s.id}/metrics`), refetchInterval: 10_000, enabled: s.status === "reachable", retry: false });
+  const metrics = useQuery({ queryKey: ["metrics", s.id], queryFn: () => api.get<Metrics>(`/servers/${s.id}/metrics`), refetchInterval: 30_000, enabled: s.status === "reachable", retry: false });
   const [setupKey, setSetupKey] = useState(0);
   const [nixpacks, setNixpacks] = useState(false);
   const setupStream = useLogStream(setupKey ? `/servers/${s.id}/setup/stream?k=${setupKey}` : null);
@@ -239,8 +239,8 @@ function Overview({ s }: { s: Server }) {
 
 function Containers({ s }: { s: Server }) {
   const [filter, setFilter] = useState<"all" | "managed">("all");
-  const cs = useQuery({ queryKey: ["containers", "server", s.id], queryFn: () => api.get<Container[]>(`/servers/${s.id}/containers`), refetchInterval: 10_000, retry: false });
-  const stats = useQuery({ queryKey: ["stats", s.id], queryFn: () => api.get<ContainerStat[]>(`/servers/${s.id}/stats`), refetchInterval: 15_000, retry: false });
+  const cs = useQuery({ queryKey: ["containers", "server", s.id], queryFn: () => api.get<Container[]>(`/servers/${s.id}/containers`), refetchInterval: 30_000, retry: false });
+  const stats = useQuery({ queryKey: ["stats", s.id], queryFn: () => api.get<ContainerStat[]>(`/servers/${s.id}/stats`), refetchInterval: 20_000, retry: false });
   const list = useMemo(() => (cs.data ?? []).filter((c) => filter === "all" || c.labels["portdock.managed"] === "true"), [cs.data, filter]);
   if (cs.isLoading) return <Loading />;
   if (cs.error) return <ErrorBox error={cs.error} />;

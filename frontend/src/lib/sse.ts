@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { stripAnsi } from "./utils";
 
 export interface LogStream {
   lines: string[];
@@ -48,11 +49,11 @@ export function useLogStream(url: string | null): LogStream {
     es.onopen = () => setConnected(true);
     es.addEventListener("snapshot", (e) => {
       const text = JSON.parse((e as MessageEvent).data) as string;
-      buffer.current = text ? text.replace(/\n$/, "").split("\n") : [];
+      buffer.current = text ? text.replace(/\n$/, "").split("\n").map(stripAnsi) : [];
       pending = [];
       setLines(buffer.current);
     });
-    es.addEventListener("log", (e) => push([JSON.parse((e as MessageEvent).data) as string]));
+    es.addEventListener("log", (e) => push([stripAnsi(JSON.parse((e as MessageEvent).data) as string)]));
     es.addEventListener("status", (e) => {
       setStatus(JSON.parse((e as MessageEvent).data) as string);
       flush();
@@ -88,8 +89,12 @@ export function useLiveEvents() {
   useEffect(() => {
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout>;
+    let wait = 3000;
     const connect = () => {
       es = new EventSource("/api/events", { withCredentials: true });
+      es.onopen = () => {
+        wait = 3000;
+      };
       es.addEventListener("event", (e) => {
         const { kind, id } = JSON.parse((e as MessageEvent).data) as { kind: string; id: number; status: string };
         qc.invalidateQueries({ queryKey: [kind, id] });
@@ -110,7 +115,18 @@ export function useLiveEvents() {
       });
       es.onerror = () => {
         es?.close();
-        retry = setTimeout(connect, 3000);
+        // Longer and longer waits (up to a minute); a session that ended stops trying.
+        retry = setTimeout(async () => {
+          try {
+            const res = await fetch("/api/auth/status", { credentials: "same-origin" });
+            const st = (await res.json()) as { user?: unknown };
+            if (!st.user) return;
+          } catch {
+            /* offline: try again later */
+          }
+          connect();
+        }, wait);
+        wait = Math.min(wait * 2, 60_000);
       };
     };
     connect();

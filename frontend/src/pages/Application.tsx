@@ -60,7 +60,7 @@ import { ContainerLogs, ContainerTable } from "../components/ContainerTable";
 import { useRegistries } from "../components/registries";
 import { AccessNotice } from "../components/access";
 import { useUser } from "../components/Layout";
-import { Terminal } from "../components/Terminal";
+import { Terminal } from "../components/LazyTerminal";
 import { domainURL, shortSha, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { ResourceTopology } from "../components/resourceTopology";
@@ -215,7 +215,7 @@ export function ApplicationPage() {
 }
 
 function useAppContainers(app: ApplicationDetail) {
-  return useQuery({ queryKey: ["containers", "app", app.id], queryFn: () => api.get<Container[]>(`/applications/${app.id}/containers`), refetchInterval: 15_000 });
+  return useQuery({ queryKey: ["containers", "app", app.id], queryFn: () => api.get<Container[]>(`/applications/${app.id}/containers`), refetchInterval: 30_000 });
 }
 
 function Overview({ app }: { app: ApplicationDetail }) {

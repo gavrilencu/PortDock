@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import type { Project } from "../lib/types";
 import { cn, formatUptime, timeAgo } from "../lib/utils";
 import { ContainerLogs } from "../components/ContainerTable";
-import { Terminal } from "../components/Terminal";
+import { Terminal } from "../components/LazyTerminal";
 import { ResourceIcon } from "../components/shared";
 import { Badge, Button, Empty, Input, Loading, PageHeader, Select, Tabs, useConfirm } from "../components/ui";
 import { intlLocale, t, tk } from "../lib/i18n";
@@ -433,7 +433,7 @@ export function useTopology(params: Record<string, string | number | undefined>)
   return useQuery({
     queryKey: ["topology", qs],
     queryFn: () => api.get<{ resources: TopoResource[]; errors: Record<string, string>; generated_at: string }>(`/topology${qs ? `?${qs}` : ""}`),
-    refetchInterval: 5000,
+    refetchInterval: 20_000,
   });
 }
 

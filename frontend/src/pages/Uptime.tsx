@@ -21,7 +21,7 @@ export function UptimePage() {
   const admin = user.role !== "member";
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const monitors = useQuery({ queryKey: ["monitors"], queryFn: () => api.get<Monitor[]>("/monitors"), refetchInterval: 15_000 });
+  const monitors = useQuery({ queryKey: ["monitors"], queryFn: () => api.get<Monitor[]>("/monitors"), refetchInterval: 30_000 });
   const [edit, setEdit] = useState<Draft | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ["monitors"] });

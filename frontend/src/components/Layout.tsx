@@ -40,7 +40,10 @@ import { SidebarUpdate } from "./updates";
 import { getLocale, isLocale, LOCALES, setLocale, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "./LanguagePicker";
 import { Credits } from "./credits";
-import { ChatWidget } from "./assistant/ChatWidget";
+import { lazy, Suspense } from "react";
+
+// The assistant (chat, Markdown renderer) loads after the page, and only then.
+const ChatWidget = lazy(() => import("./assistant/ChatWidget").then((m) => ({ default: m.ChatWidget })));
 
 const UserContext = createContext<User | null>(null);
 export const useUser = () => useContext(UserContext)!;
@@ -395,7 +398,9 @@ export function AppLayout() {
             </main>
           </div>
         </div>
-        <ChatWidget />
+        <Suspense fallback={null}>
+          <ChatWidget />
+        </Suspense>
       </CommandPaletteProvider>
     </UserContext.Provider>
   );

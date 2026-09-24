@@ -29,7 +29,7 @@ export function ServicePage() {
   const qc = useQueryClient();
   const [streamKey, setStreamKey] = useState(0);
   const { data, isLoading, error } = useQuery({ queryKey: ["service", id], queryFn: () => api.get<ServiceDetail>(`/services/${id}`) });
-  const containers = useQuery({ queryKey: ["containers", "service", id], queryFn: () => api.get<Container[]>(`/services/${id}/containers`), refetchInterval: 10_000 });
+  const containers = useQuery({ queryKey: ["containers", "service", id], queryFn: () => api.get<Container[]>(`/services/${id}/containers`), refetchInterval: 30_000 });
   const deploying = data?.status === "deploying";
   const stream = useLogStream(deploying || streamKey > 0 ? `/services/${id}/stream?k=${streamKey}` : null);
 
