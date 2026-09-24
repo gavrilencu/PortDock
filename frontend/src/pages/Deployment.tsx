@@ -26,7 +26,6 @@ export function DeploymentPage() {
   // Pending/rejected deployments have no build output yet: attach once approved.
   const waiting = dep.data?.status === "pending_approval" || dep.data?.status === "rejected";
   const stream = useLogStream(dep.data && !waiting ? `/deployments/${depId}/stream` : null);
-  const [, tick] = useState(0);
 
   const finished = stream.status ?? (dep.data && !["queued", "running", "pending_approval"].includes(dep.data.status) ? dep.data.status : null);
   const [comment, setComment] = useState("");
@@ -42,11 +41,6 @@ export function DeploymentPage() {
   useEffect(() => {
     if (stream.status) qc.invalidateQueries({ queryKey: ["deployment", depId] });
   }, [stream.status, depId, qc]);
-  useEffect(() => {
-    if (finished) return;
-    const timer = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(timer);
-  }, [finished]);
 
   const cancel = useMutation({
     mutationFn: () => api.post(`/deployments/${depId}/cancel`),
@@ -98,7 +92,7 @@ export function DeploymentPage() {
               </Badge>
             )}
             <span className="flex items-center gap-1">
-              <Clock className="size-3.5" /> {timeAgo(d.created_at)} · {d.started_at ? duration(d.started_at, d.finished_at || undefined) : t("queued")}
+              <Clock className="size-3.5" /> {timeAgo(d.created_at)} · {d.started_at ? <Elapsed start={d.started_at} end={d.finished_at || undefined} running={!finished} /> : t("queued")}
             </span>
             <span>{({ manual: t("Triggered by a user"), webhook: t("Triggered by a Git push"), api: t("Triggered by the API"), rollback: t("Triggered by a rollback"), config: t("Restarted with changed variables"), promote: t("Triggered by deploying a saved version") } as Record<string, string>)[d.trigger] ?? t("Triggered by {trigger}", { trigger: d.trigger })}</span>
           </span>
@@ -184,7 +178,7 @@ export function DeploymentPage() {
 
 export function DeploymentsPage() {
   const [status, setStatus] = useState("");
-  const { data, isLoading } = useQuery({ queryKey: ["deployments", status], queryFn: () => api.get<Deployment[]>(`/deployments${status ? `?status=${status}` : ""}`), refetchInterval: 15_000 });
+  const { data, isLoading } = useQuery({ queryKey: ["deployments", status], queryFn: () => api.get<Deployment[]>(`/deployments${status ? `?status=${status}` : ""}`), refetchInterval: 30_000 });
   return (
     <>
       <PageHeader title={t("Deployments")} subtitle={t("Build and release history across every application.")} />
@@ -214,4 +208,15 @@ export function DeploymentsPage() {
       )}
     </>
   );
+}
+
+/** A running duration that re-renders only itself once a second. */
+function Elapsed({ start, end, running }: { start: string; end?: string; running: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  return <>{duration(start, end)}</>;
 }

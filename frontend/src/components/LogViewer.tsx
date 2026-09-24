@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, Download, Search, WrapText } from "lucide-react";
 import { cn, stripAnsi } from "../lib/utils";
 import { StatusDot } from "./ui";
@@ -13,7 +13,12 @@ function lineClass(l: string): string {
   return "text-zinc-300";
 }
 
-export function LogViewer({
+// Only the last lines are rendered while a build is running; a long log is
+// shown whole on request. 20 000 DOM rows re-laid out on every line were the
+// main cost of watching a deployment.
+const WINDOW = 3000;
+
+export const LogViewer = memo(function LogViewer({
   lines,
   live,
   className,
@@ -30,13 +35,17 @@ export function LogViewer({
   const [follow, setFollow] = useState(true);
   const [wrap, setWrap] = useState(true);
   const [query, setQuery] = useState("");
+  const [all, setAll] = useState(false);
 
-  const shown = useMemo(() => {
-    const clean = lines.map(stripAnsi);
+  const filtered = useMemo(() => {
+    // Lines from the stream are already free of ANSI codes; strip only what still has any.
+    const clean = lines.some((l) => l.includes("\u001b")) ? lines.map(stripAnsi) : lines;
     if (!query) return clean;
     const q = query.toLowerCase();
     return clean.filter((l) => l.toLowerCase().includes(q));
   }, [lines, query]);
+  const hidden = all || query ? 0 : Math.max(0, filtered.length - WINDOW);
+  const shown = hidden ? filtered.slice(hidden) : filtered;
 
   useEffect(() => {
     if (follow && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -92,13 +101,20 @@ export function LogViewer({
         {shown.length === 0 ? (
           <div className="text-zinc-500">{emptyText}</div>
         ) : (
-          shown.map((l, i) => (
-            <div key={i} className={cn(lineClass(l), wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>
-              {l}
-            </div>
-          ))
+          <>
+            {hidden > 0 && (
+              <button type="button" onClick={() => setAll(true)} className="mb-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-300 hover:bg-white/10">
+                {t("Show the {n} earlier lines", { n: hidden })}
+              </button>
+            )}
+            {shown.map((l, i) => (
+              <div key={hidden + i} className={cn(lineClass(l), wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre")}>
+                {l}
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>
   );
-}
+});

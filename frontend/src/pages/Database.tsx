@@ -8,7 +8,7 @@ import type { Backup, BackupRunsResponse, DatabaseDetail } from "../lib/types";
 import { Badge, Button, Card, CopyButton, CopyField, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
 import { ContainerLogs } from "../components/ContainerTable";
 import { DNSBadge } from "../components/Domains";
-import { Terminal } from "../components/Terminal";
+import { Terminal } from "../components/LazyTerminal";
 import { cn, formatBytes, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { SQLConsole } from "../components/sqlconsole";
@@ -330,7 +330,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
       >
         {!info.supported ? (
           <p className="px-5 py-4 text-sm text-muted">{t("Backups are not available for this database engine.")}</p>
-        ) : info.runs.length === 0 ? (
+        ) : (info.runs ?? []).length === 0 ? (
           <div className="p-5">
             <Empty icon={<DatabaseBackup />} title={t("No backups yet")} description={t("Back up now, or add a schedule below.")} />
           </div>
@@ -347,7 +347,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
               </tr>
             </thead>
             <tbody>
-              {info.runs.map((r) => {
+              {(info.runs ?? []).map((r) => {
                 const st = runStatus[r.status] ?? { status: r.status, label: r.status };
                 const busy = r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running";
                 return (

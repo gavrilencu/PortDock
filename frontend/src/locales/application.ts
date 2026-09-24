@@ -310,6 +310,7 @@ export const ro: Record<string, string> = {
   "privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.": "mod privilegiat, namespace-uri ale host-ului, capabilități, dispozitive și montări ale căilor de pe server (niciodată socket-ul Docker sau rădăcina). Dezactivat, deploy-ul refuză un asemenea fișier compose.",
   "Only an administrator can allow this.": "Doar un administrator poate permite asta.",
   "One key=value per line, e.g. Traefik middlewares (traefik.http.middlewares.*). Other traefik.* and portdock.* labels are managed by PortDock.": "Câte un key=value pe linie, de ex. middleware-uri Traefik (traefik.http.middlewares.*). Celelalte etichete traefik.* și portdock.* sunt gestionate de PortDock.",
+  "Show the {n} earlier lines": "Arată cele {n} linii anterioare",
 };
 
 export const ru: Record<string, string> = {
@@ -622,4 +623,5 @@ export const ru: Record<string, string> = {
   "privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.": "привилегированный режим, пространства имён хоста, capabilities, устройства и монтирование путей сервера (никогда — сокет Docker или корень). Если выключено, деплой отклоняет такой compose-файл.",
   "Only an administrator can allow this.": "Разрешить это может только администратор.",
   "One key=value per line, e.g. Traefik middlewares (traefik.http.middlewares.*). Other traefik.* and portdock.* labels are managed by PortDock.": "По одному key=value на строку, например middleware Traefik (traefik.http.middlewares.*). Остальные метки traefik.* и portdock.* управляются PortDock.",
+  "Show the {n} earlier lines": "Показать предыдущие строки ({n})",
 };

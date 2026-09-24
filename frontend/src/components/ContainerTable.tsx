@@ -8,7 +8,7 @@ import type { Container } from "../lib/types";
 import { useLogStream } from "../lib/sse";
 import { Badge, Button, Menu, MenuItem, MenuSeparator, Modal, StatusDot, Table, useConfirm } from "./ui";
 import { LogViewer } from "./LogViewer";
-import { Terminal } from "./Terminal";
+import { Terminal } from "./LazyTerminal";
 import { t, tk } from "../lib/i18n";
 import { cn } from "../lib/utils";
 
