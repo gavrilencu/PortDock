@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/portdock/portdock/internal/composefile"
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/netcfg"
@@ -620,6 +621,11 @@ func (j *job) deployCompose(ctx context.Context) error {
 			return errors.New("the application has not been deployed on this server yet; deploy it first")
 		}
 		return fmt.Errorf("read compose file: %w", err)
+	}
+	// The compose file comes from the repository: refuse what would hand a
+	// container the server unless an administrator allowed host access.
+	if err := composefile.Check(raw, j.app.ComposeHostAccess); err != nil {
+		return err
 	}
 	main, mainPort, services, err := composeMain(raw, j.app.ComposeService, j.app.Port)
 	if err != nil {

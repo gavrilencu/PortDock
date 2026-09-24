@@ -126,3 +126,47 @@ func TestWebhookSecretVisibility(t *testing.T) {
 	e.expect(e.client(), "POST", "/api/webhooks/deploy/"+uuid+"?token=wrong", nil, 401)
 	e.expect(e.client(), "GET", "/api/webhooks/deploy/"+uuid+"?token="+secret, nil, 404)
 }
+
+// Custom labels cannot steer the proxy or impersonate PortDock's containers,
+// and host access for compose applications is granted by administrators only.
+func TestLabelsAndComposeHostAccessPolicy(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	e.user("dev@corp.com", "correct-horse", "member")
+	if _, err := e.db.Exec("INSERT INTO servers(id, name, host, status) VALUES (1, 'local', 'localhost', 'reachable')"); err != nil {
+		t.Fatal(err)
+	}
+	owner, dev := e.login("owner@corp.com"), e.login("dev@corp.com")
+	p := e.expect(dev, "POST", "/api/projects", map[string]any{"name": "shop"}, 200)
+	env := p["environments"].([]any)[0].(map[string]any)["id"]
+	body := func(extra map[string]any) map[string]any {
+		m := map[string]any{"name": "web", "environment_id": env, "server_id": 1, "source_type": "image", "docker_image": "nginx"}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	for _, bad := range []string{"traefik.enable=true", "traefik.http.routers.evil.rule=Host(`victim.example`)", "portdock.resource=other", "shipyard.managed=true", "novalue"} {
+		e.expect(dev, "POST", "/api/applications", body(map[string]any{"custom_labels": bad}), 400)
+		e.expect(owner, "POST", "/api/applications", body(map[string]any{"custom_labels": bad}), 400)
+	}
+	e.expect(dev, "POST", "/api/applications", body(map[string]any{"custom_labels": "traefik.http.middlewares.gz.compress=true\napp.team=shop"}), 200)
+
+	// Compose host access: a member cannot grant it, an administrator can, and
+	// the member may keep editing the application afterwards.
+	compose := map[string]any{"name": "stack", "environment_id": env, "server_id": 1, "source_type": "git", "git_repository": "https://example.com/r.git", "build_pack": "compose"}
+	compose["compose_host_access"] = true
+	e.expect(dev, "POST", "/api/applications", compose, 403)
+	compose["compose_host_access"] = false
+	app := e.expect(dev, "POST", "/api/applications", compose, 200)
+	base := fmt.Sprintf("/api/applications/%v", app["id"])
+	app["compose_host_access"] = true
+	e.expect(dev, "PATCH", base, app, 403)
+	if got := e.expect(owner, "PATCH", base, app, 200); got["compose_host_access"] != true {
+		t.Fatalf("host access not granted: %v", got["compose_host_access"])
+	}
+	app["description"] = "edited by the developer"
+	e.expect(dev, "PATCH", base, app, 200)
+	app["compose_host_access"] = false
+	e.expect(dev, "PATCH", base, app, 200) // revoking is always fine
+}

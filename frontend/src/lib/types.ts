@@ -169,6 +169,7 @@ export interface Application {
   scan_block: "" | "critical" | "high";
   scan_ignore_unfixed: boolean;
   proxy_mode: "" | "on" | "off";
+  compose_host_access: boolean;
   sast_on_deploy: boolean;
   sast_block: "" | "high";
   dast_on_deploy: boolean;
