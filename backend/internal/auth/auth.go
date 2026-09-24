@@ -5,6 +5,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -51,18 +52,101 @@ func New(db *store.DB, secureCookies bool) *Auth {
 	return &Auth{db: db, secure: secureCookies, touched: map[string]time.Time{}}
 }
 
-// ClientIP returns the caller address, honouring X-Forwarded-For / X-Real-Ip
-// set by the reverse proxy in front of PortDock.
+// trustedProxies are the addresses whose X-Forwarded-For is believed. By
+// default these are the private and loopback ranges, where the Traefik proxy
+// that serves the dashboard runs; a caller from anywhere else is taken at
+// its own address, so a header it made up cannot dodge the sign-in limiter
+// or forge the address in the audit log.
+var (
+	proxyMu        sync.RWMutex
+	trustedProxies = defaultTrustedProxies()
+)
+
+func defaultTrustedProxies() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"} {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}
+
+// SetTrustedProxies replaces the trusted proxies: a comma-separated list of
+// IPs or CIDR ranges, "none" to trust no proxy header at all, or "" for the
+// default private ranges.
+func SetTrustedProxies(list string) error {
+	list = strings.TrimSpace(list)
+	var out []*net.IPNet
+	switch list {
+	case "":
+		out = defaultTrustedProxies()
+	case "none":
+	default:
+		for _, item := range strings.Split(list, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if !strings.Contains(item, "/") {
+				if strings.Contains(item, ":") {
+					item += "/128"
+				} else {
+					item += "/32"
+				}
+			}
+			_, n, err := net.ParseCIDR(item)
+			if err != nil {
+				return fmt.Errorf("trusted proxies: %q is not an IP or CIDR range", item)
+			}
+			out = append(out, n)
+		}
+	}
+	proxyMu.Lock()
+	trustedProxies = out
+	proxyMu.Unlock()
+	return nil
+}
+
+func trustedProxy(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	proxyMu.RLock()
+	defer proxyMu.RUnlock()
+	for _, n := range trustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClientIP returns the caller address. When the connection comes from a
+// trusted proxy, the address is the last untrusted hop of X-Forwarded-For
+// (or X-Real-Ip); otherwise it is the connection's own address.
 func ClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
-	if ip := r.Header.Get("X-Real-Ip"); ip != "" {
-		return ip
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	remote := net.ParseIP(host)
+	if !trustedProxy(remote) {
+		return host
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		hops := strings.Split(xff, ",")
+		for i := len(hops) - 1; i >= 0; i-- {
+			h := strings.TrimSpace(hops[i])
+			if ip := net.ParseIP(h); ip != nil && !trustedProxy(ip) {
+				return h
+			}
+			if i == 0 && h != "" {
+				return h // every hop is a proxy of ours; the first is the closest to the client
+			}
+		}
+	}
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-Ip")); ip != "" {
+		return ip
 	}
 	return host
 }

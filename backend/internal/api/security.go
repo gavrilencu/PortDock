@@ -204,6 +204,24 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, toUserOut(u))
 }
 
+func secondFactorKey(userID int64) string { return fmt.Sprintf("2fa:%d", userID) }
+
+// secondFactorAllowed refuses further code attempts once the address or the
+// account is locked by earlier failures.
+func (s *Server) secondFactorAllowed(r *http.Request, userID int64) error {
+	for _, k := range []string{"ip:" + auth.ClientIP(r), secondFactorKey(userID)} {
+		if left, blocked := s.sec.limiter.Blocked(k); blocked {
+			return errStatus(429, "too many incorrect codes; try again in %s", retryIn(left))
+		}
+	}
+	return nil
+}
+
+func (s *Server) secondFactorFailed(r *http.Request, userID int64) {
+	s.sec.limiter.Fail("ip:" + auth.ClientIP(r))
+	s.sec.limiter.Fail(secondFactorKey(userID))
+}
+
 // loginMFA completes a password login with a TOTP or recovery code.
 func (s *Server) loginMFA(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
@@ -226,12 +244,19 @@ func (s *Server) loginMFA(w http.ResponseWriter, r *http.Request) error {
 	if err != nil || u.Disabled {
 		return errStatus(401, "the sign-in session expired; enter your password again")
 	}
+	// Codes are guessable (six digits): the limit that protects passwords
+	// protects the second factor too, per address and per account, so a
+	// fresh challenge after every five attempts buys nothing.
+	if err := s.secondFactorAllowed(r, u.ID); err != nil {
+		return err
+	}
 	method, valid := s.verifySecondFactor(ctx, &u, in.Code)
 	if !valid {
-		s.sec.limiter.Fail("ip:" + auth.ClientIP(r))
+		s.secondFactorFailed(r, u.ID)
 		s.db.LogActivity(ctx, u.ID, "login.mfa_failed", u.Email)
 		return errStatus(401, "invalid authentication code")
 	}
+	s.sec.limiter.Reset(secondFactorKey(u.ID))
 	s.sec.challenges.take(in.Token)
 	first := ch.Base
 	if first == "" {
@@ -324,7 +349,13 @@ func (s *Server) twoFactorEnable(w http.ResponseWriter, r *http.Request) error {
 	if err != nil || secret == "" {
 		return badRequest("start the setup again")
 	}
+	if err := s.secondFactorAllowed(r, u.ID); err != nil {
+		return err
+	}
 	step, valid := auth.VerifyTOTP(secret, in.Code, time.Now())
+	if !valid {
+		s.secondFactorFailed(r, u.ID)
+	}
 	if !valid {
 		return badRequest("the code is incorrect — check that your device's clock is correct")
 	}
@@ -357,7 +388,11 @@ func (s *Server) twoFactorDisable(w http.ResponseWriter, r *http.Request) error 
 	if u.HasPassword() && !auth.CheckPassword(u.PasswordHash, in.Password) {
 		return badRequest("current password is incorrect")
 	}
+	if err := s.secondFactorAllowed(r, u.ID); err != nil {
+		return err
+	}
 	if _, valid := s.verifySecondFactor(ctx, &u, in.Code); !valid {
+		s.secondFactorFailed(r, u.ID)
 		return badRequest("invalid authentication code")
 	}
 	if _, err := s.db.ExecContext(ctx, "UPDATE users SET totp_enabled = 0, totp_secret = '', recovery_codes = '', totp_last_step = 0 WHERE id = ?", u.ID); err != nil {
@@ -376,7 +411,11 @@ func (s *Server) regenerateRecoveryCodes(w http.ResponseWriter, r *http.Request)
 	}
 	ctx := r.Context()
 	u := auth.UserFrom(ctx)
+	if err := s.secondFactorAllowed(r, u.ID); err != nil {
+		return err
+	}
 	if method, valid := s.verifySecondFactor(ctx, &u, in.Code); !valid || method != "totp" {
+		s.secondFactorFailed(r, u.ID)
 		return badRequest("enter a current code from your authenticator app")
 	}
 	codes, stored := auth.NewRecoveryCodes(10)

@@ -24,6 +24,9 @@ type Config struct {
 	SecretKey string
 	// DevMode enables permissive CORS for the Vite dev server.
 	DevMode bool
+	// TrustedProxies lists the proxies whose X-Forwarded-For is believed
+	// (comma-separated IPs or CIDR ranges, "none", or "" for private ranges).
+	TrustedProxies string
 	// ProxyNetwork is the Docker network shared by Traefik and all managed workloads.
 	ProxyNetwork string
 	// NetworkFromEnv reports whether ProxyNetwork was set explicitly.
@@ -46,6 +49,7 @@ func Load() Config {
 		PublicURL:           Env("PUBLIC_URL", "http://localhost:8000"),
 		SecretKey:           Env("SECRET_KEY", ""),
 		DevMode:             Env("DEV", "") == "1",
+		TrustedProxies:      Env("TRUSTED_PROXIES", ""),
 		ProxyNetwork:        Env("NETWORK", ""),
 		MaxConcurrentBuilds: envInt("MAX_BUILDS", 4),
 	}
