@@ -75,9 +75,11 @@ export function ServerPage() {
           </>
         }
         actions={
-          <Button icon={<RefreshCw className="size-4" />} loading={validate.isPending} onClick={() => validate.mutate()}>
-            {t("Validate")}
-          </Button>
+          isAdmin && (
+            <Button icon={<RefreshCw className="size-4" />} loading={validate.isPending} onClick={() => validate.mutate()}>
+              {t("Validate")}
+            </Button>
+          )
         }
       />
       <Tabs
@@ -87,9 +89,9 @@ export function ServerPage() {
           { id: "overview", label: t("Overview"), icon: <LayoutGrid /> },
           { id: "monitoring", label: t("Monitoring"), icon: <Activity /> },
           { id: "containers", label: t("Containers"), icon: <Boxes /> },
-          { id: "images", label: t("Images"), icon: <Layers /> },
-          { id: "volumes", label: t("Volumes"), icon: <HardDrive /> },
-          { id: "networks", label: t("Networks"), icon: <Network /> },
+          { id: "images", label: t("Images"), icon: <Layers />, hidden: !isAdmin },
+          { id: "volumes", label: t("Volumes"), icon: <HardDrive />, hidden: !isAdmin },
+          { id: "networks", label: t("Networks"), icon: <Network />, hidden: !isAdmin },
           { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !isAdmin },
           { id: "settings", label: t("Settings"), icon: <Settings2 />, hidden: !isAdmin },
         ]}

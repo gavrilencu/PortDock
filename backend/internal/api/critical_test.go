@@ -1,9 +1,17 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
+
+	"github.com/portdock/portdock/internal/auth"
 )
 
 // A member with a project opens the dashboard: this used to deadlock the
@@ -41,5 +49,126 @@ func TestAdminCannotSetOwnerPassword(t *testing.T) {
 	}
 	if code, _ := e.do(e.client(), "POST", "/api/auth/login", map[string]string{"email": "owner@corp.com", "password": "owner-sets-own-1"}); code != 200 {
 		t.Fatalf("owner's own password change: %d", code)
+	}
+}
+
+// The interface is served with a strict Content-Security-Policy that still
+// allows the theme bootstrap inlined in index.html, and index.html is never
+// cached.
+func TestPageSecurityHeaders(t *testing.T) {
+	e := newTestEnv(t)
+	ui := fstest.MapFS{
+		"index.html":          {Data: []byte("<!doctype html><html><head><script>\n  document.documentElement.classList.add(\"dark\");\n</script></head><body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index-abc.js\"></script></body></html>")},
+		"assets/index-abc.js": {Data: []byte("console.log(1)")},
+	}
+	e.api.ui = ui
+	srv := httptest.NewServer(e.api.Handler())
+	defer srv.Close()
+	res, err := http.Get(srv.URL + "/projects/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	csp := res.Header.Get("Content-Security-Policy")
+	sum := sha256.Sum256([]byte("\n  document.documentElement.classList.add(\"dark\");\n"))
+	want := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	for _, part := range []string{"default-src 'self'", "script-src 'self' " + want, "frame-ancestors 'none'", "object-src 'none'", "connect-src 'self' ws://" + strings.TrimPrefix(srv.URL, "http://")} {
+		if !strings.Contains(csp, part) {
+			t.Errorf("CSP %q lacks %q", csp, part)
+		}
+	}
+	if res.Header.Get("Cache-Control") != "no-cache" || res.Header.Get("Permissions-Policy") == "" || res.Header.Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("headers: %v", res.Header)
+	}
+	if res.Header.Get("Strict-Transport-Security") != "" {
+		t.Fatal("HSTS on a plain-http instance")
+	}
+	res, _ = http.Get(srv.URL + "/assets/index-abc.js")
+	res.Body.Close()
+	if res.Header.Get("Content-Security-Policy") != "" || !strings.Contains(res.Header.Get("Cache-Control"), "immutable") {
+		t.Fatalf("asset headers: %v", res.Header)
+	}
+}
+
+// Second-factor codes are throttled per account across sign-in attempts.
+func TestSecondFactorLockout(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	if _, err := e.db.Exec("UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE email = 'owner@corp.com'", e.api.box.Encrypt("JBSWY3DPEHPK3PXP")); err != nil {
+		t.Fatal(err)
+	}
+	// Each client is a different address as far as the limiter can tell? No —
+	// all requests come from 127.0.0.1, so use the per-account bucket: 10 failures.
+	fails := 0
+	for round := 0; round < 4 && fails < 10; round++ {
+		c := e.client()
+		_, res := e.do(c, "POST", "/api/auth/login", map[string]string{"email": "owner@corp.com", "password": "correct-horse"})
+		token, _ := res["mfa_token"].(string)
+		if token == "" {
+			t.Fatalf("no MFA challenge: %v", res)
+		}
+		for i := 0; i < 4 && fails < 10; i++ {
+			if code, _ := e.do(c, "POST", "/api/auth/login/mfa", map[string]string{"mfa_token": token, "code": "000000"}); code != 401 {
+				t.Fatalf("attempt %d: %d", fails, code)
+			}
+			fails++
+		}
+	}
+	c := e.client()
+	code, res := e.do(c, "POST", "/api/auth/login", map[string]string{"email": "owner@corp.com", "password": "correct-horse"})
+	if code == 429 {
+		return // the address is locked before the second step; also fine
+	}
+	token, _ := res["mfa_token"].(string)
+	if token == "" {
+		t.Fatalf("no MFA challenge after failures: %v", res)
+	}
+	if code, _ := e.do(c, "POST", "/api/auth/login/mfa", map[string]string{"mfa_token": token, "code": auth.TOTPCode("JBSWY3DPEHPK3PXP", time.Now())}); code != 429 {
+		t.Fatalf("expected the second factor to be locked, got %d", code)
+	}
+	// The account bucket alone locks too: reset the address, keep the account.
+	e.api.sec.limiter.Reset("ip:127.0.0.1")
+	c = e.client()
+	_, res = e.do(c, "POST", "/api/auth/login", map[string]string{"email": "owner@corp.com", "password": "correct-horse"})
+	token, _ = res["mfa_token"].(string)
+	if code, _ := e.do(c, "POST", "/api/auth/login/mfa", map[string]string{"mfa_token": token, "code": auth.TOTPCode("JBSWY3DPEHPK3PXP", time.Now())}); code != 429 {
+		t.Fatalf("expected the account's second factor to be locked, got %d", code)
+	}
+}
+
+// Members get a small subset of the settings and cannot browse the servers'
+// images, volumes, networks or setup logs.
+func TestMemberInfrastructureVisibility(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	e.user("dev@corp.com", "correct-horse", "member")
+	owner, dev := e.login("owner@corp.com"), e.login("dev@corp.com")
+	e.expect(owner, "PATCH", "/api/settings", map[string]string{"s3_access_key": "AKIA-SECRET", "proxy_http": "http://proxy:3128", "proxy_username": "svc", "build_env": "NPM_TOKEN=xyz", "instance_name": "Acme"}, 200)
+	got := e.expect(dev, "GET", "/api/settings", nil, 200)
+	for _, k := range []string{"s3_access_key", "s3_access_key_set", "proxy_http", "proxy_username", "build_env", "public_ipv4", "env_public_url", "registry_mirror"} {
+		if _, ok := got[k]; ok {
+			t.Errorf("member sees %s", k)
+		}
+	}
+	if got["instance_name"] != "Acme" || got["public_url"] == "" || got["version"] == nil {
+		t.Fatalf("member subset: %v", got)
+	}
+	adminView := e.expect(owner, "GET", "/api/settings", nil, 200)
+	if adminView["s3_access_key_set"] != true || adminView["proxy_http"] != "http://proxy:3128" {
+		t.Fatalf("admin view: %v", adminView)
+	}
+	if _, ok := adminView["s3_access_key"]; ok {
+		t.Fatal("the S3 access key is returned in clear")
+	}
+	if _, err := e.db.Exec("INSERT INTO servers(id, name, host, status) VALUES (1, 'local', 'localhost', 'reachable')"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/servers/1/images", "/api/servers/1/volumes", "/api/servers/1/networks", "/api/servers/1/setup/stream?k=x"} {
+		if code, _ := e.do(dev, "GET", path, nil); code != 403 {
+			t.Errorf("member GET %s: %d", path, code)
+		}
+	}
+	if code, _ := e.do(dev, "POST", "/api/servers/1/validate", nil); code != 403 {
+		t.Errorf("member validate: %d", code)
 	}
 }

@@ -166,7 +166,9 @@ func Split(engine, script string) ([]Statement, error) {
 			if c == '\'' || (c == '"' && mysqlLike) {
 				code.WriteString("''") // a string literal
 			} else {
-				code.WriteString(`""`) // a quoted name
+				// A quoted name stays visible to the read-only check: "pg_read_file"(...)
+				// is the same call as pg_read_file(...).
+				code.WriteString(string(rs[i : j+1]))
 			}
 			i = j
 		case c == '$' && engine == "postgres":
@@ -254,23 +256,9 @@ func Command(engine, user, pass, db string, stmts []Statement, readOnly bool) (s
 	switch engine {
 	case "postgres":
 		in.WriteString("SET client_min_messages = warning;\n")
-		// The read-only role reads everything (pg_read_all_data on PostgreSQL 14+).
-		if readOnly {
-			in.WriteString(`DO $pd$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'portdock_readonly') THEN
-    BEGIN CREATE ROLE portdock_readonly NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END;
-  END IF;
-  BEGIN EXECUTE 'GRANT pg_read_all_data TO portdock_readonly';
-  EXCEPTION WHEN undefined_object THEN
-    EXECUTE 'GRANT USAGE ON SCHEMA public TO portdock_readonly';
-    EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO portdock_readonly';
-  END;
-END $pd$;
-`)
-		}
 		fmt.Fprintf(&in, "SET statement_timeout = '%ds';\n", Timeout)
 		if readOnly {
-			in.WriteString("BEGIN READ ONLY;\nSET LOCAL ROLE portdock_readonly;\n")
+			in.WriteString("BEGIN READ ONLY;\n")
 		}
 		for _, s := range stmts {
 			in.WriteString(s.Text + "\n;\n\\echo '<<<PD_END' :ROW_COUNT\n")
@@ -278,7 +266,28 @@ END $pd$;
 		if readOnly {
 			in.WriteString("ROLLBACK;\n")
 		}
-		return fmt.Sprintf("psql -U %s -d %s -X -q --csv -P %s -v ON_ERROR_STOP=1", q(user), q(db), q("null="+nullToken)), in.String()
+		psql := fmt.Sprintf("psql -U %s -d %s -X -q --csv -P %s -v ON_ERROR_STOP=1", q(user), q(db), q("null="+nullToken))
+		if readOnly {
+			// Read-only statements run as a real login role that can only read
+			// (pg_read_all_data on PostgreSQL 14+): a superuser session that
+			// merely SET ROLE could always come back with RESET ROLE or reach
+			// the server through pg_read_file and friends. The database owner
+			// creates or repairs the role first.
+			ensure := `DO $pd$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'portdock_readonly') THEN
+    BEGIN CREATE ROLE portdock_readonly LOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  END IF;
+  ALTER ROLE portdock_readonly LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  BEGIN EXECUTE 'GRANT pg_read_all_data TO portdock_readonly';
+  EXCEPTION WHEN undefined_object THEN
+    EXECUTE 'GRANT USAGE ON SCHEMA public TO portdock_readonly';
+    EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO portdock_readonly';
+  END;
+END $pd$;`
+			setup := fmt.Sprintf("psql -U %s -d %s -X -q -v ON_ERROR_STOP=1 -c %s >/dev/null", q(user), q(db), q(ensure))
+			return setup + " && " + fmt.Sprintf("psql -U %s -d %s -X -q --csv -P %s -v ON_ERROR_STOP=1", q("portdock_readonly"), q(db), q("null="+nullToken)), in.String()
+		}
+		return psql, in.String()
 
 	case "mysql", "mariadb":
 		client := "mysql"
