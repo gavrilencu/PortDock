@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, Globe, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, Globe, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, TerminalSquare, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Backup, BackupRunsResponse, DatabaseDetail } from "../lib/types";
@@ -11,9 +11,10 @@ import { DNSBadge } from "../components/Domains";
 import { Terminal } from "../components/Terminal";
 import { cn, formatBytes, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
+import { SQLConsole } from "../components/sqlconsole";
 import { intlLocale, t, tk, tMaybe, tx } from "../lib/i18n";
 
-type Tab = "overview" | "metrics" | "backups" | "logs" | "terminal" | "settings";
+type Tab = "overview" | "metrics" | "query" | "backups" | "logs" | "terminal" | "settings";
 
 const actionDone: Record<string, string> = {
   start: tk("Database started"),
@@ -80,6 +81,7 @@ export function DatabasePage() {
         tabs={[
           { id: "overview", label: t("Connection"), icon: <LayoutGrid /> },
           { id: "metrics", label: t("Metrics"), icon: <Activity /> },
+          { id: "query", label: t("SQL console"), icon: <TerminalSquare />, hidden: !["postgres", "mysql", "mariadb", "mssql", "clickhouse"].includes(db.engine) },
           { id: "backups", label: t("Backups"), icon: <DatabaseBackup /> },
           { id: "logs", label: t("Logs"), icon: <ScrollText /> },
           { id: "terminal", label: t("Terminal"), icon: <SquareTerminal /> },
@@ -104,6 +106,7 @@ export function DatabasePage() {
         </div>
       )}
       {tab === "metrics" && <MetricsPanel scope="database" id={db.id} />}
+      {tab === "query" && <SQLConsole db={db} />}
       {tab === "backups" && <Backups db={db} />}
       {tab === "logs" && <ContainerLogs url={`/databases/${id}/logs?tail=500`} className="h-[600px]" />}
       {tab === "terminal" && (running ? <Terminal path={`/servers/${db.server_id}/containers/${db.uuid}/terminal`} /> : <Empty icon={<SquareTerminal />} title={t("Database is not running")} />)}

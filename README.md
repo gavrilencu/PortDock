@@ -68,6 +68,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - From GitHub (GitHub App), Azure DevOps, GitLab, Gitea / Forgejo, Bitbucket or any Git URL; Docker images; Docker Compose
 - Build packs: Dockerfile, Nixpacks, Node.js, Bun, Python, Go, static sites, shell scripts — auto-detected
 - Push-to-deploy, pull request previews with their own domain, deploy hooks for any CI
+- Deployment status on commits and pull requests (GitHub, Azure DevOps)
 - Zero-downtime rollouts: traffic moves only after the health check passes
 - Pre- and post-deploy commands, replicas, CPU / memory limits, watch paths for monorepos
 - Several servers per application, dedicated build servers, private registries
@@ -97,6 +98,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - Online backups for every engine, following each one's documentation; manual, scheduled or all at once, queued per database, downloadable
 - Restore in one click, after an automatic safety backup; retention, upload to S3 (AWS, R2, B2, MinIO)
 - Access from outside by domain or public IP
+- SQL console in the browser (PostgreSQL, MySQL, MariaDB, SQL Server, ClickHouse): tables, results, CSV export; read-only for members
 - 13 one-click services (n8n, WordPress, Gitea, Grafana, Vaultwarden, MinIO…) and a catalog of 127 Docker images
 
 **⚙️ Configuration**
@@ -116,6 +118,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 **📈 Monitoring & alerts**
 - CPU, memory, disk, network and load history for servers and every resource
 - Alert rules with duration and severity; notifications by email, Slack, Microsoft Teams, Discord, Telegram or signed webhook
+- Uptime monitors (status code, keyword, response time, TLS expiry) with incidents and a public status page
 
 </td>
 </tr>
@@ -128,6 +131,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - Two-factor authentication with recovery codes, organization-wide 2FA policy
 - Single sign-on (OIDC: Entra ID, Okta, Google, Keycloak, Authentik…) and LDAP / Active Directory
 - Audit log with CSV / JSON export and SIEM streaming (webhook or syslog), API tokens
+- Vulnerability scanning of images with Trivy, optionally blocking deployments on critical or high findings
 
 </td>
 <td valign="top">
