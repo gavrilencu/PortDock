@@ -363,11 +363,20 @@ var settingKeys = []string{
 }
 
 // secretSettings are stored encrypted and never returned.
-var secretSettings = map[string]bool{"s3_secret_key": true, "proxy_password": true}
+var secretSettings = map[string]bool{"s3_secret_key": true, "proxy_password": true, "s3_access_key": true}
+
+// memberSettingKeys is what the interface needs for users who are not
+// administrators. The rest (storage, proxy and mirror URLs, build variables,
+// public addresses) describes the infrastructure and stays with administrators.
+var memberSettingKeys = []string{"instance_name", "instance_timezone", "status_page_enabled", "status_page_title", "status_page_description"}
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {
 	res := map[string]any{}
-	for _, k := range settingKeys {
+	keys := settingKeys
+	if !auth.UserFrom(r.Context()).IsAdmin() {
+		keys = memberSettingKeys
+	}
+	for _, k := range keys {
 		v := s.db.Setting(r.Context(), k)
 		if secretSettings[k] {
 			res[k+"_set"] = v != ""
@@ -376,9 +385,11 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {
 		res[k] = v
 	}
 	res["public_url"] = s.publicURL(r.Context())
-	res["env_public_url"] = s.cfg.PublicURL
-	res["instance_route_error"] = s.db.Setting(r.Context(), "instance_route_error")
 	res["version"] = Version
+	if auth.UserFrom(r.Context()).IsAdmin() {
+		res["env_public_url"] = s.cfg.PublicURL
+		res["instance_route_error"] = s.db.Setting(r.Context(), "instance_route_error")
+	}
 	return ok(w, res)
 }
 
