@@ -62,7 +62,7 @@ func TestAdminCannotSetOwnerPassword(t *testing.T) {
 func TestPageSecurityHeaders(t *testing.T) {
 	e := newTestEnv(t)
 	ui := fstest.MapFS{
-		"index.html":          {Data: []byte("<!doctype html><html><head><script>\n  document.documentElement.classList.add(\"dark\");\n</script></head><body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index-abc.js\"></script></body></html>")},
+		"index.html":          {Data: []byte("<!doctype html><html><head><script>\r\n  document.documentElement.classList.add(\"dark\");\r\n</script></head><body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index-abc.js\"></script></body></html>")},
 		"assets/index-abc.js": {Data: []byte("console.log(1)")},
 	}
 	e.api.ui = ui
