@@ -21,34 +21,69 @@ var schema string
 
 var ErrNotFound = errors.New("not found")
 
+// DB is the SQLite database: one connection writes (SQLite has a single
+// writer, and one connection avoids SQLITE_BUSY storms) while a small pool
+// reads, so a long write or an open cursor never stalls the whole process.
 type DB struct {
-	*sql.DB
+	*sql.DB // the writer; Exec, Begin and Prepare go here
+	reader  *sql.DB
 }
+
+const readers = 8
 
 func Open(path string) (*DB, error) {
 	dsn := "file:" + path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)"
-	sqldb, err := sql.Open("sqlite", dsn)
+	// Immediate transactions take the write lock up front instead of failing
+	// with SQLITE_BUSY when a deferred transaction tries to upgrade.
+	writer, err := sql.Open("sqlite", dsn+"&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
-	// SQLite allows one writer; a single connection avoids SQLITE_BUSY storms.
-	sqldb.SetMaxOpenConns(1)
-	if _, err := sqldb.Exec(schema); err != nil {
+	writer.SetMaxOpenConns(1)
+	if _, err := writer.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	for _, m := range migrations {
-		if _, err := sqldb.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		if _, err := writer.Exec(m); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return nil, fmt.Errorf("migrate %q: %w", m, err)
 		}
 	}
-	if err := migrateEnvService(context.Background(), sqldb); err != nil {
+	if err := migrateEnvService(context.Background(), writer); err != nil {
 		return nil, err
 	}
-	db := &DB{sqldb}
+	reader, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	reader.SetMaxOpenConns(readers)
+	reader.SetMaxIdleConns(readers)
+	db := &DB{DB: writer, reader: reader}
 	if err := db.backfillDomains(context.Background()); err != nil {
 		return nil, fmt.Errorf("backfill domains: %w", err)
 	}
 	return db, nil
+}
+
+// Reads go to the reader pool; WAL readers see every committed write at once.
+
+func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return db.reader.QueryContext(ctx, query, args...)
+}
+
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return db.reader.QueryRowContext(ctx, query, args...)
+}
+
+func (db *DB) Query(query string, args ...any) (*sql.Rows, error) {
+	return db.reader.Query(query, args...)
+}
+
+func (db *DB) QueryRow(query string, args ...any) *sql.Row {
+	return db.reader.QueryRow(query, args...)
+}
+
+func (db *DB) Close() error {
+	return errors.Join(db.reader.Close(), db.DB.Close())
 }
 
 // migrations add columns to tables created by earlier versions. Each statement
@@ -119,6 +154,17 @@ var migrations = []string{
 	`ALTER TABLE applications ADD COLUMN dast_on_deploy INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE applications ADD COLUMN dast_target TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN compose_host_access INTEGER NOT NULL DEFAULT 0`,
+	// indexes for the queries the dashboard, monitor and retention jobs issue
+	`CREATE INDEX IF NOT EXISTS idx_metrics_hourly_ts ON metrics_hourly(ts)`,
+	`CREATE INDEX IF NOT EXISTS idx_app_domains_app ON app_domains(application_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_deployments_created ON deployments(created_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)`,
+	`CREATE INDEX IF NOT EXISTS idx_monitor_checks_recent ON monitor_checks(monitor_id, id DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_applications_env ON applications(environment_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_applications_server ON applications(server_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_databases_env ON databases(environment_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_services_env ON services(environment_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
 	`ALTER TABLE image_scans ADD COLUMN kind TEXT NOT NULL DEFAULT 'image'`,
 	`ALTER TABLE image_scans ADD COLUMN target TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE image_scans ADD COLUMN commit_sha TEXT NOT NULL DEFAULT ''`,
