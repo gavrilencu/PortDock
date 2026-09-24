@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/portdock/portdock/internal/auth"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,6 +121,15 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	}
 	if !slices.Contains([]string{"", "on", "off"}, a.ProxyMode) {
 		return badRequest("proxy_mode must be empty, on or off")
+	}
+	if !slices.Contains([]string{"", "high"}, a.SastBlock) {
+		return badRequest("sast_block must be empty or high")
+	}
+	if t := strings.TrimSpace(a.DastTarget); t != "" {
+		if u, err := url.Parse(t); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return badRequest("the URL to scan must start with http:// or https://")
+		}
+		a.DastTarget = t
 	}
 	if !slices.Contains([]string{"", "critical", "high"}, a.ScanBlock) {
 		return badRequest("scan_block must be empty, critical or high")
@@ -406,6 +416,7 @@ func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	s.removeAzureHook(r.Context(), a)
+	s.engine.DeleteAppReports(r.Context(), a.ID)
 	_, _ = s.db.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = 'application' AND owner_id = ?", a.ID)
 	s.activity(r, "application.delete", a.Name)
 	s.hub.Event("application", a.ID, "deleted")

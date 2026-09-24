@@ -38,10 +38,25 @@ type Finding struct {
 	Fixed     string `json:"fixed"`
 	Title     string `json:"title"`
 	URL       string `json:"url"`
-	Target    string `json:"target"` // OS packages or the file (package-lock.json, app.jar…)
+	Target    string `json:"target"` // OS packages or the file (package-lock.json, app.jar…), the source file (SAST) or the URL (DAST)
+	// SAST and DAST details.
+	Line        int    `json:"line,omitempty"`
+	CWE         string `json:"cwe,omitempty"`
+	Count       int    `json:"count,omitempty"` // instances (DAST)
+	Description string `json:"description,omitempty"`
+	Solution    string `json:"solution,omitempty"`
 }
 
-var severityRank = map[string]int{"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
+var severityRank = map[string]int{"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4, "UNKNOWN": 4}
+
+func sortFindings(out []Finding) {
+	sort.SliceStable(out, func(i, j int) bool {
+		if severityRank[out[i].Severity] != severityRank[out[j].Severity] {
+			return severityRank[out[i].Severity] < severityRank[out[j].Severity]
+		}
+		return out[i].ID > out[j].ID
+	})
+}
 
 // ParseTrivy reads the JSON report of `trivy image --format json`.
 func ParseTrivy(raw []byte) ([]Finding, error) {
@@ -105,7 +120,7 @@ func countFindings(s *store.ImageScan, fs []Finding) {
 			s.Medium++
 		case "LOW":
 			s.Low++
-		default:
+		default: // INFO, UNKNOWN
 			s.Unknown++
 		}
 		if f.Fixed != "" {
@@ -154,7 +169,7 @@ type scanTarget struct {
 func (e *Engine) startScans(ctx context.Context, app store.Application, deploymentID int64, trigger string, targets []scanTarget) []store.ImageScan {
 	scans := make([]store.ImageScan, 0, len(targets))
 	for _, t := range targets {
-		s := store.ImageScan{ApplicationID: app.ID, DeploymentID: deploymentID, Service: t.Service, Image: t.Image, Trigger: trigger, Status: "running", CreatedAt: store.Now()}
+		s := store.ImageScan{ApplicationID: app.ID, DeploymentID: deploymentID, Kind: "image", Service: t.Service, Image: t.Image, Trigger: trigger, Status: "running", CreatedAt: store.Now()}
 		if _, err := store.Insert(ctx, e.db, "image_scans", &s); err == nil {
 			scans = append(scans, s)
 		}
@@ -194,6 +209,8 @@ func (e *Engine) runScans(ctx context.Context, x executor.Executor, app store.Ap
 		} else {
 			s.Status = "success"
 			countFindings(s, fs)
+			s.FinishedAt = store.Now()
+			e.saveReports(ctx, app, s, fs, map[string][]byte{"trivy.json": []byte(out)})
 		}
 		e.finishScan(context.WithoutCancel(ctx), s, fs)
 		if log != nil {
@@ -205,10 +222,10 @@ func (e *Engine) runScans(ctx context.Context, x executor.Executor, app store.Ap
 			}
 		}
 		if err == nil && s.Critical+s.High > 0 {
-			e.notifyVulnerable(app, *s)
+			e.notifyFindings(app, *s)
 		}
 	}
-	e.pruneScans(context.WithoutCancel(ctx), app.ID)
+	e.pruneScans(context.WithoutCancel(ctx), app.ID, "image")
 	return scans
 }
 
@@ -233,25 +250,55 @@ func (e *Engine) finishScan(ctx context.Context, s *store.ImageScan, fs []Findin
 	}
 }
 
-func (e *Engine) pruneScans(ctx context.Context, appID int64) {
-	_, _ = e.db.ExecContext(ctx, `DELETE FROM image_scans WHERE application_id = ? AND status != 'running' AND id NOT IN
-		(SELECT id FROM image_scans WHERE application_id = ? ORDER BY id DESC LIMIT ?)`, appID, appID, scansPerApp)
+// pruneScans keeps the last scans of each kind of an application, with their reports.
+func (e *Engine) pruneScans(ctx context.Context, appID int64, kind string) {
+	type row struct {
+		ID int64 `db:"id"`
+	}
+	old, _ := store.Select[row](ctx, e.db, `SELECT id FROM image_scans WHERE application_id = ? AND kind = ? AND status != 'running' AND id NOT IN
+		(SELECT id FROM image_scans WHERE application_id = ? AND kind = ? ORDER BY id DESC LIMIT ?)`, appID, kind, appID, kind, scansPerApp)
+	for _, r := range old {
+		e.removeReports(r.ID)
+		_, _ = e.db.ExecContext(ctx, "DELETE FROM image_scans WHERE id = ?", r.ID)
+	}
 }
 
-func (e *Engine) notifyVulnerable(app store.Application, s store.ImageScan) {
+// DeleteAppReports removes the report files of every scan of an application.
+func (e *Engine) DeleteAppReports(ctx context.Context, appID int64) {
+	type row struct {
+		ID int64 `db:"id"`
+	}
+	rows, _ := store.Select[row](ctx, e.db, "SELECT id FROM image_scans WHERE application_id = ?", appID)
+	for _, r := range rows {
+		e.removeReports(r.ID)
+	}
+}
+
+// notifyFindings sends security.vulnerabilities for a scan with critical or high findings.
+func (e *Engine) notifyFindings(app store.Application, s store.ImageScan) {
 	if e.notify == nil {
 		return
 	}
-	image := s.Image
-	if s.Service != "" {
-		image = s.Service + " · " + s.Image
+	what := s.Image
+	switch s.Kind {
+	case "sast":
+		what = "Static analysis (Semgrep)"
+		if s.CommitSHA != "" {
+			what += " · " + short(s.CommitSHA)
+		}
+	case "dast":
+		what = "Dynamic scan (OWASP ZAP) · " + s.Target
+	default:
+		if s.Service != "" {
+			what = s.Service + " · " + s.Image
+		}
 	}
 	e.notify.Send(notify.Event{
 		Name:    "security.vulnerabilities",
-		Title:   fmt.Sprintf("%s: %d critical and %d high vulnerabilities", app.Name, s.Critical, s.High),
-		Message: image,
-		URL:     fmt.Sprintf("%s/applications/%d?tab=security", e.PublicURL(context.Background()), app.ID),
-		Fields:  map[string]string{"Critical": fmt.Sprint(s.Critical), "High": fmt.Sprint(s.High), "With a fix": fmt.Sprint(s.Fixable)},
+		Title:   fmt.Sprintf("%s: %d critical and %d high findings", app.Name, s.Critical, s.High),
+		Message: what,
+		URL:     fmt.Sprintf("%s/applications/%d?tab=security&scan=%s", e.PublicURL(context.Background()), app.ID, s.Kind),
+		Fields:  map[string]string{"Critical": fmt.Sprint(s.Critical), "High": fmt.Sprint(s.High), "Medium": fmt.Sprint(s.Medium)},
 	})
 }
 
@@ -302,7 +349,7 @@ var ErrScanRunning = errors.New("a scan of this application is already running")
 // background. deploymentID and trigger describe what started it.
 func (e *Engine) ScanApp(ctx context.Context, app store.Application, deploymentID int64, trigger string) error {
 	var n int
-	_ = e.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM image_scans WHERE application_id = ? AND status = 'running'", app.ID).Scan(&n)
+	_ = e.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM image_scans WHERE application_id = ? AND kind = 'image' AND status = 'running'", app.ID).Scan(&n)
 	if n > 0 {
 		return ErrScanRunning
 	}

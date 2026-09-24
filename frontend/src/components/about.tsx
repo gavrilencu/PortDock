@@ -98,6 +98,8 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
       tk("Two-factor authentication, single sign-on (OIDC), LDAP and Active Directory"),
       tk("Audit log with export and SIEM streaming, API tokens"),
       tk("Vulnerability scanning of images with Trivy"),
+      tk("Static (SAST) and dynamic (DAST) security testing with Semgrep and OWASP ZAP"),
+      tk("Downloadable security reports for every build and deploy"),
     ],
   },
   {

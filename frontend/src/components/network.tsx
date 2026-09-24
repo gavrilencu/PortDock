@@ -11,6 +11,7 @@ const keys = [
   "proxy_http", "proxy_https", "proxy_no", "proxy_username", "proxy_password",
   "proxy_portdock", "proxy_builds", "proxy_containers",
   "registry_mirror", "registry_insecure", "npm_registry", "pypi_index", "go_proxy", "build_env", "trivy_db_repository",
+  "trivy_image", "semgrep_image", "semgrep_config", "zap_image",
 ] as const;
 type Key = (typeof keys)[number];
 type Form = Record<Key, string>;
@@ -161,6 +162,23 @@ export function NetworkSettings() {
               arg: <code className="font-mono text-fg">ARG NPM_CONFIG_REGISTRY</code>,
             })}
           </p>
+        </div>
+      </Card>
+
+      <Card title={t("Security scanners")} description={t("The images of the scanners (to pull them from your own registry) and the rules of the static analysis.")} actions={saveBtn}>
+        <div className="grid gap-4 p-5 md:grid-cols-2">
+          <Field label={t("Trivy image")} hint={t("Vulnerabilities of images.")}>
+            <Input value={f.trivy_image} onChange={(e) => set({ trivy_image: e.target.value })} placeholder="aquasec/trivy:0.58.2" />
+          </Field>
+          <Field label={t("Semgrep image")} hint={t("Static analysis of the source (SAST).")}>
+            <Input value={f.semgrep_image} onChange={(e) => set({ semgrep_image: e.target.value })} placeholder="semgrep/semgrep:latest" />
+          </Field>
+          <Field label={t("Semgrep rules")} hint={t("Comma separated: registry rule sets (p/default, p/owasp-top-ten, p/secrets), URLs or files of the repository.")}>
+            <Input value={f.semgrep_config} onChange={(e) => set({ semgrep_config: e.target.value })} placeholder="p/default" className="font-mono" />
+          </Field>
+          <Field label={t("OWASP ZAP image")} hint={t("Dynamic scan of the running applications (DAST).")}>
+            <Input value={f.zap_image} onChange={(e) => set({ zap_image: e.target.value })} placeholder="ghcr.io/zaproxy/zaproxy:stable" />
+          </Field>
         </div>
       </Card>
     </div>

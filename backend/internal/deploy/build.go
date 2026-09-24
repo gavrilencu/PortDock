@@ -563,6 +563,10 @@ func (j *job) deployCompose(ctx context.Context) error {
 		j.log.Step("Applying configuration (no rebuild)")
 	} else if err := j.checkout(ctx); err != nil {
 		return err
+	} else if j.app.SastOnDeploy {
+		if err := j.sastAfterCheckout(ctx); err != nil {
+			return err
+		}
 	}
 	j.workdir = "" // keep the checkout after deploy
 

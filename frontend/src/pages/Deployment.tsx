@@ -8,6 +8,7 @@ import type { Deployment } from "../lib/types";
 import { useLogStream } from "../lib/sse";
 import { Badge, Button, Empty, ErrorBox, Input, Loading, PageHeader, SegmentedControl, StatusBadge, useConfirm } from "../components/ui";
 import { LogViewer } from "../components/LogViewer";
+import { DeploymentReports } from "../components/scans";
 import { DeploymentsTable } from "../components/shared";
 import { useApp } from "./Application";
 import { duration, shortSha, timeAgo } from "../lib/utils";
@@ -173,6 +174,9 @@ export function DeploymentPage() {
           {pending && d.can_review && !d.can_self_approve && <div className="mt-2 pl-12 text-xs text-muted">{t("You requested this deployment, so another maintainer must approve it (four-eyes principle).")}</div>}
         </div>
       )}
+      <div className="mb-4">
+        <DeploymentReports appId={a.id} deploymentId={d.id} />
+      </div>
       <LogViewer lines={stream.lines} live={active} className="h-[calc(100vh-240px)] min-h-[420px]" filename={`deployment-${d.id}.log`} emptyText={pending ? t("The build starts once the deployment is approved.") : status === "rejected" ? t("This deployment was rejected and never ran.") : status === "queued" ? t("Waiting for a build slot…") : active ? t("Waiting for output…") : t("No build output was recorded for this deployment.")} />
     </>
   );

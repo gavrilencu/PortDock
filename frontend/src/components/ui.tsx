@@ -506,36 +506,79 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   );
 }
 
-/** Minimal dropdown menu anchored to its trigger. */
+/**
+ * Minimal dropdown menu anchored to its trigger. It is rendered in a portal
+ * with a fixed position, so cards with hidden overflow and table scrollers
+ * never cut it; it opens upwards when there is no room below.
+ */
 export function Menu({ trigger, children, align = "end", side = "bottom", className }: { trigger: ReactNode; children: ReactNode; align?: "start" | "end"; side?: "bottom" | "top"; className?: string }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left?: number; right?: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !ref.current) return;
+    const place = () => {
+      const r = ref.current!.getBoundingClientRect();
+      const h = menuRef.current?.offsetHeight ?? 0;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const below = vh - r.bottom;
+      const up = side === "top" ? r.top > h + 8 || r.top > below : below < h + 8 && r.top > below;
+      const p: { top?: number; bottom?: number; left?: number; right?: number } = up ? { bottom: vh - r.top + 6 } : { top: r.bottom + 6 };
+      if (align === "end") p.right = Math.max(8, vw - r.right);
+      else p.left = Math.max(8, r.left);
+      setPos(p);
+    };
+    place();
+    // Measure again once the menu has its size.
+    const raf = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(raf);
+  }, [open, align, side]);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!ref.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const close = (e: Event) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
     };
   }, [open]);
   return (
     <div ref={ref} className={cn("relative", className)}>
-      <div onClick={() => setOpen(!open)}>{trigger}</div>
-      {open && (
-        <div
-          onClick={() => setOpen(false)}
-          className={cn(
-            "animate-pop absolute z-40 min-w-52 rounded-lg border border-border bg-surface p-1 shadow-pop",
-            align === "end" ? "right-0" : "left-0",
-            side === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5",
-          )}
-        >
-          {children}
-        </div>
-      )}
+      <div
+        onClick={() => {
+          setPos(null);
+          setOpen(!open);
+        }}
+      >
+        {trigger}
+      </div>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            onClick={() => setOpen(false)}
+            style={{ position: "fixed", ...(pos ?? { top: -9999, left: -9999 }), visibility: pos ? "visible" : "hidden" }}
+            className="animate-pop z-[60] max-h-[70vh] min-w-52 overflow-y-auto rounded-lg border border-border bg-surface p-1 shadow-pop"
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

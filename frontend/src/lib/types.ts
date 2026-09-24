@@ -161,6 +161,10 @@ export interface Application {
   scan_block: "" | "critical" | "high";
   scan_ignore_unfixed: boolean;
   proxy_mode: "" | "on" | "off";
+  sast_on_deploy: boolean;
+  sast_block: "" | "high";
+  dast_on_deploy: boolean;
+  dast_target: string;
   build_pack: BuildPack;
   base_directory: string;
   dockerfile_path: string;
@@ -636,10 +640,22 @@ export interface MonitorIncident {
   resolved_at: string;
 }
 
+export type ScanKind = "image" | "sast" | "dast";
+
+export interface ScanReport {
+  name: string;
+  title: string;
+  size: number;
+}
+
 export interface ImageScan {
   id: number;
   application_id: number;
   deployment_id: number;
+  kind: ScanKind;
+  target: string;
+  commit_sha: string;
+  reports?: ScanReport[];
   service: string;
   image: string;
   trigger: "deploy" | "manual";
@@ -664,6 +680,11 @@ export interface ScanFinding {
   title: string;
   url: string;
   target: string;
+  line?: number;
+  cwe?: string;
+  count?: number;
+  description?: string;
+  solution?: string;
 }
 
 export interface AzureConnection {
