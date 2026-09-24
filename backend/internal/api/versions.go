@@ -42,7 +42,7 @@ func (s *Server) listVersions(w http.ResponseWriter, r *http.Request) error {
 		out = append(out, o)
 	}
 	res := map[string]any{"versions": out, "live_version_id": live, "kept": deploy.VersionsKept, "max_age_days": int(deploy.VersionMaxAge.Hours() / 24)}
-	if d, err := store.Get[store.Deployment](ctx, s.db, `SELECT * FROM deployments WHERE application_id = ? AND pr_number = 0
+	if d, err := store.Get[store.Deployment](ctx, s.db, `SELECT `+store.DeploymentCols+` FROM deployments WHERE application_id = ? AND pr_number = 0
 		AND status IN ('queued', 'running', 'pending_approval') ORDER BY id DESC LIMIT 1`, a.ID); err == nil {
 		res["pending"] = map[string]any{"deployment_id": d.ID, "version_id": d.VersionID, "status": d.Status, "trigger": d.Trigger}
 	}

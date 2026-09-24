@@ -106,7 +106,7 @@ func (j *job) recordImageVersion(ctx context.Context, targets []target, image st
 // backfillVersions turns the builds deployed before versions existed into
 // versions, as long as their images are still on the primary server.
 func (e *Engine) backfillVersions(ctx context.Context, app store.Application, targets []target, currentID int64) {
-	prev, err := store.Select[store.Deployment](ctx, e.db, `SELECT * FROM deployments WHERE application_id = ? AND pr_number = 0
+	prev, err := store.Select[store.Deployment](ctx, e.db, `SELECT `+store.DeploymentCols+` FROM deployments WHERE application_id = ? AND pr_number = 0
 		AND status = 'success' AND rollback_of = 0 AND image != '' AND id < ? ORDER BY id DESC LIMIT ?`, app.ID, currentID, VersionsKept)
 	if err != nil || len(targets) == 0 {
 		return
