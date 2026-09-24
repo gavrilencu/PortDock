@@ -132,7 +132,7 @@ export function SQLConsole({ db }: { db: DatabaseDetail }) {
     return <Empty icon={<TerminalSquare />} title={t("The SQL console is not available for this engine")} description={t("Use the Terminal tab to open the database's own client.")} />;
   if (!running) return <Empty icon={<TerminalSquare />} title={t("Database is not running")} description={t("Start it to run queries.")} />;
 
-  const out = run.data;
+  const out = run.data ? { ...run.data, results: run.data.results ?? [] } : undefined;
   return (
     <div className="grid gap-6 xl:grid-cols-[260px_minmax(0,1fr)]">
       <Card
@@ -269,10 +269,12 @@ export function SQLConsole({ db }: { db: DatabaseDetail }) {
         )}
         {out && !run.isPending && (
           <div className="space-y-4">
-            <div className="text-xs text-subtle">
-              {t("{n} statement ran in {ms} ms|{n} statements ran in {ms} ms", { n: out.results.length, ms: out.duration_ms })}
-              {out.read_only && ` · ${t("read-only")}`}
-            </div>
+            {out.results.length > 0 && (
+              <div className="text-xs text-subtle">
+                {t("{n} statement ran in {ms} ms|{n} statements ran in {ms} ms", { n: out.results.length, ms: out.duration_ms })}
+                {out.read_only && ` · ${t("read-only")}`}
+              </div>
+            )}
             {out.results.map((r, i) => (
               <ResultCard key={i} r={r} index={i} dbName={db.name} maxRows={info.data!.max_rows} />
             ))}
@@ -295,7 +297,7 @@ function ResultCard({ r, index, dbName, maxRows }: { r: Result; index: number; d
   const rows = r.rows ?? [];
   const shown = all ? rows : rows.slice(0, 200);
   const summary =
-    r.columns === null
+    r.columns == null
       ? r.affected > 0
         ? t("{n} row affected|{n} rows affected", { n: r.affected })
         : t("Done")
@@ -310,7 +312,7 @@ function ResultCard({ r, index, dbName, maxRows }: { r: Result; index: number; d
         </span>
       }
       actions={
-        r.columns !== null &&
+        r.columns != null &&
         r.columns.length > 0 && (
           <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => download(`${dbName}-result-${index + 1}.csv`, csv(r))}>
             CSV
@@ -318,7 +320,7 @@ function ResultCard({ r, index, dbName, maxRows }: { r: Result; index: number; d
         )
       }
     >
-      {r.columns !== null && r.columns.length > 0 && (
+      {r.columns != null && r.columns.length > 0 && (
         <>
           <div className="max-h-[520px] overflow-auto">
             <table className="w-full border-collapse text-left font-mono text-xs">
@@ -335,7 +337,7 @@ function ResultCard({ r, index, dbName, maxRows }: { r: Result; index: number; d
                 {shown.map((row, i) => (
                   <tr key={i} className="border-b border-border/60 last:border-0 hover:bg-surface-2/50">
                     {r.columns!.map((_, k) => {
-                      const v = row[k];
+                      const v = row?.[k];
                       return (
                         <td key={k} className="max-w-md whitespace-pre-wrap break-words px-3 py-1.5 align-top">
                           {v === null || v === undefined ? <span className="italic text-faint">NULL</span> : v}

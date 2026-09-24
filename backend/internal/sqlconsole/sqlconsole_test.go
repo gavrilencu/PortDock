@@ -1,6 +1,7 @@
 package sqlconsole
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -144,5 +145,17 @@ func TestParsers(t *testing.T) {
 	res = Parse("postgres", b.String(), st[:1])
 	if len(res[0].Rows) != MaxRows || res[0].RowCount != MaxRows+10 || !res[0].Truncated {
 		t.Fatalf("limit: %d rows, count %d", len(res[0].Rows), res[0].RowCount)
+	}
+}
+
+// A script whose first statement fails has no result: the list must be empty, not null.
+func TestParseNoOutput(t *testing.T) {
+	st, _ := Split("postgres", "SELECT * FROM missing")
+	for _, engine := range []string{"postgres", "mysql", "mariadb", "mssql", "clickhouse"} {
+		res := Parse(engine, "", st)
+		b, _ := json.Marshal(res)
+		if res == nil || string(b) != "[]" {
+			t.Errorf("%s: %s", engine, b)
+		}
 	}
 }

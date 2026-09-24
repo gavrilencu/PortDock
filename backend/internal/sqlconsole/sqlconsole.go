@@ -361,7 +361,7 @@ var endMarker = regexp.MustCompile(`^<<<PD_END (-?\d+)\s*$`)
 // Parse reads the client output of the statements that ran (all of them, or
 // those before the one that failed).
 func Parse(engine, out string, stmts []Statement) []Result {
-	var res []Result
+	res := []Result{}
 	switch engine {
 	case "clickhouse":
 		res = parseClickHouse(out)
@@ -543,7 +543,7 @@ func parseSqlcmd(block string) Result {
 // SELECT 1 AS __pd_end closes the results of a statement.
 func parseClickHouse(out string) []Result {
 	dec := json.NewDecoder(strings.NewReader(out))
-	var res []Result
+	res := []Result{}
 	cur := Result{Affected: -1}
 	for {
 		var obj struct {
