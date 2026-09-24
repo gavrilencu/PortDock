@@ -277,8 +277,12 @@ func Command(engine, user, pass, db string, stmts []Statement, readOnly bool) (s
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'portdock_readonly') THEN
     BEGIN CREATE ROLE portdock_readonly LOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END;
   END IF;
-  ALTER ROLE portdock_readonly LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  BEGIN EXECUTE 'GRANT pg_read_all_data TO portdock_readonly';
+  ALTER ROLE portdock_readonly LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+  BEGIN
+    -- Since PostgreSQL 16 inheritance belongs to the grant itself.
+    BEGIN EXECUTE 'GRANT pg_read_all_data TO portdock_readonly WITH INHERIT TRUE';
+    EXCEPTION WHEN syntax_error THEN EXECUTE 'GRANT pg_read_all_data TO portdock_readonly';
+    END;
   EXCEPTION WHEN undefined_object THEN
     EXECUTE 'GRANT USAGE ON SCHEMA public TO portdock_readonly';
     EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO portdock_readonly';
