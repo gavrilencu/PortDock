@@ -97,7 +97,6 @@ export const ro: Record<string, string> = {
   "Load balanced by Traefik.": "Load balancing prin Traefik.",
   Advanced: "Avansat",
   "Custom labels": "Etichete personalizate",
-  "One key=value per line (e.g. extra Traefik middlewares).": "Câte un key=value pe linie (de ex. middleware-uri Traefik suplimentare).",
   "Custom docker run options": "Opțiuni docker run personalizate",
   "Appended to docker run, e.g. -v data:/data --shm-size 1g. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.": "Adăugate la docker run, de ex. -v data:/data --shm-size 1g. Modul privilegiat, namespace-urile host-ului și capabilitățile sunt refuzate; căile de pe server pot fi montate doar de administratori.",
   "Save configuration": "Salvează configurația",
@@ -307,6 +306,10 @@ export const ro: Record<string, string> = {
   "No deployments": "Niciun deploy",
   "No deployments match this filter.": "Niciun deploy nu corespunde acestui filtru.",
   "Deployments appear here once an application is shipped.": "Deploy-urile apar aici după ce o aplicație este lansată.",
+  "Allow host access from the compose file": "Permite accesul la host din fișierul compose",
+  "privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.": "mod privilegiat, namespace-uri ale host-ului, capabilități, dispozitive și montări ale căilor de pe server (niciodată socket-ul Docker sau rădăcina). Dezactivat, deploy-ul refuză un asemenea fișier compose.",
+  "Only an administrator can allow this.": "Doar un administrator poate permite asta.",
+  "One key=value per line, e.g. Traefik middlewares (traefik.http.middlewares.*). Other traefik.* and portdock.* labels are managed by PortDock.": "Câte un key=value pe linie, de ex. middleware-uri Traefik (traefik.http.middlewares.*). Celelalte etichete traefik.* și portdock.* sunt gestionate de PortDock.",
 };
 
 export const ru: Record<string, string> = {
@@ -406,7 +409,6 @@ export const ru: Record<string, string> = {
   "Load balanced by Traefik.": "Балансировка нагрузки через Traefik.",
   Advanced: "Дополнительно",
   "Custom labels": "Пользовательские метки",
-  "One key=value per line (e.g. extra Traefik middlewares).": "По одному key=value на строку (например, дополнительные middleware Traefik).",
   "Custom docker run options": "Дополнительные опции docker run",
   "Appended to docker run, e.g. -v data:/data --shm-size 1g. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.": "Добавляются к docker run, например -v data:/data --shm-size 1g. Привилегированный режим, пространства имён хоста и capabilities отклоняются; пути сервера могут монтировать только администраторы.",
   "Save configuration": "Сохранить конфигурацию",
@@ -616,4 +618,8 @@ export const ru: Record<string, string> = {
   "No deployments": "Нет деплоев",
   "No deployments match this filter.": "Нет деплоев, соответствующих фильтру.",
   "Deployments appear here once an application is shipped.": "Деплои появятся здесь, когда приложение будет развёрнуто.",
+  "Allow host access from the compose file": "Разрешить доступ к хосту из compose-файла",
+  "privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.": "привилегированный режим, пространства имён хоста, capabilities, устройства и монтирование путей сервера (никогда — сокет Docker или корень). Если выключено, деплой отклоняет такой compose-файл.",
+  "Only an administrator can allow this.": "Разрешить это может только администратор.",
+  "One key=value per line, e.g. Traefik middlewares (traefik.http.middlewares.*). Other traefik.* and portdock.* labels are managed by PortDock.": "По одному key=value на строку, например middleware Traefik (traefik.http.middlewares.*). Остальные метки traefik.* и portdock.* управляются PortDock.",
 };

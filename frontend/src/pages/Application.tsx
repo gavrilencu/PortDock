@@ -59,6 +59,7 @@ import { EnvEditor } from "../components/EnvEditor";
 import { ContainerLogs, ContainerTable } from "../components/ContainerTable";
 import { useRegistries } from "../components/registries";
 import { AccessNotice } from "../components/access";
+import { useUser } from "../components/Layout";
 import { Terminal } from "../components/Terminal";
 import { domainURL, shortSha, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
@@ -310,6 +311,8 @@ function Section({ title, description, children }: { title: string; description?
 }
 
 function Configuration({ app }: { app: ApplicationDetail }) {
+  const me = useUser();
+  const isAdmin = me.role === "owner" || me.role === "admin";
   const qc = useQueryClient();
   const nav = useNavigate();
   const confirm = useConfirm();
@@ -469,9 +472,24 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           </Field>
         </Section>
         <Section title={t("Advanced")}>
-          <Field label={t("Custom labels")} hint={t("One key=value per line (e.g. extra Traefik middlewares).")} className="sm:col-span-2">
+          <Field label={t("Custom labels")} hint={t("One key=value per line, e.g. Traefik middlewares (traefik.http.middlewares.*). Other traefik.* and portdock.* labels are managed by PortDock.")} className="sm:col-span-2">
             <Textarea rows={3} value={f.custom_labels} onChange={(e) => set("custom_labels", e.target.value)} />
           </Field>
+          {f.build_pack === "compose" && (
+            <div className="sm:col-span-2">
+              <Switch
+                checked={f.compose_host_access}
+                disabled={!isAdmin && !f.compose_host_access}
+                onChange={(v) => set("compose_host_access", v)}
+                label={t("Allow host access from the compose file")}
+                description={
+                  isAdmin
+                    ? t("privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.")
+                    : t("Only an administrator can allow this.")
+                }
+              />
+            </div>
+          )}
           <Field label={t("Custom docker run options")} hint={t("Appended to docker run, e.g. -v data:/data --shm-size 1g. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.")} className="sm:col-span-2">
             <Input value={f.custom_docker_options} onChange={(e) => set("custom_docker_options", e.target.value)} />
           </Field>

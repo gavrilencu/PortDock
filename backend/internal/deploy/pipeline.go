@@ -552,10 +552,12 @@ func (j *job) rollout(ctx context.Context, image string) error {
 		docker.LabelDeployment: d.UUID,
 		docker.LabelPR:         strconv.Itoa(d.PRNumber),
 	}
-	for _, l := range strings.Split(app.CustomLabels, "\n") {
-		if k, v, ok := strings.Cut(strings.TrimSpace(l), "="); ok && k != "" {
-			labels[k] = v
-		}
+	custom, err := docker.ParseLabels(app.CustomLabels)
+	if err != nil {
+		return err
+	}
+	for k, v := range custom {
+		labels[k] = v
 	}
 
 	var started []string
