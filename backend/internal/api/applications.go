@@ -3,19 +3,20 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/portdock/portdock/internal/auth"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/portdock/portdock/internal/auth"
 	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/registry"
 	"github.com/portdock/portdock/internal/secrets"
 	"github.com/portdock/portdock/internal/store"
-	"regexp"
 )
 
 var buildPacks = []string{"auto", "dockerfile", "compose", "node", "bun", "python", "go", "static", "shell", "nixpacks", "image"}
@@ -192,6 +193,18 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	return nil
 }
 
+// validateDockerOptions limits the extra `docker run` options to an allow-list.
+// Bind mounts and devices are for administrators, who already administer the
+// servers; a value an administrator saved earlier stays valid when someone
+// else edits other fields of the application.
+func validateDockerOptions(ctx context.Context, opts, previous string) error {
+	trusted := auth.UserFrom(ctx).IsAdmin() || (previous != "" && opts == previous)
+	if _, err := docker.RunOptions(opts, trusted); err != nil {
+		return badRequest("%v", err)
+	}
+	return nil
+}
+
 type appInput struct {
 	*store.Application
 	GitToken *string `json:"git_token"`
@@ -272,6 +285,9 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 		a.GitToken = s.box.Encrypt(*in.GitToken)
 	}
 	if err := s.validateApp(r.Context(), &a); err != nil {
+		return err
+	}
+	if err := validateDockerOptions(r.Context(), a.CustomDockerOptions, ""); err != nil {
 		return err
 	}
 	if err := s.requireEnv(r, a.EnvironmentID, permWrite); err != nil {
@@ -375,6 +391,9 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 	}
 	a.UpdatedAt = store.Now()
 	if err := s.validateApp(r.Context(), &a); err != nil {
+		return err
+	}
+	if err := validateDockerOptions(r.Context(), a.CustomDockerOptions, orig.CustomDockerOptions); err != nil {
 		return err
 	}
 	if a.EnvironmentID != orig.EnvironmentID {
