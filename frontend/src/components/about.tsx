@@ -122,7 +122,7 @@ export function AboutPage() {
     <div className="space-y-6">
       <Card>
         <div className="flex flex-wrap items-start gap-4 p-5">
-          <LogoMark className="size-11 rounded-xl [&_svg]:size-6" />
+          <LogoMark className="size-12 rounded-xl" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold tracking-[-0.01em]">PortDock</h2>

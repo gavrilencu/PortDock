@@ -5,7 +5,7 @@ import { ArrowRight, GitBranch, Lock, ShieldCheck, Workflow } from "lucide-react
 import { api, ApiError } from "../lib/api";
 import type { LoginProviders } from "../lib/types";
 import { ProviderMark } from "../components/sso";
-import { LogoMark, useAuthStatus } from "../components/Layout";
+import { Logo, useAuthStatus } from "../components/Layout";
 import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
 import { LanguageSelect } from "../components/LanguagePicker";
 import { Credits } from "../components/credits";
@@ -71,8 +71,7 @@ export function LoginPage() {
     <div className="grid min-h-full bg-surface lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <div className="flex flex-col px-6 py-8 sm:px-12">
         <div className="flex items-center gap-2.5">
-          <LogoMark />
-          <span className="text-[15px] font-semibold tracking-[-0.02em]">PortDock</span>
+          <Logo className="[&_img]:h-9" />
           <LanguageSelect className="ml-auto" />
         </div>
         <div className="flex flex-1 items-center justify-center py-12">

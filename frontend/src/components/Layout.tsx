@@ -52,24 +52,18 @@ export function useAuthStatus() {
   return useQuery({ queryKey: ["auth-status"], queryFn: () => api.get<AuthStatus>("/auth/status"), staleTime: 60_000 });
 }
 
+/** The PortDock icon (public/icon.png), the same in both themes. */
 export function LogoMark({ className }: { className?: string }) {
-  return (
-    <div className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg bg-inverse text-inverse-fg shadow-xs", className)}>
-      <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 15.5 12 20l8-4.5" />
-        <path d="M4 11 12 15.5 20 11" opacity=".55" />
-        <path d="M12 4 4 8.5 12 13l8-4.5z" />
-      </svg>
-    </div>
-  );
+  return <img src="/icon.png" alt="PortDock" draggable={false} className={cn("size-7 shrink-0 select-none rounded-lg", className)} />;
 }
 
+/** The PortDock wordmark: one image per theme (public/logo-on-light.png, logo-on-dark.png). */
 export function Logo({ className }: { className?: string }) {
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <LogoMark />
-      <span className="text-[15px] font-semibold tracking-[-0.02em]">PortDock</span>
-    </div>
+    <span className={cn("inline-flex shrink-0 select-none", className)}>
+      <img src="/logo-on-light.png" alt="PortDock" draggable={false} className="h-8 w-auto dark:hidden" />
+      <img src="/logo-on-dark.png" alt="PortDock" draggable={false} className="hidden h-8 w-auto dark:block" />
+    </span>
   );
 }
 
@@ -120,14 +114,8 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
   return (
     <aside className={cn("flex h-full flex-col border-r border-border bg-surface transition-[width] duration-200", collapsed ? "w-[60px]" : "w-[248px]")}>
       <div className={cn("flex h-14 items-center border-b border-border", collapsed ? "justify-center px-2" : "px-3")}>
-        <Link to="/" onClick={onNavigate} className={cn("flex min-w-0 items-center gap-2.5 rounded-md", !collapsed && "flex-1 px-1.5 py-1 hover:bg-surface-2")}>
-          <LogoMark />
-          {!collapsed && (
-            <div className="min-w-0 flex-1 leading-tight">
-              <div className="truncate text-[13px] font-semibold tracking-[-0.01em]">PortDock</div>
-              <div className="truncate text-2xs text-subtle">{t("Self-hosted platform")}</div>
-            </div>
-          )}
+        <Link to="/" onClick={onNavigate} title={t("Self-hosted platform")} className={cn("flex min-w-0 items-center rounded-md", !collapsed && "flex-1 px-1.5 py-1 hover:bg-surface-2")}>
+          {collapsed ? <LogoMark /> : <Logo />}
         </Link>
       </div>
 
