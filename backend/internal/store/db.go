@@ -110,6 +110,9 @@ var migrations = []string{
 	`ALTER TABLE applications ADD COLUMN azure_repo_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN azure_hook_id TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN azure_hook_error TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN scan_on_deploy INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE applications ADD COLUMN scan_block TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN scan_ignore_unfixed INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

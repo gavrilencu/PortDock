@@ -709,7 +709,7 @@ const channelFields: Record<NotificationChannel["type"], { key: string; label: s
 
 const channelTypeLabels: Record<string, string> = { teams: "Microsoft Teams", webhook: tk("webhook"), email: tk("email") };
 
-const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed"];
+const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed", "security.vulnerabilities", "monitor.down", "monitor.up", "monitor.ssl_expiring"];
 
 function Notifications() {
   const qc = useQueryClient();

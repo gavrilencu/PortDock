@@ -157,6 +157,9 @@ export interface Application {
   azure_repo_id: string;
   azure_hook_id: string;
   azure_hook_error: string;
+  scan_on_deploy: boolean;
+  scan_block: "" | "critical" | "high";
+  scan_ignore_unfixed: boolean;
   build_pack: BuildPack;
   base_directory: string;
   dockerfile_path: string;
@@ -559,6 +562,36 @@ export interface GitHubApp {
   webhook_url: string;
   webhook_configured: boolean;
   public_url: boolean;
+}
+
+export interface ImageScan {
+  id: number;
+  application_id: number;
+  deployment_id: number;
+  service: string;
+  image: string;
+  trigger: "deploy" | "manual";
+  status: "running" | "success" | "failed";
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  unknown: number;
+  fixable: number;
+  error: string;
+  created_at: string;
+  finished_at: string;
+}
+
+export interface ScanFinding {
+  id: string;
+  severity: string;
+  package: string;
+  installed: string;
+  fixed: string;
+  title: string;
+  url: string;
+  target: string;
 }
 
 export interface AzureConnection {

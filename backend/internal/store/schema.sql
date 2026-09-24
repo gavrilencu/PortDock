@@ -481,3 +481,83 @@ CREATE TABLE IF NOT EXISTS azure_connections (
   token      TEXT NOT NULL DEFAULT '',   -- encrypted
   created_at TEXT NOT NULL DEFAULT ''
 );
+
+-- Vulnerability scans (Trivy) of application images.
+CREATE TABLE IF NOT EXISTS image_scans (
+  id             INTEGER PRIMARY KEY,
+  application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  deployment_id  INTEGER NOT NULL DEFAULT 0,
+  service        TEXT NOT NULL DEFAULT '',         -- compose service
+  image          TEXT NOT NULL DEFAULT '',
+  trigger        TEXT NOT NULL DEFAULT 'manual',   -- deploy | manual
+  status         TEXT NOT NULL DEFAULT 'running',  -- running | success | failed
+  critical       INTEGER NOT NULL DEFAULT 0,
+  high           INTEGER NOT NULL DEFAULT 0,
+  medium         INTEGER NOT NULL DEFAULT 0,
+  low            INTEGER NOT NULL DEFAULT 0,
+  unknown        INTEGER NOT NULL DEFAULT 0,
+  fixable        INTEGER NOT NULL DEFAULT 0,
+  findings       TEXT NOT NULL DEFAULT '',         -- JSON list of vulnerabilities
+  error          TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL DEFAULT '',
+  finished_at    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_image_scans_app ON image_scans(application_id, id);
+
+-- Uptime monitors: HTTP(S) checks of a URL, listed on the public status page when public.
+CREATE TABLE IF NOT EXISTS monitors (
+  id                   INTEGER PRIMARY KEY,
+  name                 TEXT NOT NULL,
+  url                  TEXT NOT NULL,
+  application_id       INTEGER NOT NULL DEFAULT 0,
+  interval_seconds     INTEGER NOT NULL DEFAULT 60,
+  timeout_seconds      INTEGER NOT NULL DEFAULT 10,
+  expected_status      TEXT NOT NULL DEFAULT '200-399',
+  keyword              TEXT NOT NULL DEFAULT '',        -- the body must contain it
+  ssl_warn_days        INTEGER NOT NULL DEFAULT 14,
+  failures_to_alert    INTEGER NOT NULL DEFAULT 2,      -- consecutive failed checks before "down"
+  enabled              INTEGER NOT NULL DEFAULT 1,
+  public               INTEGER NOT NULL DEFAULT 1,
+  status               TEXT NOT NULL DEFAULT 'pending', -- pending | up | down | paused
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  last_checked_at      TEXT NOT NULL DEFAULT '',
+  last_change_at       TEXT NOT NULL DEFAULT '',
+  last_response_ms     INTEGER NOT NULL DEFAULT 0,
+  last_status_code     INTEGER NOT NULL DEFAULT 0,
+  last_error           TEXT NOT NULL DEFAULT '',
+  ssl_expires_at       TEXT NOT NULL DEFAULT '',
+  ssl_warned_at        TEXT NOT NULL DEFAULT '',
+  created_at           TEXT NOT NULL DEFAULT ''
+);
+
+-- Raw checks, kept 7 days (response time chart).
+CREATE TABLE IF NOT EXISTS monitor_checks (
+  id          INTEGER PRIMARY KEY,
+  monitor_id  INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+  ok          INTEGER NOT NULL DEFAULT 0,
+  status_code INTEGER NOT NULL DEFAULT 0,
+  response_ms INTEGER NOT NULL DEFAULT 0,
+  error       TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_checks ON monitor_checks(monitor_id, created_at);
+
+-- Daily uptime per monitor, kept 90 days (status page bars).
+CREATE TABLE IF NOT EXISTS monitor_days (
+  monitor_id INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+  day        TEXT NOT NULL,                       -- YYYY-MM-DD (UTC)
+  checks     INTEGER NOT NULL DEFAULT 0,
+  failures   INTEGER NOT NULL DEFAULT 0,
+  total_ms   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (monitor_id, day)
+);
+
+-- Outages: from the check that marked the monitor down to the one that brought it back.
+CREATE TABLE IF NOT EXISTS monitor_incidents (
+  id          INTEGER PRIMARY KEY,
+  monitor_id  INTEGER NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+  error       TEXT NOT NULL DEFAULT '',
+  started_at  TEXT NOT NULL DEFAULT '',
+  resolved_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_monitor_incidents ON monitor_incidents(monitor_id, started_at);

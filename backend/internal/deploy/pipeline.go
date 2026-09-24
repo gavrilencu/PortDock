@@ -130,7 +130,21 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	}()
 
 	if app.BuildPack == "compose" {
-		return j.deployComposeAll(ctx, targets)
+		if err := j.deployComposeAll(ctx, targets); err != nil {
+			return err
+		}
+		// Compose builds and starts in one step: the images are scanned once running (report only).
+		if app.ScanOnDeploy && d.RollbackOf == 0 && d.PRNumber == 0 {
+			log.Step("Vulnerability scan (Trivy)")
+			a := app
+			a.ServerID = targets[0].srv.ID
+			if err := e.ScanApp(context.WithoutCancel(ctx), a, d.ID, "deploy"); err != nil {
+				log.Printf("⚠ Could not start the scan: %v", err)
+			} else {
+				log.Printf("The service images are being scanned in the background; see the Security tab.")
+			}
+		}
+		return nil
 	}
 
 	image, pull, err := j.resolveImage(ctx)
@@ -141,6 +155,12 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	if len(targets) > 1 || build.srv.ID != targets[0].srv.ID || pull {
 		log.Step("Distributing image")
 		if err := j.distribute(ctx, image, build, targets, pull); err != nil {
+			return err
+		}
+	}
+
+	if app.ScanOnDeploy && d.RollbackOf == 0 {
+		if err := j.scanBeforeRollout(ctx, targets[0].x, image); err != nil {
 			return err
 		}
 	}

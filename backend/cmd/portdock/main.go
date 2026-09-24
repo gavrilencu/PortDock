@@ -116,6 +116,7 @@ func run(resetPassword, disable2FA string) error {
 	store.OnActivity = auditStream.Push
 	go auditStream.Run(ctx)
 	engine.RecoverBackups(ctx) // jobs interrupted by the previous run
+	engine.RecoverScans(ctx)
 	go engine.Monitor(ctx, 30*time.Second)
 	go engine.CertificateWatch(ctx, 6*time.Hour)
 	go engine.VersionRetention(ctx)
