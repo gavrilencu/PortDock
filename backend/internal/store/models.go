@@ -163,6 +163,11 @@ type Application struct {
 	AzureRepoID       string `db:"azure_repo_id" json:"azure_repo_id"`
 	AzureHookID       string `db:"azure_hook_id" json:"azure_hook_id"`
 	AzureHookError    string `db:"azure_hook_error" json:"azure_hook_error"`
+	// Vulnerability scanning (Trivy): on every deploy, blocking at a severity
+	// ("", "critical", "high"), optionally ignoring vulnerabilities without a fix.
+	ScanOnDeploy      bool   `db:"scan_on_deploy" json:"scan_on_deploy"`
+	ScanBlock         string `db:"scan_block" json:"scan_block"`
+	ScanIgnoreUnfixed bool   `db:"scan_ignore_unfixed" json:"scan_ignore_unfixed"`
 	BuildPack           string `db:"build_pack" json:"build_pack"`
 	BaseDirectory       string `db:"base_directory" json:"base_directory"`
 	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`
@@ -367,6 +372,73 @@ func SplitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// ImageScan is a Trivy vulnerability scan of an application image.
+type ImageScan struct {
+	ID            int64  `db:"id" json:"id"`
+	ApplicationID int64  `db:"application_id" json:"application_id"`
+	DeploymentID  int64  `db:"deployment_id" json:"deployment_id"`
+	Service       string `db:"service" json:"service"`
+	Image         string `db:"image" json:"image"`
+	Trigger       string `db:"trigger" json:"trigger"`
+	Status        string `db:"status" json:"status"`
+	Critical      int    `db:"critical" json:"critical"`
+	High          int    `db:"high" json:"high"`
+	Medium        int    `db:"medium" json:"medium"`
+	Low           int    `db:"low" json:"low"`
+	Unknown       int    `db:"unknown" json:"unknown"`
+	Fixable       int    `db:"fixable" json:"fixable"`
+	Findings      string `db:"findings" json:"-"`
+	Error         string `db:"error" json:"error"`
+	CreatedAt     string `db:"created_at" json:"created_at"`
+	FinishedAt    string `db:"finished_at" json:"finished_at"`
+}
+
+// Monitor is an uptime check of a URL.
+type Monitor struct {
+	ID                  int64  `db:"id" json:"id"`
+	Name                string `db:"name" json:"name"`
+	URL                 string `db:"url" json:"url"`
+	ApplicationID       int64  `db:"application_id" json:"application_id"`
+	IntervalSeconds     int    `db:"interval_seconds" json:"interval_seconds"`
+	TimeoutSeconds      int    `db:"timeout_seconds" json:"timeout_seconds"`
+	ExpectedStatus      string `db:"expected_status" json:"expected_status"`
+	Keyword             string `db:"keyword" json:"keyword"`
+	SSLWarnDays         int    `db:"ssl_warn_days" json:"ssl_warn_days"`
+	FailuresToAlert     int    `db:"failures_to_alert" json:"failures_to_alert"`
+	Enabled             bool   `db:"enabled" json:"enabled"`
+	Public              bool   `db:"public" json:"public"`
+	Status              string `db:"status" json:"status"`
+	ConsecutiveFailures int    `db:"consecutive_failures" json:"consecutive_failures"`
+	LastCheckedAt       string `db:"last_checked_at" json:"last_checked_at"`
+	LastChangeAt        string `db:"last_change_at" json:"last_change_at"`
+	LastResponseMs      int    `db:"last_response_ms" json:"last_response_ms"`
+	LastStatusCode      int    `db:"last_status_code" json:"last_status_code"`
+	LastError           string `db:"last_error" json:"last_error"`
+	SSLExpiresAt        string `db:"ssl_expires_at" json:"ssl_expires_at"`
+	SSLWarnedAt         string `db:"ssl_warned_at" json:"-"`
+	CreatedAt           string `db:"created_at" json:"created_at"`
+}
+
+// MonitorCheck is one check of a monitor.
+type MonitorCheck struct {
+	ID         int64  `db:"id" json:"id"`
+	MonitorID  int64  `db:"monitor_id" json:"monitor_id"`
+	OK         bool   `db:"ok" json:"ok"`
+	StatusCode int    `db:"status_code" json:"status_code"`
+	ResponseMs int    `db:"response_ms" json:"response_ms"`
+	Error      string `db:"error" json:"error"`
+	CreatedAt  string `db:"created_at" json:"created_at"`
+}
+
+// MonitorIncident is an outage of a monitor.
+type MonitorIncident struct {
+	ID         int64  `db:"id" json:"id"`
+	MonitorID  int64  `db:"monitor_id" json:"monitor_id"`
+	Error      string `db:"error" json:"error"`
+	StartedAt  string `db:"started_at" json:"started_at"`
+	ResolvedAt string `db:"resolved_at" json:"resolved_at"`
 }
 
 // AzureConnection is an Azure DevOps organization (or collection) reached with a personal access token.

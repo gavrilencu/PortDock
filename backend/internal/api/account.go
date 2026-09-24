@@ -328,6 +328,7 @@ var settingKeys = []string{
 	"instance_name", "instance_url", "instance_https", "instance_timezone", "public_ipv4", "public_ipv6",
 	"acme_email", "auto_cleanup", "proxy_dashboard", "require_2fa", "password_login",
 	"s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
+	"trivy_image", "status_page_enabled", "status_page_title", "status_page_description",
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {

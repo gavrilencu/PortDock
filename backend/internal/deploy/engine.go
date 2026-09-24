@@ -37,15 +37,18 @@ type Engine struct {
 	running  map[int64]context.CancelFunc // deployment id -> cancel
 	loggers  map[int64]*logger
 	appLocks map[int64]*sync.Mutex
+	// scanSlots limits the vulnerability scans running at a time.
+	scanSlots chan struct{}
 }
 
 func New(cfg config.Config, db *store.DB, box *secrets.Box, pool *executor.Pool, hub *stream.Hub, n *notify.Notifier, gh *github.Client) *Engine {
 	return &Engine{
 		cfg: cfg, db: db, box: box, pool: pool, hub: hub, notify: n, github: gh,
-		queue:    make(chan int64, 1024),
-		running:  map[int64]context.CancelFunc{},
-		loggers:  map[int64]*logger{},
-		appLocks: map[int64]*sync.Mutex{},
+		queue:     make(chan int64, 1024),
+		running:   map[int64]context.CancelFunc{},
+		loggers:   map[int64]*logger{},
+		appLocks:  map[int64]*sync.Mutex{},
+		scanSlots: make(chan struct{}, 2),
 	}
 }
 
@@ -75,8 +78,8 @@ type Options struct {
 	ForceRebuild  bool
 	RollbackOf    int64 // deployment whose image should be redeployed
 	// VersionID deploys that version (its images, and for compose its compose file).
-	VersionID int64
-	RequestedBy   int64 // user who triggered it (0 = automation)
+	VersionID   int64
+	RequestedBy int64 // user who triggered it (0 = automation)
 	// NeedsApproval holds the deployment as pending_approval until a maintainer approves it.
 	NeedsApproval bool
 }

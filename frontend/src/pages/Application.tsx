@@ -64,9 +64,10 @@ import { domainURL, shortSha, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { ResourceTopology } from "../components/resourceTopology";
 import { VersionsBoard } from "../components/versions";
+import { SecurityTab } from "../components/scans";
 import { t, tx } from "../lib/i18n";
 
-type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks";
+type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks" | "security";
 
 export function useApp(id: number) {
   return useQuery({ queryKey: ["application", id], queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`) });
@@ -185,6 +186,7 @@ export function ApplicationPage() {
           { id: "logs", label: t("Logs"), icon: <ScrollText /> },
           { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !a.access.can_write },
           { id: "previews", label: t("Previews"), icon: <GitPullRequest />, hidden: a.source_type !== "git" },
+          { id: "security", label: t("Security"), icon: <ShieldCheck /> },
           { id: "webhooks", label: t("CI/CD & Webhooks"), icon: <Webhook /> },
         ]}
       />
@@ -206,6 +208,7 @@ export function ApplicationPage() {
       {tab === "terminal" && <AppTerminal app={a} />}
       {tab === "previews" && <Previews app={a} />}
       {tab === "webhooks" && <Webhooks app={a} />}
+      {tab === "security" && <SecurityTab app={a} />}
     </>
   );
 }
