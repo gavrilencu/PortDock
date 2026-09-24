@@ -301,17 +301,20 @@ func (s *Server) resourceAccess(ctx context.Context, envID int64) Access {
 
 // visibleProjectIDs lists the projects the current user can see.
 func (s *Server) visibleProjectIDs(ctx context.Context) []int64 {
-	var ids []int64
-	rows, err := s.db.QueryContext(ctx, "SELECT id FROM projects")
+	// The ids are read completely first: with SQLite's single connection, a
+	// query issued while a cursor is still open would wait for it forever.
+	type row struct {
+		ID int64 `db:"id"`
+	}
+	all, err := store.Select[row](ctx, s.db, "SELECT id FROM projects")
 	if err != nil {
 		return nil
 	}
-	defer rows.Close()
 	u := auth.UserFrom(ctx)
-	for rows.Next() {
-		var id int64
-		if rows.Scan(&id) == nil && roleRank(s.projectRole(ctx, u, id)) > 0 {
-			ids = append(ids, id)
+	var ids []int64
+	for _, p := range all {
+		if roleRank(s.projectRole(ctx, u, p.ID)) > 0 {
+			ids = append(ids, p.ID)
 		}
 	}
 	return ids
