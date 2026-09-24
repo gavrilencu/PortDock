@@ -234,12 +234,18 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 		u.Role = *in.Role
 	}
 	if in.Password != "" {
+		// An administrator who could set the owner's password would simply
+		// sign in as the owner, skipping every owner-only rule.
+		if u.Role == "owner" && auth.UserFrom(r.Context()).Role != "owner" {
+			return errStatus(403, "only the owner can change the owner's password")
+		}
 		if len(in.Password) < 8 {
 			return badRequest("password must be at least 8 characters")
 		}
 		if u.PasswordHash, err = auth.HashPassword(in.Password); err != nil {
 			return err
 		}
+		s.activity(r, "user.password_reset", u.Email)
 	}
 	revoke := in.Password != ""
 	if in.Disabled != nil && *in.Disabled != u.Disabled {
