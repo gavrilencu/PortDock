@@ -329,14 +329,21 @@ var settingKeys = []string{
 	"acme_email", "auto_cleanup", "proxy_dashboard", "require_2fa", "password_login",
 	"s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
 	"trivy_image", "status_page_enabled", "status_page_title", "status_page_description",
+	// corporate network (netcfg.SettingKeys)
+	"proxy_http", "proxy_https", "proxy_no", "proxy_username", "proxy_password",
+	"proxy_portdock", "proxy_builds", "proxy_containers",
+	"registry_mirror", "registry_insecure", "npm_registry", "pypi_index", "go_proxy", "build_env", "trivy_db_repository",
 }
+
+// secretSettings are stored encrypted and never returned.
+var secretSettings = map[string]bool{"s3_secret_key": true, "proxy_password": true}
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {
 	res := map[string]any{}
 	for _, k := range settingKeys {
 		v := s.db.Setting(r.Context(), k)
-		if k == "s3_secret_key" {
-			res["s3_secret_key_set"] = v != ""
+		if secretSettings[k] {
+			res[k+"_set"] = v != ""
 			continue
 		}
 		res[k] = v
@@ -360,22 +367,30 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) error {
 	if err := validateInstanceSettings(in); err != nil {
 		return err
 	}
+	if err := s.validateNetworkSettings(r.Context(), in); err != nil {
+		return err
+	}
 	prevURL, prevHTTPS, prevTZ := s.db.Setting(r.Context(), "instance_url"), s.db.Setting(r.Context(), "instance_https"), s.db.Setting(r.Context(), "instance_timezone")
 	for k, v := range in {
 		if !allowed[k] {
 			continue
 		}
-		if k == "s3_secret_key" {
+		if secretSettings[k] {
 			if v == "" {
 				continue
 			}
-			v = s.box.Encrypt(v)
+			if v == "-" { // clear
+				v = ""
+			} else {
+				v = s.box.Encrypt(v)
+			}
 		}
 		if err := s.db.SetSetting(r.Context(), k, strings.TrimSpace(v)); err != nil {
 			return err
 		}
 	}
 	s.activity(r, "settings.update", "")
+	s.engine.ReloadNetwork(r.Context())
 	if s.db.Setting(r.Context(), "instance_timezone") != prevTZ {
 		s.sched.Reload(r.Context())
 	}

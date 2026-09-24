@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -69,7 +70,7 @@ func TestTrivyE2E(t *testing.T) {
 	if err := x.Run(ctx, "docker pull -q "+img, executor.RunOpts{}); err != nil {
 		t.Fatal(err)
 	}
-	out, err := executor.Output(ctx, x, trivyCmd(DefaultTrivyImage, img, false))
+	out, err := executor.Output(ctx, x, trivyCmd(DefaultTrivyImage, img, false, netcfg.Config{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +84,7 @@ func TestTrivyE2E(t *testing.T) {
 	if len(fs) == 0 {
 		t.Fatal("alpine 3.18.0 has known vulnerabilities")
 	}
-	out, err = executor.Output(ctx, x, trivyCmd(DefaultTrivyImage, img, true))
+	out, err = executor.Output(ctx, x, trivyCmd(DefaultTrivyImage, img, true, netcfg.Config{}))
 	if err != nil {
 		t.Fatal(err)
 	}

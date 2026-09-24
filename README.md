@@ -105,6 +105,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - Encrypted environment variables (AES-256-GCM), build-time and runtime, per compose service
 - Variables from `docker-compose.yml` shown and overridable; apply with a restart
 - Registries: Docker Hub, GHCR, GitLab, Amazon ECR, Harbor, Quay, any OCI registry
+- Corporate networks: HTTP(S) proxy for PortDock, builds and containers (NO_PROXY with domains and CIDRs), Docker Hub mirror (Nexus, Artifactory, Harbor) applied to each server's daemon, npm / PyPI / Go / Maven mirrors for builds
 
 </td>
 <td valign="top">
@@ -113,6 +114,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - The local server and remote servers over SSH (keys encrypted, host key pinning)
 - One-click server setup: Docker, network and the Traefik proxy
 - Web terminal, live logs, start / stop / restart, images, volumes, networks, prune
+- One view of the containers, images and volumes of every server, with CPU / memory and the resource each belongs to
 - Live topology map with crash-loop detection, in the style of Argo CD
 
 **📈 Monitoring & alerts**
@@ -254,6 +256,23 @@ GitHub needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver webhooks.
 6. Each deployment is reported as **`portdock/deploy`** on the commit, and as **`portdock/preview`** on the pull request, linking to the deployment in PortDock.
 
 *CI/CD & Webhooks* shows the state of the hooks, recreates them, and gives the URL and header to add it by hand if the token can't. Tokens expire: replace them from *Settings → Git sources* without touching the applications. Azure DevOps needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver events.
+
+</details>
+
+<details>
+<summary><b>Corporate proxy and Nexus</b></summary>
+
+*Settings → Network & proxy*:
+
+- **Corporate proxy** — HTTP / HTTPS proxy, optional user and password (stored encrypted), and `NO_PROXY` (names, `.domains`, IPs, CIDR ranges). Choose where it is used:
+  - **PortDock itself**: Git providers, update checks, notifications, the AI assistant, uptime checks.
+  - **Builds**: git clone, `docker build` (as predefined build arguments, so it is not stored in the image), Nixpacks, Docker Compose builds, the Trivy database.
+  - **Containers**: `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` in every application and service. Each application can follow the setting, always use the proxy or never use it (*Configuration → Network*).
+  - *Test* checks a URL through the settings being edited, before saving them.
+- **Docker Hub mirror** — a pull-through registry (a Nexus *docker (proxy)* repository, Artifactory, Harbor). PortDock merges it into `/etc/docker/daemon.json` on each server (other keys are kept, `insecure-registries` for plain HTTP) and reloads Docker without stopping containers. The daemon's own proxy is written as a systemd drop-in and needs a restart of Docker, offered with a confirmation.
+- **Package mirrors** — npm, PyPI, Go proxy and any other build variable (Maven, NuGet…). The Node.js, Bun, Python and Go build packs use them automatically; in your own Dockerfile declare `ARG NPM_CONFIG_REGISTRY` (etc.). A mirror of the Trivy database can be set for servers without internet.
+
+Private images hosted in Nexus are added in *Container registries* like any registry.
 
 </details>
 

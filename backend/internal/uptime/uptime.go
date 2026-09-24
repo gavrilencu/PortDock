@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/store"
 )
@@ -166,7 +167,7 @@ func Probe(ctx context.Context, m store.Monitor) Result {
 	timeout := time.Duration(max(m.TimeoutSeconds, 1)) * time.Second
 	client := &http.Client{
 		Timeout:   timeout,
-		Transport: &http.Transport{DisableKeepAlives: true, Proxy: http.ProxyFromEnvironment, TLSHandshakeTimeout: timeout, ForceAttemptHTTP2: true},
+		Transport: &http.Transport{DisableKeepAlives: true, Proxy: netcfg.Proxy, TLSHandshakeTimeout: timeout, ForceAttemptHTTP2: true},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.URL, nil)
 	if err != nil {

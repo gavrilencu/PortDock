@@ -5,7 +5,7 @@ import { ExternalLink, FolderKanban, Lock, MoreHorizontal, Pencil, Plus, Search,
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { EnvironmentResources, Project } from "../lib/types";
-import { Button, Empty, ErrorBox, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, SegmentedControl, StatusBadge, Table, Tabs, useConfirm } from "../components/ui";
+import { Badge, Button, Empty, ErrorBox, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, SegmentedControl, StatusBadge, Table, Tabs, useConfirm } from "../components/ui";
 import { ResourceIcon } from "../components/shared";
 import { ProtectedBadge, RoleBadge } from "../components/access";
 import { EnvironmentSettingsModal, MembersModal } from "../components/projectAccess";
@@ -226,6 +226,7 @@ export function ProjectPage() {
                   <th>{t("Resource")}</th>
                   <th className="w-32">{t("Status")}</th>
                   <th>{t("Source")}</th>
+                  <th>{t("Servers")}</th>
                   <th>{t("Domains")}</th>
                   <th className="w-28 !text-right">{t("Updated")}</th>
                 </tr>
@@ -251,6 +252,15 @@ export function ProjectPage() {
                     </td>
                     <td className="max-w-64">
                       <span className="block truncate font-mono text-xs text-muted">{it.source}</span>
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {(r!.servers?.[`${it.kind}-${it.id}`] ?? []).map((s) => (
+                          <Badge key={s.id} tone={s.status === "reachable" ? "neutral" : "warning"}>
+                            {s.name}
+                          </Badge>
+                        ))}
+                      </div>
                     </td>
                     <td className="max-w-64">
                       {it.domains.length ? (

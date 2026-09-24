@@ -160,6 +160,7 @@ export interface Application {
   scan_on_deploy: boolean;
   scan_block: "" | "critical" | "high";
   scan_ignore_unfixed: boolean;
+  proxy_mode: "" | "on" | "off";
   build_pack: BuildPack;
   base_directory: string;
   dockerfile_path: string;
@@ -409,6 +410,8 @@ export interface EnvironmentResources {
   applications: Application[];
   databases: Database[];
   services: Service[];
+  /** The servers of each resource, by "kind-id". */
+  servers?: Record<string, ServerRef[]>;
 }
 
 export interface Container {
@@ -423,6 +426,27 @@ export interface Container {
   labels: Record<string, string>;
   server_id?: number;
   server_name?: string;
+  /** The PortDock resource of the container (fleet view). */
+  resource?: FleetResource | null;
+  stats?: ContainerStat;
+}
+
+export interface FleetResource {
+  kind: "application" | "database" | "service";
+  id: number;
+  name: string;
+  project: string;
+  project_id: number;
+  environment: string;
+}
+
+export interface FleetServer {
+  id: number;
+  name: string;
+  host: string;
+  status: string;
+  error?: string;
+  count: number;
 }
 
 export interface ContainerStat {

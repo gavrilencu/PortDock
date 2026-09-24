@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
   HeartPulse,
+  Container,
   ChevronsUpDown,
   FolderKanban,
   KeyRound,
@@ -83,6 +84,7 @@ const navGroups = [
     label: tk("Infrastructure"),
     items: [
       { to: "/servers", label: tk("Servers"), icon: ServerIcon },
+      { to: "/containers", label: tk("Containers"), icon: Container },
       { to: "/uptime", label: tk("Uptime"), icon: HeartPulse },
       { to: "/alerts", label: tk("Alerts"), icon: BellRing },
     ],

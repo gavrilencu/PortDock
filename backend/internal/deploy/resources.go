@@ -403,9 +403,11 @@ func (e *Engine) DeployService(ctx context.Context, svc store.Service) (string, 
 		if err != nil {
 			return err
 		}
+		net := e.Network(ctx) // the compose build is logged without its arguments
 		_, err = RunComposeUp(ctx, ComposeUp{
 			X: x, Project: composeProject(svc.UUID), Dir: dir, File: file, Domains: domains, HTTPS: true,
 			Env: env.Runtime, Kind: "service", Resource: svc.UUID, Network: e.cfg.ProxyNetwork, Timeout: 180, Log: log,
+			ProxyEnv: containerProxyEnv(net, ""), BuildArgs: buildProxyEnv(net),
 		})
 		return err
 	}()
