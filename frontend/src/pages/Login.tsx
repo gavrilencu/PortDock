@@ -29,7 +29,10 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   if (isLoading) return null;
-  const next = params.get("next") || "/";
+  // Only paths on this site: "?next=https://evil.example" (or "//evil.example")
+  // after a sign-in would be a convincing phishing step.
+  const raw = params.get("next") || "/";
+  const next = raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : "/";
   if (data?.user) return <Navigate to={next} replace />;
   const setup = data?.setup_required;
   const ssoList = setup ? [] : (providers.data?.providers ?? []);
