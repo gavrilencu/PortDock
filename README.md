@@ -297,7 +297,7 @@ Private images hosted in Nexus are added in *Container registries* like any regi
 <details>
 <summary><b>Single sign-on and LDAP / Active Directory</b></summary>
 
-**SSO (OpenID Connect):** **Settings → Authentication → Add provider**, copy the *Redirect URI* (`<dashboard URL>/api/auth/sso/<slug>/callback`) into the app at your identity provider, then fill in the issuer URL, client ID and secret. PKCE, ID token signatures, nonce, audience and expiry are verified. Accounts can be created on first sign-in, restricted to email domains, and admin rights mapped from groups. Password sign-in can be turned off (the owner keeps a break-glass account).
+**SSO (OpenID Connect):** **Settings → Authentication → Add provider**, copy the *Redirect URI* (`<dashboard URL>/api/auth/sso/<slug>/callback`) into the app at your identity provider, then fill in the issuer URL, client ID and secret. PKCE, ID token signatures, nonce, audience and expiry are verified. Accounts can be created on first sign-in, restricted to email domains, and admin rights mapped from groups. Password sign-in can be turned off (the owner keeps a break-glass account). Existing accounts are linked by e-mail only for members with a verified e-mail; owners and administrators connect a provider themselves from **Settings → Profile**, and administrators link local accounts to an LDAP directory from **Settings → Team**.
 
 - Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0` (add the optional `groups` claim for admin mapping)
 - Okta: `https://<org>.okta.com` with the `groups` scope

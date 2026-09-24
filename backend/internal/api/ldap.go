@@ -53,6 +53,11 @@ func (s *Server) ldapResolveUser(ctx context.Context, d store.LDAPDirectory, id 
 	}
 	u, err := store.Get[store.User](ctx, s.db, "SELECT * FROM users WHERE email = ?", id.Email)
 	switch {
+	case err == nil && u.AuthSource != "ldap:"+d.Slug:
+		// A matching e-mail is not proof of identity: whoever can edit the
+		// mail attribute in the directory could otherwise sign in as any
+		// local account. Administrators link such accounts explicitly.
+		return store.User{}, fmt.Errorf("there is already a PortDock account for %s that is not linked to %s; ask an administrator to link it", id.Email, d.Name)
 	case err == nil:
 	case !d.AutoRegister:
 		return store.User{}, fmt.Errorf("there is no PortDock account for %s — ask an administrator to invite you", id.Email)

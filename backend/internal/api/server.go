@@ -27,9 +27,9 @@ import (
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
 	"github.com/portdock/portdock/internal/store"
-	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/internal/stream"
 	"github.com/portdock/portdock/internal/templates"
+	"github.com/portdock/portdock/internal/uptime"
 )
 
 type Server struct {
@@ -258,6 +258,8 @@ func (s *Server) Handler() http.Handler {
 	a("POST /api/auth/2fa/enable", s.twoFactorEnable)
 	a("POST /api/auth/2fa/disable", s.twoFactorDisable)
 	a("POST /api/auth/2fa/recovery-codes", s.regenerateRecoveryCodes)
+	a("GET /api/auth/identities", s.listIdentities)
+	a("DELETE /api/auth/identities/{id}", s.deleteIdentity)
 	a("GET /api/auth/sessions", s.listSessions)
 	a("DELETE /api/auth/sessions/{sid}", s.revokeSession)
 	a("POST /api/auth/sessions/revoke-others", s.revokeOtherSessions)

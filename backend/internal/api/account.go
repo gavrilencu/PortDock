@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"net"
@@ -220,12 +221,32 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 		Role     *string `json:"role"`
 		Password string  `json:"password"`
 		Disabled *bool   `json:"disabled"`
+		// AuthSource links the account to an LDAP directory ("ldap:<slug>") or
+		// makes it local again ("").
+		AuthSource *string `json:"auth_source"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
 	if in.Name != nil {
 		u.Name = *in.Name
+	}
+	if in.AuthSource != nil && *in.AuthSource != u.AuthSource {
+		if u.Role == "owner" && auth.UserFrom(r.Context()).Role != "owner" {
+			return errStatus(403, "only the owner can change how the owner signs in")
+		}
+		src := strings.TrimSpace(*in.AuthSource)
+		if src != "" {
+			slug, isLDAP := strings.CutPrefix(src, "ldap:")
+			if !isLDAP {
+				return badRequest("auth_source must be empty or ldap:<directory>")
+			}
+			if _, err := store.Get[store.LDAPDirectory](r.Context(), s.db, "SELECT * FROM ldap_directories WHERE slug = ?", slug); err != nil {
+				return badRequest("unknown directory %q", slug)
+			}
+		}
+		u.AuthSource = src
+		s.activity(r, "user.auth_source", u.Email+" -> "+cmp.Or(src, "local"))
 	}
 	if in.Role != nil && u.Role != "owner" {
 		if *in.Role != "admin" && *in.Role != "member" {
