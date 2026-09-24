@@ -44,6 +44,8 @@ func TestRunOptions(t *testing.T) {
 		{in: "--security-opt label=disable", trusted: true, wantErr: "not allowed"},
 		{in: "--sysctl kernel.shmmax=1", wantErr: "net.*"},
 		{in: "--label traefik.http.routers.x.rule=Host(`a`)", wantErr: "managed by PortDock"},
+		{in: "--label traefik.enable=true", wantErr: "managed by PortDock"},
+		{in: "--label traefik.http.middlewares.gz.compress=true", want: " --label traefik.http.middlewares.gz.compress=true"},
 		{in: "-l portdock.resource=abc", trusted: true, wantErr: "managed by PortDock"},
 		{in: "--restart no", wantErr: "managed"},
 		{in: "--init=yes", wantErr: "takes no value"},

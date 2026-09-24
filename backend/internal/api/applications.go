@@ -27,10 +27,10 @@ type appDTO struct {
 	// only sent to users who may deploy by other means anyway (write access).
 	WebhookSecret string            `json:"webhook_secret,omitempty"`
 	Webhooks      map[string]string `json:"webhooks"`
-	Project     store.Project     `json:"project"`
-	Environment store.Environment `json:"environment"`
-	ServerName  string            `json:"server_name"`
-	ServerHost  string            `json:"server_host"` // address for published host ports
+	Project       store.Project     `json:"project"`
+	Environment   store.Environment `json:"environment"`
+	ServerName    string            `json:"server_name"`
+	ServerHost    string            `json:"server_host"` // address for published host ports
 	// Servers lists every server the application runs on (primary first).
 	Servers      []serverRef `json:"servers"`
 	RegistryName string      `json:"registry_name"`
@@ -127,6 +127,9 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	if a.Port < 0 || a.Port > 65535 {
 		return badRequest("invalid port")
 	}
+	if _, err := docker.ParseLabels(a.CustomLabels); err != nil {
+		return badRequest("%v", err)
+	}
 	if !slices.Contains([]string{"", "on", "off"}, a.ProxyMode) {
 		return badRequest("proxy_mode must be empty, on or off")
 	}
@@ -214,6 +217,15 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 // Bind mounts and devices are for administrators, who already administer the
 // servers; a value an administrator saved earlier stays valid when someone
 // else edits other fields of the application.
+// validateHostAccess: granting a compose application access to the server is
+// an administrator's decision.
+func validateHostAccess(ctx context.Context, wanted, previous bool) error {
+	if wanted && !previous && !auth.UserFrom(ctx).IsAdmin() {
+		return errStatus(403, "only an administrator can allow host access for a Docker Compose application")
+	}
+	return nil
+}
+
 func validateDockerOptions(ctx context.Context, opts, previous string) error {
 	trusted := auth.UserFrom(ctx).IsAdmin() || (previous != "" && opts == previous)
 	if _, err := docker.RunOptions(opts, trusted); err != nil {
@@ -305,6 +317,9 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if err := validateDockerOptions(r.Context(), a.CustomDockerOptions, ""); err != nil {
+		return err
+	}
+	if err := validateHostAccess(r.Context(), a.ComposeHostAccess, false); err != nil {
 		return err
 	}
 	if err := s.requireEnv(r, a.EnvironmentID, permWrite); err != nil {
@@ -411,6 +426,9 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if err := validateDockerOptions(r.Context(), a.CustomDockerOptions, orig.CustomDockerOptions); err != nil {
+		return err
+	}
+	if err := validateHostAccess(r.Context(), a.ComposeHostAccess, orig.ComposeHostAccess); err != nil {
 		return err
 	}
 	if a.EnvironmentID != orig.EnvironmentID {

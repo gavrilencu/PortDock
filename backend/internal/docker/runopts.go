@@ -31,9 +31,44 @@ var runFlags = map[string]bool{
 // trustedFlags are allowed only for administrators.
 var trustedFlags = map[string]bool{"--device": true, "--device-read-bps": true, "--device-write-bps": true, "--device-read-iops": true, "--device-write-iops": true}
 
-// Reserved label prefixes: the proxy routes by traefik.* labels and PortDock
-// identifies its containers by its own labels.
-var reservedLabelPrefixes = []string{"traefik.", "portdock.", "shipyard."}
+// CheckLabel refuses the labels that PortDock and the proxy act on: the proxy
+// reads traefik.* labels from containers (a router label could take over
+// another application's domain) and PortDock finds its containers by its own
+// labels. Defining Traefik middlewares is fine; they only apply to routers
+// that reference them.
+func CheckLabel(key string) error {
+	k := strings.ToLower(strings.TrimSpace(key))
+	if strings.HasPrefix(k, "traefik.http.middlewares.") {
+		return nil
+	}
+	for _, p := range []string{"traefik.", "portdock.", "shipyard."} {
+		if strings.HasPrefix(k, p) {
+			return fmt.Errorf("labels starting with %s are managed by PortDock (only traefik.http.middlewares.* can be added)", p)
+		}
+	}
+	return nil
+}
+
+// ParseLabels splits "key=value" lines into labels, refusing reserved keys.
+func ParseLabels(text string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		k, v, found := strings.Cut(l, "=")
+		k = strings.TrimSpace(k)
+		if !found || k == "" {
+			return nil, fmt.Errorf("label %q must be key=value", l)
+		}
+		if err := CheckLabel(k); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, nil
+}
 
 var volumeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
@@ -138,10 +173,8 @@ func checkRunValue(flag, value string, trusted bool) error {
 		}
 	case "-l", "--label":
 		key, _, _ := strings.Cut(value, "=")
-		for _, p := range reservedLabelPrefixes {
-			if strings.HasPrefix(strings.ToLower(key), p) {
-				return fmt.Errorf("docker options: labels starting with %s are managed by PortDock", p)
-			}
+		if err := CheckLabel(key); err != nil {
+			return fmt.Errorf("docker options: %w", err)
 		}
 	case "--security-opt":
 		if v := strings.ToLower(strings.TrimSpace(value)); v != "no-new-privileges" && v != "no-new-privileges=true" && !strings.HasPrefix(v, "seccomp=") && !strings.HasPrefix(v, "apparmor=") {
