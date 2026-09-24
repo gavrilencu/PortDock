@@ -282,17 +282,25 @@ func (s *Server) verifySecondFactor(ctx context.Context, u *store.User, code str
 	if err != nil {
 		return "", false
 	}
+	// The update only succeeds for the first of two parallel attempts with the
+	// same code: the row must still hold the value the check was made against.
 	if step, ok := auth.VerifyTOTP(secret, code, time.Now()); ok {
 		if step <= u.TOTPLastStep {
 			return "", false // code already used
 		}
+		res, err := s.db.ExecContext(ctx, "UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?", step, u.ID, step)
+		if n, _ := res.RowsAffected(); err != nil || n == 0 {
+			return "", false
+		}
 		u.TOTPLastStep = step
-		_, _ = s.db.ExecContext(ctx, "UPDATE users SET totp_last_step = ? WHERE id = ?", step, u.ID)
 		return "totp", true
 	}
 	if rest, ok := auth.UseRecoveryCode(u.RecoveryCodes, code); ok {
+		res, err := s.db.ExecContext(ctx, "UPDATE users SET recovery_codes = ? WHERE id = ? AND recovery_codes = ?", rest, u.ID, u.RecoveryCodes)
+		if n, _ := res.RowsAffected(); err != nil || n == 0 {
+			return "", false
+		}
 		u.RecoveryCodes = rest
-		_, _ = s.db.ExecContext(ctx, "UPDATE users SET recovery_codes = ? WHERE id = ?", rest, u.ID)
 		return "recovery", true
 	}
 	return "", false
