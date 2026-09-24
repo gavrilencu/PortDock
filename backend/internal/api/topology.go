@@ -168,6 +168,30 @@ func (s *Server) topology(w http.ResponseWriter, r *http.Request) error {
 	filterEnv, _ := strconv.ParseInt(q.Get("environment"), 10, 64)
 	filterKind, filterID := q.Get("kind"), q.Get("id")
 
+	// Everything the resources refer to, loaded once instead of per resource.
+	serverList, _ := store.Select[store.Server](ctx, s.db, "SELECT * FROM servers")
+	serverByID := map[int64]store.Server{}
+	for _, srv := range serverList {
+		serverByID[srv.ID] = srv
+	}
+	type appServer struct {
+		AppID    int64 `db:"application_id"`
+		ServerID int64 `db:"server_id"`
+	}
+	extra := map[int64][]int64{}
+	if rows, err := store.Select[appServer](ctx, s.db, "SELECT application_id, server_id FROM application_servers ORDER BY server_id"); err == nil {
+		for _, r := range rows {
+			extra[r.AppID] = append(extra[r.AppID], r.ServerID)
+		}
+	}
+	domainsByApp := map[int64][]store.AppDomain{}
+	if rows, err := store.Select[store.AppDomain](ctx, s.db, "SELECT * FROM app_domains ORDER BY id"); err == nil {
+		for _, d := range rows {
+			domainsByApp[d.ApplicationID] = append(domainsByApp[d.ApplicationID], d)
+		}
+	}
+	canWrite := map[int64]bool{}
+
 	var resources []*topoResource
 	serversNeeded := map[int64]bool{}
 	byUUID := map[string]*topoResource{}
@@ -195,9 +219,12 @@ func (s *Server) topology(w http.ResponseWriter, r *http.Request) error {
 				Environment: env.Name, EnvID: env.ID, Image: x.Image, Domains: []string{}, Containers: []topoContainer{}}
 			ids := []int64{x.ServerID}
 			if t.Kind == "application" {
-				ids = s.engine.AppServerIDs(ctx, store.Application{ID: x.ID, ServerID: x.ServerID})
-				ds, _ := s.db.Domains(ctx, x.ID)
-				for _, d := range ds {
+				for _, id := range extra[x.ID] {
+					if id != x.ServerID {
+						ids = append(ids, id)
+					}
+				}
+				for _, d := range domainsByApp[x.ID] {
 					tr.Domains = append(tr.Domains, d.URL())
 				}
 			}
@@ -208,12 +235,15 @@ func (s *Server) topology(w http.ResponseWriter, r *http.Request) error {
 			}
 			for _, id := range ids {
 				serversNeeded[id] = true
-				if srv, err := store.ByID[store.Server](ctx, s.db, "servers", id); err == nil {
+				if srv, ok := serverByID[id]; ok {
 					tr.Servers = append(tr.Servers, serverRef{ID: srv.ID, Name: srv.Name, Host: srv.Host, Status: srv.Status})
 				}
 			}
-			_, _, err := s.authorizeEnv(ctx, x.EnvID, permWrite)
-			tr.CanWrite = err == nil
+			if _, seen := canWrite[x.EnvID]; !seen {
+				_, _, err := s.authorizeEnv(ctx, x.EnvID, permWrite)
+				canWrite[x.EnvID] = err == nil
+			}
+			tr.CanWrite = canWrite[x.EnvID]
 			resources = append(resources, tr)
 			byUUID[x.UUID] = tr
 		}
@@ -235,9 +265,12 @@ func (s *Server) topology(w http.ResponseWriter, r *http.Request) error {
 				mu.Unlock()
 				return
 			}
-			cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-			list, err := managedContainers(cctx, x)
-			cancel()
+			// Shared by every open topology page for a few seconds.
+			list, err := cached(s.cache, "inspect:"+strconv.FormatInt(sid, 10), 5*time.Second, func() ([]inspectJSON, error) {
+				cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+				defer cancel()
+				return managedContainers(cctx, x)
+			})
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {

@@ -47,6 +47,7 @@ type Server struct {
 	notify  *notify.Notifier
 	github  *github.Client
 	ui      fs.FS
+	cache   *ttlCache // short-lived results of per-server docker calls
 	sec     *security
 	updates *updateCache
 	monitor *monitor.Monitor
@@ -80,7 +81,7 @@ func New(d Deps) *Server {
 		d.Uptime = uptime.New(d.DB, d.Notifier, d.Engine.PublicURL)
 	}
 	s := &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
-		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New(), uptime: d.Uptime}
+		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), cache: newTTLCache(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New(), uptime: d.Uptime}
 	s.ai.Referer = func() string { return s.engine.PublicURL(context.Background()) }
 	// An OpenRouter-compatible gateway (or a fake one in tests) can replace openrouter.ai.
 	if u := strings.TrimRight(config.Env("OPENROUTER_URL", ""), "/"); u != "" {
