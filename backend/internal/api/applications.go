@@ -544,7 +544,7 @@ func (s *Server) regenerateWebhookSecret(w http.ResponseWriter, r *http.Request)
 	return ok(w, s.appOut(r.Context(), a))
 }
 
-const deploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at, requested_by, reviewed_by, reviewed_at, review_comment"
+const deploymentCols = store.DeploymentCols
 
 func (s *Server) listAppDeployments(w http.ResponseWriter, r *http.Request) error {
 	id, err := pathID(r, "id")
@@ -643,7 +643,7 @@ func (s *Server) rollbackDeployment(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	d, err := store.ByID[store.Deployment](r.Context(), s.db, "deployments", id)
+	d, err := store.DeploymentByID(r.Context(), s.db, id)
 	if err != nil {
 		return err
 	}
@@ -832,7 +832,7 @@ func (s *Server) applyEnv(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	last, err := store.Get[store.Deployment](r.Context(), s.db,
-		"SELECT * FROM deployments WHERE application_id = ? AND pr_number = 0 AND status = 'success' AND image != '' ORDER BY id DESC LIMIT 1", a.ID)
+		"SELECT "+store.DeploymentCols+" FROM deployments WHERE application_id = ? AND pr_number = 0 AND status = 'success' AND image != '' ORDER BY id DESC LIMIT 1", a.ID)
 	if err != nil {
 		return badRequest("the application has no successful deployment yet; deploy it first")
 	}

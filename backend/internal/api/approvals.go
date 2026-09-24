@@ -41,7 +41,7 @@ func (s *Server) reviewDeployment(w http.ResponseWriter, r *http.Request, approv
 		}
 	}
 	ctx := r.Context()
-	d, err := store.ByID[store.Deployment](ctx, s.db, "deployments", id)
+	d, err := store.DeploymentByID(ctx, s.db, id)
 	if err != nil {
 		return err
 	}

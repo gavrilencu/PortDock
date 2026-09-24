@@ -1,6 +1,9 @@
 package store
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 type User struct {
 	ID           int64  `db:"id" json:"id"`
@@ -247,6 +250,15 @@ type EnvVar struct {
 	IsPreview bool   `db:"is_preview" json:"is_preview"`
 	IsSecret  bool   `db:"is_secret" json:"is_secret"`
 	CreatedAt string `db:"created_at" json:"created_at"`
+}
+
+// DeploymentCols lists the columns of a deployment except its log, which can
+// be megabytes: every list and status check reads these only.
+const DeploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at, requested_by, reviewed_by, reviewed_at, review_comment, version_id"
+
+// DeploymentByID loads a deployment without its log.
+func DeploymentByID(ctx context.Context, db *DB, id int64) (Deployment, error) {
+	return Get[Deployment](ctx, db, "SELECT "+DeploymentCols+" FROM deployments WHERE id = ?", id)
 }
 
 type Deployment struct {

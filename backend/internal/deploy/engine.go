@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -109,7 +110,7 @@ func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) 
 		version, o.RollbackOf, d.RollbackOf = &v, v.DeploymentID, v.DeploymentID
 	}
 	if o.RollbackOf != 0 {
-		prev, err := store.ByID[store.Deployment](ctx, e.db, "deployments", o.RollbackOf)
+		prev, err := store.DeploymentByID(ctx, e.db, o.RollbackOf)
 		if err != nil || prev.ApplicationID != app.ID {
 			return d, errors.New("rollback target not found")
 		}
@@ -172,7 +173,7 @@ func (e *Engine) Review(ctx context.Context, id, reviewer int64, approve bool, c
 	if n, _ := res.RowsAffected(); n == 0 {
 		return store.Deployment{}, ErrNotPending
 	}
-	d, err := store.ByID[store.Deployment](ctx, e.db, "deployments", id)
+	d, err := store.DeploymentByID(ctx, e.db, id)
 	if err != nil {
 		return d, err
 	}
@@ -233,7 +234,7 @@ func (e *Engine) worker(ctx context.Context) {
 }
 
 func (e *Engine) process(parent context.Context, id int64) {
-	d, err := store.ByID[store.Deployment](parent, e.db, "deployments", id)
+	d, err := store.DeploymentByID(parent, e.db, id)
 	if err != nil || d.Status != "queued" {
 		return
 	}
@@ -242,7 +243,7 @@ func (e *Engine) process(parent context.Context, id int64) {
 	defer lock.Unlock()
 
 	// Re-read after acquiring the lock: it may have been cancelled meanwhile.
-	if d, err = store.ByID[store.Deployment](parent, e.db, "deployments", id); err != nil || d.Status != "queued" {
+	if d, err = store.DeploymentByID(parent, e.db, id); err != nil || d.Status != "queued" {
 		return
 	}
 	// Skip superseded builds: a newer queued deployment for the same app/PR wins.
@@ -299,8 +300,8 @@ func (e *Engine) process(parent context.Context, id int64) {
 	e.mu.Unlock()
 
 	bg := context.WithoutCancel(ctx)
-	_, _ = e.db.ExecContext(bg, "UPDATE deployments SET status = ?, finished_at = ?, image = ?, commit_sha = ?, commit_message = ?, logs = ? WHERE id = ?",
-		status, store.Now(), d.Image, d.CommitSHA, d.CommitMessage, log.String(), d.ID)
+	_, _ = e.db.ExecContext(bg, "UPDATE deployments SET status = ?, finished_at = ?, image = ?, commit_sha = ?, commit_message = ? WHERE id = ?",
+		status, store.Now(), d.Image, d.CommitSHA, d.CommitMessage, d.ID)
 	e.hub.Publish(deploymentTopic(d.ID), "status", status)
 	e.hub.Event("deployment", d.ID, status)
 
@@ -445,7 +446,16 @@ type logger struct {
 	dirty   bool
 	stop    chan struct{}
 	done    chan struct{}
+	// flushed is how much of buf is already in the database; only what
+	// follows is written, appended, so a long build costs a few KB per flush
+	// instead of the whole log every two seconds.
+	flushed   int
+	truncated bool
 }
+
+// maxLogBytes caps the log kept per deployment. Beyond it, lines are still
+// streamed live but no longer stored, after a note saying so.
+const maxLogBytes = 8 << 20
 
 func newLogger(e *Engine, id int64) *logger {
 	l := &logger{e: e, id: id, stop: make(chan struct{}), done: make(chan struct{})}
@@ -493,9 +503,32 @@ func (l *logger) lineLocked(line string) {
 		line = strings.ReplaceAll(line, m, "********")
 	}
 	line = time.Now().UTC().Format("15:04:05") + " " + line
-	l.buf.WriteString(line + "\n")
-	l.dirty = true
 	l.e.hub.Publish(deploymentTopic(l.id), "log", line)
+	switch {
+	case l.buf.Len() < maxLogBytes:
+		l.buf.WriteString(line + "\n")
+	case !l.truncated:
+		l.truncated = true
+		l.buf.WriteString("… the log exceeds " + strconv.Itoa(maxLogBytes>>20) + " MB; the rest is not kept …\n")
+	default:
+		return
+	}
+	l.dirty = true
+}
+
+// flushLocked appends what was written since the last flush to the database.
+func (l *logger) flushLocked() {
+	if !l.dirty || l.id == 0 {
+		return
+	}
+	delta := string(l.buf.Bytes()[l.flushed:])
+	l.flushed, l.dirty = l.buf.Len(), false
+	l.mu.Unlock()
+	_, err := l.e.db.ExecContext(context.Background(), "UPDATE deployments SET logs = logs || ? WHERE id = ?", delta, l.id)
+	l.mu.Lock()
+	if err != nil {
+		slog.Warn("flush logs", "err", err)
+	}
 }
 
 func (l *logger) Printf(format string, args ...any) {
@@ -522,16 +555,7 @@ func (l *logger) flusher() {
 			return
 		case <-t.C:
 			l.mu.Lock()
-			if l.dirty {
-				logs := l.buf.String()
-				l.dirty = false
-				l.mu.Unlock()
-				_, err := l.e.db.ExecContext(context.Background(), "UPDATE deployments SET logs = ? WHERE id = ?", logs, l.id)
-				if err != nil {
-					slog.Warn("flush logs", "err", err)
-				}
-				continue
-			}
+			l.flushLocked()
 			l.mu.Unlock()
 		}
 	}
@@ -546,4 +570,8 @@ func (l *logger) Close() {
 	l.mu.Unlock()
 	close(l.stop)
 	<-l.done
+	// The flusher has stopped: write whatever it did not get to.
+	l.mu.Lock()
+	l.flushLocked()
+	l.mu.Unlock()
 }

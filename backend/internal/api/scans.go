@@ -195,7 +195,7 @@ func (s *Server) deploymentReportsZip(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	d, err := store.ByID[store.Deployment](r.Context(), s.db, "deployments", id)
+	d, err := store.DeploymentByID(r.Context(), s.db, id)
 	if err != nil {
 		return err
 	}
