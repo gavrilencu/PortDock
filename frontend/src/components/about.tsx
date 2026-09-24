@@ -25,7 +25,7 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
     icon: <Rocket />,
     title: tk("Deployments"),
     items: [
-      tk("From GitHub, GitLab, Gitea or any Git URL, Docker images and Docker Compose"),
+      tk("From GitHub, Azure DevOps, GitLab, Gitea or any Git URL, Docker images and Docker Compose"),
       tk("Build packs: Dockerfile, Nixpacks, Node.js, Bun, Python, Go, static sites, shell scripts"),
       tk("Push-to-deploy, pull request previews, zero-downtime rollouts with health checks"),
       tk("Several servers per application, dedicated build servers"),

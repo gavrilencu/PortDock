@@ -152,6 +152,11 @@ export interface Application {
   github_app_id: number;
   github_installation_id: number;
   git_full_name: string;
+  azure_connection_id: number;
+  azure_project_id: string;
+  azure_repo_id: string;
+  azure_hook_id: string;
+  azure_hook_error: string;
   build_pack: BuildPack;
   base_directory: string;
   dockerfile_path: string;
@@ -218,7 +223,7 @@ export interface RegistryKind {
 }
 
 export interface ApplicationDetail extends Application {
-  webhooks: { github: string; gitlab: string; gitea: string; deploy: string };
+  webhooks: { github: string; gitlab: string; gitea: string; azure: string; deploy: string };
   project: { id: number; name: string };
   environment: Environment;
   server_name: string;
@@ -554,6 +559,30 @@ export interface GitHubApp {
   webhook_url: string;
   webhook_configured: boolean;
   public_url: boolean;
+}
+
+export interface AzureConnection {
+  id: number;
+  name: string;
+  url: string;
+  created_at: string;
+  applications: number;
+}
+
+export interface AzureRepo {
+  id: string;
+  name: string;
+  project: { id: string; name: string };
+  default_branch: string;
+  remote_url: string;
+  web_url: string;
+}
+
+export interface AzureHook {
+  hook_id: string;
+  error: string;
+  url: string;
+  header: string;
 }
 
 export interface GitHubRepo {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/portdock/portdock/internal/azuredevops"
 	"net/url"
 	"path"
 	"sort"
@@ -271,6 +272,15 @@ func (j *job) gitURL(ctx context.Context) (string, error) {
 			}
 		}
 		return u, nil
+	}
+	if j.app.AzureConnectionID != 0 {
+		conn, err := store.ByID[store.AzureConnection](ctx, j.e.db, "azure_connections", j.app.AzureConnectionID)
+		if err != nil {
+			return "", fmt.Errorf("the Azure DevOps connection of this application no longer exists: %w", err)
+		}
+		tok := j.e.box.MustDecrypt(conn.Token)
+		j.log.Mask(tok)
+		return azuredevops.CloneURL(j.app.GitRepository, tok), nil
 	}
 	return j.gitURLStatic(), nil
 }

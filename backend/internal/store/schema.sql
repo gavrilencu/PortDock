@@ -472,3 +472,12 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation ON chat_messages(conversation_id, id);
+
+-- Azure DevOps organizations (or on-premises collections), reached with a personal access token.
+CREATE TABLE IF NOT EXISTS azure_connections (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  token      TEXT NOT NULL DEFAULT '',   -- encrypted
+  created_at TEXT NOT NULL DEFAULT ''
+);

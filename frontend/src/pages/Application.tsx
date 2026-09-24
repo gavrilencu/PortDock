@@ -52,6 +52,7 @@ import {
 } from "../components/ui";
 import { DeploymentsTable } from "../components/shared";
 import { BranchSelect, RepoLink } from "../components/github";
+import { AzureBranchSelect, AzureHookCard, AzureRepoLink } from "../components/azure";
 import { BuildSettings } from "../components/BuildSettings";
 import { AccessCallout, DNSBadge, DomainLinks, DomainsTab, domainURL as rowURL, publishedURLs, useDomains } from "../components/Domains";
 import { EnvEditor } from "../components/EnvEditor";
@@ -356,6 +357,21 @@ function Configuration({ app }: { app: ApplicationDetail }) {
             </div>
             <Field label={t("Branch")}>
               <BranchSelect appId={f.github_app_id} installationId={f.github_installation_id} repo={f.git_full_name} value={f.git_branch} onChange={(b) => set("git_branch", b)} />
+            </Field>
+            <Field label={t("Root directory")} hint={t("For monorepos, e.g. /apps/web")}>
+              <Input value={f.base_directory} onChange={(e) => set("base_directory", e.target.value)} />
+            </Field>
+            <Field label={t("Pinned commit")} hint={t("Optional: always deploy this SHA.")}>
+              <Input value={f.git_commit} onChange={(e) => set("git_commit", e.target.value)} placeholder="HEAD" />
+            </Field>
+          </Section>
+        ) : f.source_type === "git" && f.azure_connection_id ? (
+          <Section title={t("Source")} description={t("Connected through Azure DevOps. New commits on the branch deploy automatically.")}>
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 text-[13px] sm:col-span-2">
+              <AzureRepoLink url={f.git_repository} />
+            </div>
+            <Field label={t("Branch")}>
+              <AzureBranchSelect connection={f.azure_connection_id} project={f.azure_project_id} repo={f.azure_repo_id} value={f.git_branch} onChange={(b) => set("git_branch", b)} />
             </Field>
             <Field label={t("Root directory")} hint={t("For monorepos, e.g. /apps/web")}>
               <Input value={f.base_directory} onChange={(e) => set("base_directory", e.target.value)} />
@@ -802,9 +818,11 @@ jobs:
             </div>
           </div>
         </Card>
+      ) : app.azure_connection_id ? (
+        <AzureHookCard app={app} />
       ) : null}
       <Card
-        title={app.github_app_id ? t("Other Git providers") : t("Git provider webhooks")}
+        title={app.github_app_id || app.azure_connection_id ? t("Other Git providers") : t("Git provider webhooks")}
         description={t("Add one of these URLs as a webhook in your repository (content type: application/json). Select push and pull request events.")}
         actions={
           <Button

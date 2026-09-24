@@ -65,7 +65,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 <td width="50%" valign="top">
 
 **🚀 Deployments**
-- From GitHub (GitHub App), GitLab, Gitea / Forgejo, Bitbucket or any Git URL; Docker images; Docker Compose
+- From GitHub (GitHub App), Azure DevOps, GitLab, Gitea / Forgejo, Bitbucket or any Git URL; Docker images; Docker Compose
 - Build packs: Dockerfile, Nixpacks, Node.js, Bun, Python, Go, static sites, shell scripts — auto-detected
 - Push-to-deploy, pull request previews with their own domain, deploy hooks for any CI
 - Zero-downtime rollouts: traffic moves only after the health check passes
@@ -240,6 +240,18 @@ GitHub needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver webhooks.
 </details>
 
 <details>
+<summary><b>Azure DevOps integration</b></summary>
+
+1. In Azure DevOps create a **personal access token** (*User settings → Personal access tokens*) for the organization with the scopes **Code: Read** and **Service Hooks: Read, query & manage**. To add service hooks, the token's user must be allowed to edit subscriptions in the project (project administrators are).
+2. **Settings → Git sources → Connect Azure DevOps**: enter the organization (`contoso`, `https://dev.azure.com/contoso`, `https://contoso.visualstudio.com`, or the collection URL of Azure DevOps Server 2020+) and the token. PortDock checks it by listing the repositories and stores it encrypted.
+3. **New resource → Git repository → Azure DevOps**: pick the repository and branch; the build pack is detected from the repository, like for GitHub.
+4. PortDock clones with the token and adds a **service hook** (*Code pushed* → Web Hooks) to the repository, authenticated by a secret HTTP header. Every push to the branch deploys; watch paths are checked against the files of the pushed commits. The hook is replaced when the webhook secret is regenerated and removed when the application is deleted.
+
+*CI/CD & Webhooks* shows the state of the hook, recreates it, and gives the URL and header to add it by hand if the token can't. Tokens expire: replace them from *Settings → Git sources* without touching the applications. Azure DevOps needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver push events. Pull request previews are GitHub, GitLab and Gitea only for now.
+
+</details>
+
+<details>
 <summary><b>CI/CD</b></summary>
 
 **Push-to-deploy:** in the application, *CI/CD & Webhooks* shows the GitHub / GitLab / Gitea webhook URL and secret (events: push and pull request).
@@ -348,6 +360,8 @@ backend/
   internal/docker       Docker CLI wrapper
   internal/proxy        Traefik: proxy container, file-provider routes, TLS
   internal/assistant    OpenRouter client for the AI assistant
+  internal/github       GitHub App client and build pack detection
+  internal/azuredevops  Azure DevOps REST client (repositories, files, service hooks)
   internal/updater      self-update from GitHub releases
   internal/store        SQLite schema, migrations and mapper
   internal/{auth,secrets,notify,scheduler,monitor,ldapauth,sso,registry,templates,…}

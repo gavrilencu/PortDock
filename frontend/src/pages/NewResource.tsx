@@ -16,7 +16,7 @@ import { t, tk } from "../lib/i18n";
 type Kind = "git" | "image" | "compose" | "database" | "service";
 
 const kinds: { id: Kind; title: string; text: string; icon: ReactNode }[] = [
-  { id: "git", title: tk("Git repository"), text: tk("Import from GitHub or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more."), icon: <GitBranch /> },
+  { id: "git", title: tk("Git repository"), text: tk("Import from GitHub, Azure DevOps or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more."), icon: <GitBranch /> },
   { id: "image", title: tk("Docker image"), text: tk("Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own."), icon: <Container /> },
   { id: "compose", title: "Docker Compose", text: tk("Deploy a multi-container stack from a compose file in Git."), icon: <FileCode /> },
   { id: "database", title: tk("Database"), text: "PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse.", icon: <DatabaseIcon /> },

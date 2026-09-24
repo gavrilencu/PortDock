@@ -105,6 +105,11 @@ var migrations = []string{
 	`ALTER TABLE backup_runs ADD COLUMN restore_status TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE backup_runs ADD COLUMN restore_message TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE backup_runs ADD COLUMN restored_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN azure_connection_id INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE applications ADD COLUMN azure_project_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN azure_repo_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN azure_hook_id TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE applications ADD COLUMN azure_hook_error TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }
