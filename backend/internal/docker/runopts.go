@@ -1,0 +1,202 @@
+package docker
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/portdock/portdock/internal/executor"
+)
+
+// Extra `docker run` options typed by users are parsed into arguments, checked
+// against an allow-list and quoted one by one, so they can neither break out of
+// the shell command nor give a container the host: no privileged mode, host
+// namespaces, capabilities, devices or bind mounts of host paths. Named volumes
+// are fine. Administrators (who already administer the servers over SSH) may
+// also use bind mounts and devices.
+
+// runFlags maps an option to whether it takes a value. Anything absent is refused.
+var runFlags = map[string]bool{
+	"-v": true, "--volume": true, "--mount": true, "--tmpfs": true,
+	"-e": true, "--env": true, "-l": true, "--label": true,
+	"-u": true, "--user": true, "-w": true, "--workdir": true, "--entrypoint": true,
+	"--hostname": true, "-h": true, "--add-host": true, "--dns": true, "--dns-search": true, "--dns-option": true, "--domainname": true,
+	"--expose": true, "--shm-size": true, "--ulimit": true, "--sysctl": true, "--pids-limit": true,
+	"--memory-swap": true, "--memory-reservation": true, "--memory-swappiness": true, "--cpu-shares": true, "--cpuset-cpus": true, "--cpu-period": true, "--cpu-quota": true, "--cpus": true, "--memory": true, "-m": true,
+	"--stop-signal": true, "--stop-timeout": true, "--health-cmd": true, "--health-interval": true, "--health-timeout": true, "--health-retries": true, "--health-start-period": true,
+	"--cap-drop": true, "--security-opt": true, "--group-add": true, "--gpus": true, "--platform": true, "--log-opt": true, "--restart": true, "--oom-score-adj": true, "--storage-opt": true, "--annotation": true,
+	"--init": false, "--read-only": false, "--no-healthcheck": false, "-t": false, "--tty": false, "-i": false, "--interactive": false,
+}
+
+// trustedFlags are allowed only for administrators.
+var trustedFlags = map[string]bool{"--device": true, "--device-read-bps": true, "--device-write-bps": true, "--device-read-iops": true, "--device-write-iops": true}
+
+// Reserved label prefixes: the proxy routes by traefik.* labels and PortDock
+// identifies its containers by its own labels.
+var reservedLabelPrefixes = []string{"traefik.", "portdock.", "shipyard."}
+
+var volumeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
+// RunOptions validates extra `docker run` options and returns them quoted for
+// the shell, as one string that starts with a space (or "" when empty).
+func RunOptions(opts string, trusted bool) (string, error) {
+	args, err := executor.SplitArgs(strings.TrimSpace(opts))
+	if err != nil {
+		return "", fmt.Errorf("docker options: %w", err)
+	}
+	var out []string
+	for i := 0; i < len(args); i++ {
+		flag, value, inline := strings.Cut(args[i], "=")
+		if !strings.HasPrefix(flag, "-") || flag == "-" || flag == "--" {
+			return "", fmt.Errorf("docker options: %q is not an option; put command arguments in the start command", args[i])
+		}
+		// Short flags may carry their value attached (-e FOO=bar is split by "=" above, so re-join).
+		if len(flag) == 2 && strings.HasPrefix(flag, "-") && !strings.HasPrefix(flag, "--") && inline {
+			value, inline = flag[2:]+"="+value, false
+			flag = flag[:2]
+			if value == "=" {
+				value = ""
+			}
+			inline = value != ""
+		}
+		takesValue, known := runFlags[flag]
+		if !known {
+			if !trustedFlags[flag] {
+				return "", fmt.Errorf("docker options: %s is not allowed", flag)
+			}
+			if !trusted {
+				return "", fmt.Errorf("docker options: %s can only be set by an administrator", flag)
+			}
+			takesValue = true
+		}
+		if takesValue && !inline {
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("docker options: %s needs a value", flag)
+			}
+			i++
+			value = args[i]
+		}
+		if !takesValue && inline {
+			return "", fmt.Errorf("docker options: %s takes no value", flag)
+		}
+		if err := checkRunValue(flag, value, trusted); err != nil {
+			return "", err
+		}
+		if takesValue {
+			out = append(out, flag, executor.Quote(value))
+		} else {
+			out = append(out, flag)
+		}
+	}
+	if len(out) == 0 {
+		return "", nil
+	}
+	return " " + strings.Join(out, " "), nil
+}
+
+func checkRunValue(flag, value string, trusted bool) error {
+	switch flag {
+	case "-v", "--volume":
+		src, _, hasTarget := strings.Cut(value, ":")
+		if !hasTarget {
+			return nil // anonymous volume
+		}
+		if !volumeName.MatchString(src) {
+			if !trusted {
+				return fmt.Errorf("docker options: only named volumes can be mounted (%q); bind mounts of server paths are for administrators", value)
+			}
+			if err := checkBindSource(src); err != nil {
+				return err
+			}
+		}
+	case "--mount":
+		fields := map[string]string{}
+		for _, f := range strings.Split(value, ",") {
+			k, v, _ := strings.Cut(strings.TrimSpace(f), "=")
+			fields[strings.ToLower(k)] = v
+		}
+		typ := fields["type"]
+		src := fields["source"]
+		if src == "" {
+			src = fields["src"]
+		}
+		switch {
+		case typ == "" || typ == "volume":
+			if src != "" && !volumeName.MatchString(src) {
+				return fmt.Errorf("docker options: invalid volume name %q", src)
+			}
+		case typ == "tmpfs":
+		case typ == "bind":
+			if !trusted {
+				return fmt.Errorf("docker options: bind mounts of server paths are for administrators")
+			}
+			if err := checkBindSource(src); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("docker options: mount type %q is not allowed", typ)
+		}
+	case "-l", "--label":
+		key, _, _ := strings.Cut(value, "=")
+		for _, p := range reservedLabelPrefixes {
+			if strings.HasPrefix(strings.ToLower(key), p) {
+				return fmt.Errorf("docker options: labels starting with %s are managed by PortDock", p)
+			}
+		}
+	case "--security-opt":
+		if v := strings.ToLower(strings.TrimSpace(value)); v != "no-new-privileges" && v != "no-new-privileges=true" && !strings.HasPrefix(v, "seccomp=") && !strings.HasPrefix(v, "apparmor=") {
+			return fmt.Errorf("docker options: security option %q is not allowed", value)
+		}
+		if v := strings.ToLower(value); strings.Contains(v, "unconfined") || strings.Contains(v, "seccomp=/") {
+			if !trusted {
+				return fmt.Errorf("docker options: security option %q can only be set by an administrator", value)
+			}
+		}
+	case "--sysctl":
+		if !strings.HasPrefix(value, "net.") {
+			return fmt.Errorf("docker options: only net.* sysctls can be set")
+		}
+	case "--restart":
+		if strings.HasPrefix(value, "no") {
+			return fmt.Errorf("docker options: the restart policy is managed by PortDock")
+		}
+	case "--log-opt":
+		if !strings.HasPrefix(value, "max-size=") && !strings.HasPrefix(value, "max-file=") && !strings.HasPrefix(value, "tag=") && !strings.HasPrefix(value, "labels=") && !strings.HasPrefix(value, "env=") {
+			return fmt.Errorf("docker options: log option %q is not allowed", value)
+		}
+	}
+	return nil
+}
+
+// checkBindSource refuses the host paths that hand over the host even to an
+// administrator's application: the root filesystem, the Docker socket and the
+// directories Docker and the system keep their state in.
+func checkBindSource(src string) error {
+	p := strings.TrimRight(src, "/")
+	if p == "" || p == "/" {
+		return fmt.Errorf("docker options: the root of the server cannot be mounted")
+	}
+	for _, bad := range []string{"/var/run/docker.sock", "/run/docker.sock", "/var/lib/docker", "/etc", "/proc", "/sys", "/dev", "/boot", "/root", "/var/run", "/run"} {
+		if p == bad || strings.HasPrefix(p, bad+"/") {
+			return fmt.Errorf("docker options: %s cannot be mounted into a container", src)
+		}
+	}
+	return nil
+}
+
+// CommandArgs validates extra arguments for a container's command (for example
+// database server flags) and returns them quoted, prefixed with a space.
+func CommandArgs(args string) (string, error) {
+	parts, err := executor.SplitArgs(strings.TrimSpace(args))
+	if err != nil {
+		return "", fmt.Errorf("arguments: %w", err)
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		b.WriteString(" " + executor.Quote(p))
+	}
+	return b.String(), nil
+}

@@ -562,9 +562,13 @@ func (j *job) rollout(ctx context.Context, image string) error {
 			}
 		}
 		b.WriteString(proxy.LabelArgs(labels))
-		if opts := strings.TrimSpace(app.CustomDockerOptions); opts != "" {
-			b.WriteString(" " + opts)
+		// Validated again here: rows written before the allow-list existed
+		// must not reach the shell unchecked.
+		opts, err := docker.RunOptions(app.CustomDockerOptions, true)
+		if err != nil {
+			return err
 		}
+		b.WriteString(opts)
 		b.WriteString(" " + q(image))
 		switch {
 		case app.StartCommand == "" || app.BuildPack == "nixpacks":

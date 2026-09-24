@@ -472,7 +472,7 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           <Field label={t("Custom labels")} hint={t("One key=value per line (e.g. extra Traefik middlewares).")} className="sm:col-span-2">
             <Textarea rows={3} value={f.custom_labels} onChange={(e) => set("custom_labels", e.target.value)} />
           </Field>
-          <Field label={t("Custom docker run options")} hint={t("Appended to docker run, e.g. --cap-add SYS_PTRACE -v data:/data")} className="sm:col-span-2">
+          <Field label={t("Custom docker run options")} hint={t("Appended to docker run, e.g. -v data:/data --shm-size 1g. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.")} className="sm:col-span-2">
             <Input value={f.custom_docker_options} onChange={(e) => set("custom_docker_options", e.target.value)} />
           </Field>
         </Section>

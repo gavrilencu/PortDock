@@ -213,9 +213,13 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	if cmd := eng.Command(pass); cmd != "" {
 		b.WriteString(" " + cmd)
 	}
-	if db.CustomArgs != "" {
-		b.WriteString(" " + db.CustomArgs)
+	// Extra server flags become quoted command arguments, never docker options.
+	args, err := docker.CommandArgs(db.CustomArgs)
+	if err != nil {
+		e.setDBStatus(ctx, db.ID, "failed")
+		return err
 	}
+	b.WriteString(args)
 	if _, err := executor.Output(ctx, x, b.String()); err != nil {
 		e.setDBStatus(ctx, db.ID, "failed")
 		return err

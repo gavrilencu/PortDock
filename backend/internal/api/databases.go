@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/deploy"
+	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
@@ -138,6 +139,10 @@ func normalizePublicHost(raw string) (string, error) {
 func (s *Server) validatePublicAccess(ctx context.Context, db *store.Database) error {
 	if db.PublicPort < 0 || db.PublicPort > 65535 {
 		return badRequest("invalid public port")
+	}
+	// Extra server flags are quoted command arguments; they must at least parse.
+	if _, err := docker.CommandArgs(db.CustomArgs); err != nil {
+		return badRequest("%v", err)
 	}
 	host, err := normalizePublicHost(db.PublicHost)
 	if err != nil {
