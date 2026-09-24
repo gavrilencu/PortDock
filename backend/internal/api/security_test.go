@@ -33,6 +33,7 @@ type testEnv struct {
 	t   *testing.T
 	srv *httptest.Server
 	db  *store.DB
+	dir string // data directory
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -57,7 +58,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	_ = db.SetSetting(t.Context(), "instance_url", ts.URL)
-	return &testEnv{t: t, srv: ts, db: db}
+	return &testEnv{t: t, srv: ts, db: db, dir: dir}
 }
 
 func (e *testEnv) user(email, password, role string) store.User {

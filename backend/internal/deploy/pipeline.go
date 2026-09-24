@@ -159,6 +159,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 				log.Printf("The service images are being scanned in the background; see the Security tab.")
 			}
 		}
+		j.startDAST(ctx, targets[0].srv.ID)
 		return nil
 	}
 
@@ -218,7 +219,23 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	if d.PRNumber == 0 && d.RollbackOf == 0 {
 		j.recordImageVersion(context.WithoutCancel(ctx), targets, image)
 	}
+	j.startDAST(ctx, targets[0].srv.ID)
 	return nil
+}
+
+// startDAST scans the new version in the background once it is live.
+func (j *job) startDAST(ctx context.Context, serverID int64) {
+	if !j.app.DastOnDeploy || j.d.PRNumber != 0 {
+		return
+	}
+	j.log.Step("Dynamic scan (DAST, OWASP ZAP)")
+	a := j.app
+	a.ServerID = serverID
+	if err := j.e.ScanRunning(context.WithoutCancel(ctx), a, j.d.ID, "deploy"); err != nil {
+		j.log.Printf("⚠ Could not start the dynamic scan: %v", err)
+		return
+	}
+	j.log.Printf("OWASP ZAP is scanning the application in the background; see the Security tab.")
 }
 
 func plural(n int, word string) string {
@@ -254,6 +271,11 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 
 	if err := j.checkout(ctx); err != nil {
 		return "", false, err
+	}
+	if app.SastOnDeploy {
+		if err := j.sastAfterCheckout(ctx); err != nil {
+			return "", false, err
+		}
 	}
 
 	image = j.imageRepo() + ":" + short12(d.CommitSHA)

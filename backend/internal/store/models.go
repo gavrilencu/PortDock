@@ -169,7 +169,13 @@ type Application struct {
 	ScanBlock         string `db:"scan_block" json:"scan_block"`
 	ScanIgnoreUnfixed bool   `db:"scan_ignore_unfixed" json:"scan_ignore_unfixed"`
 	// ProxyMode: "" follows the corporate proxy setting for containers, "on" or "off" overrides it.
-	ProxyMode           string `db:"proxy_mode" json:"proxy_mode"`
+	ProxyMode string `db:"proxy_mode" json:"proxy_mode"`
+	// Static analysis of the source (Semgrep) after the checkout, which can block
+	// the deployment; dynamic scan (OWASP ZAP baseline) of the running application.
+	SastOnDeploy        bool   `db:"sast_on_deploy" json:"sast_on_deploy"`
+	SastBlock           string `db:"sast_block" json:"sast_block"`
+	DastOnDeploy        bool   `db:"dast_on_deploy" json:"dast_on_deploy"`
+	DastTarget          string `db:"dast_target" json:"dast_target"` // URL to scan; empty: the application itself
 	BuildPack           string `db:"build_pack" json:"build_pack"`
 	BaseDirectory       string `db:"base_directory" json:"base_directory"`
 	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`
@@ -376,11 +382,16 @@ func SplitList(s string) []string {
 	return out
 }
 
-// ImageScan is a Trivy vulnerability scan of an application image.
+// ImageScan is a security scan of an application: its image (Trivy), its
+// source (SAST, Semgrep) or the running application (DAST, OWASP ZAP).
 type ImageScan struct {
 	ID            int64  `db:"id" json:"id"`
 	ApplicationID int64  `db:"application_id" json:"application_id"`
 	DeploymentID  int64  `db:"deployment_id" json:"deployment_id"`
+	Kind          string `db:"kind" json:"kind"`             // image | sast | dast
+	Target        string `db:"target" json:"target"`         // the scanned URL (DAST)
+	CommitSHA     string `db:"commit_sha" json:"commit_sha"` // the scanned commit (SAST)
+	Reports       string `db:"reports" json:"-"`             // comma separated report files
 	Service       string `db:"service" json:"service"`
 	Image         string `db:"image" json:"image"`
 	Trigger       string `db:"trigger" json:"trigger"`

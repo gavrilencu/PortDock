@@ -134,6 +134,8 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - Single sign-on (OIDC: Entra ID, Okta, Google, Keycloak, Authentik…) and LDAP / Active Directory
 - Audit log with CSV / JSON export and SIEM streaming (webhook or syslog), API tokens
 - Vulnerability scanning of images with Trivy, optionally blocking deployments on critical or high findings
+- Static analysis of the source with Semgrep (SAST) and dynamic scans of the running app with OWASP ZAP (DAST), on every deploy or on demand
+- Downloadable reports for every scan (HTML, CSV, JSON, SARIF, ZAP) and a ZIP with all the reports of a deployment
 
 </td>
 <td valign="top">
