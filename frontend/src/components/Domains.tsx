@@ -143,7 +143,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     mutationFn: () => api.post<DomainsResponse>(`/applications/${app.id}/domains/check`),
     onSuccess: (r) => {
       qc.setQueryData(["domains", app.id], r);
-      const bad = r.domains.filter((d) => d.dns_status !== "ok" && d.dns_status !== "proxied").length;
+      const bad = (r.domains ?? []).filter((d) => d.dns_status !== "ok" && d.dns_status !== "proxied").length;
       bad ? toast.warning(t("{n} domain needs DNS attention|{n} domains need DNS attention", { n: bad })) : toast.success(t("All domains point to this server"));
     },
     onError: (e) => toast.error(e.message),
@@ -152,7 +152,7 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
     setChecking(d.id);
     try {
       const upd = await api.post<AppDomain>(`/domains/${d.id}/check`);
-      qc.setQueryData<DomainsResponse>(["domains", app.id], (old) => old && { ...old, domains: old.domains.map((x) => (x.id === upd.id ? upd : x)) });
+      qc.setQueryData<DomainsResponse>(["domains", app.id], (old) => old && { ...old, domains: (old.domains ?? []).map((x) => (x.id === upd.id ? upd : x)) });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -505,7 +505,7 @@ function DNSRecordsModal({ appId, open, onClose }: { appId: number; open: boolea
 /** Compact “Links” dropdown listing the application's URLs. */
 export function DomainLinks({ appId, extra = [] }: { appId: number; extra?: string[] }) {
   const { data } = useDomains(appId);
-  const count = (data?.domains.length ?? 0) + extra.length;
+  const count = (data?.domains?.length ?? 0) + extra.length;
   if (!count) return null;
   return (
     <Menu
@@ -592,7 +592,7 @@ export function AccessCallout({ app }: { app: ApplicationDetail }) {
     onError: (e) => toast.error(e.message),
   });
 
-  if (!data || data.domains.length > 0 || app.ports_mapping.trim() || app.build_pack === "compose") return null;
+  if (!data || (data.domains ?? []).length > 0 || app.ports_mapping.trim() || app.build_pack === "compose") return null;
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-warning/30 bg-warning-soft px-5 py-4">
       <Globe className="size-5 shrink-0 text-warning" />

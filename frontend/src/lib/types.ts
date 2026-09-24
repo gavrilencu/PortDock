@@ -24,6 +24,9 @@ export interface UserIdentity {
   created_at: string;
 }
 
+/** Go serializes an empty slice as null: list fields are read with `?? []`. */
+export type Maybe<T> = T | null | undefined;
+
 export interface AuthStatus {
   setup_required: boolean;
   version: string;

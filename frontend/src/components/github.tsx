@@ -332,7 +332,7 @@ export function GitSourcesSettings() {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {a.installations.length === 0 ? (
+                  {(a.installations ?? []).length === 0 ? (
                     <div className="rounded-lg border border-dashed border-border-strong px-4 py-3 text-xs text-subtle sm:col-span-2 lg:col-span-3">
                       {tx("Not installed on any account yet. {install} and choose which repositories PortDock can access, then press Sync.", {
                         install: (
@@ -343,7 +343,7 @@ export function GitSourcesSettings() {
                       })}
                     </div>
                   ) : (
-                    a.installations.map((i) => (
+                    (a.installations ?? []).map((i) => (
                       <div key={i.id} className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
                         {i.account_avatar ? <img src={i.account_avatar} alt="" className="size-7 rounded-full border border-border" /> : <GitHubMark className="size-5" />}
                         <div className="min-w-0 flex-1">

@@ -81,7 +81,7 @@ export function ProjectPage() {
       ...r.databases.map((d) => ({ kind: "database" as Kind, id: d.id, name: d.name, status: d.status, source: d.image, detail: d.engine, domains: [] as string[], updated: d.created_at, to: `/databases/${d.id}` })),
       ...r.services.map((s) => ({ kind: "service" as Kind, id: s.id, name: s.name, status: s.status, source: s.template === "custom" ? "Docker Compose" : s.template, detail: t("Service stack"), domains: splitList(s.domain), updated: s.created_at, to: `/services/${s.id}` })),
     ];
-    return all.filter((i) => (kind === "all" || i.kind === kind) && `${i.name} ${i.source} ${i.domains.join(" ")}`.toLowerCase().includes(q.toLowerCase()));
+    return all.filter((i) => (kind === "all" || i.kind === kind) && `${i.name} ${i.source} ${(i.domains ?? []).join(" ")}`.toLowerCase().includes(q.toLowerCase()));
   }, [r, kind, q]);
 
   if (project.isLoading) return <Loading />;
@@ -263,7 +263,7 @@ export function ProjectPage() {
                       </div>
                     </td>
                     <td className="max-w-64">
-                      {it.domains.length ? (
+                      {it.domains?.length ? (
                         <a href={domainURL(it.domains[0])} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex max-w-full items-center gap-1 truncate text-muted hover:text-fg">
                           <span className="truncate">{it.domains[0].replace(/^https?:\/\//, "")}</span>
                           <ExternalLink className="size-3 shrink-0 text-faint" />

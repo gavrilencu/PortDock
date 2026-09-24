@@ -110,7 +110,7 @@ export function DashboardPage() {
         </Card>
         <Card
           title={t("Infrastructure")}
-          description={t("{online} of {n} server online|{online} of {n} servers online", { online, n: d.servers.length })}
+          description={t("{online} of {n} server online|{online} of {n} servers online", { online, n: (d.servers ?? []).length })}
           actions={
             <Link to="/servers">
               <Button size="sm" variant="ghost" trailing={<ArrowRight />}>
@@ -121,7 +121,7 @@ export function DashboardPage() {
         >
           <Table>
             <tbody>
-              {d.servers.map((s) => (
+              {(d.servers ?? []).map((s) => (
                 <tr key={s.id} className="!border-t-0 [&+tr]:!border-t">
                   <td className="!pl-4">
                     <Link to={`/servers/${s.id}`} className="flex items-center gap-3">

@@ -56,7 +56,7 @@ function Inventory() {
     mutationFn: () => api.post<Inventory>("/certificates/check"),
     onSuccess: (d) => {
       qc.setQueryData(["certificates"], d);
-      const bad = d.domains.filter((x) => ["expired", "missing", "expiring"].includes(x.status)).length;
+      const bad = (d.domains ?? []).filter((x) => ["expired", "missing", "expiring"].includes(x.status)).length;
       bad ? toast.warning(t("{n} certificate needs attention|{n} certificates need attention", { n: bad })) : toast.success(t("All certificates are healthy"));
     },
     onError: (e) => toast.error(e.message),
