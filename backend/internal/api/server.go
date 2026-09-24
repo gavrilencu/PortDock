@@ -370,6 +370,10 @@ func (s *Server) Handler() http.Handler {
 	g("POST /api/backups/{id}/run", "backup", permWrite, s.runBackup)
 	g("GET /api/backups/{id}/runs", "backup", permRead, s.listBackupRuns)
 	g("GET /api/backup-runs/{id}/download", "backup_run", permWrite, s.downloadBackup)
+	g("DELETE /api/backup-runs/{id}", "backup_run", permWrite, s.deleteBackupRun)
+	g("GET /api/databases/{id}/backup-runs", "database", permRead, s.backupRunsOf)
+	g("POST /api/databases/{id}/backup-now", "database", permWrite, s.backupNow)
+	admin("POST /api/databases/backup-all", s.backupAllDatabases)
 	g("POST /api/backup-runs/{id}/restore", "backup_run", permManage, s.restoreBackup)
 
 	// services

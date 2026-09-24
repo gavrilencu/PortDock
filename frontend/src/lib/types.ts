@@ -341,11 +341,29 @@ export interface Backup {
 export interface BackupRun {
   id: number;
   backup_id: number;
-  status: "running" | "success" | "failed";
+  kind: "scheduled" | "manual" | "pre-restore";
+  status: "pending" | "running" | "success" | "failed";
+  /** Path of the backup file on the database's server. */
   file: string;
   size: number;
   message: string;
   created_at: string;
+  started_at: string;
+  finished_at: string;
+  restore_status: "" | "pending" | "running" | "success" | "failed";
+  restore_message: string;
+  restored_at: string;
+}
+
+export interface BackupRunsResponse {
+  runs: BackupRun[];
+  /** Directory of the backups on the server. */
+  directory: string;
+  server: string;
+  supported: boolean;
+  /** Whether PortDock can restore this engine's backups. */
+  restore: boolean;
+  format: string;
 }
 
 export interface ServiceTemplate {

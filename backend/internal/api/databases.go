@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -216,6 +217,18 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 		db.DatabaseName = strings.ReplaceAll(db.DatabaseName, "-", "_")
 	}
 	pass := in.Password
+	if eng.ID == "mssql" {
+		db.Username = "sa"
+		if !mssqlNameRe.MatchString(db.DatabaseName) {
+			return badRequest("the SQL Server database name may only contain letters, digits and underscores")
+		}
+		if pass == "" {
+			for pass = secrets.RandomPassword(32); !mssqlPasswordOK(pass); pass = secrets.RandomPassword(32) {
+			}
+		} else if !mssqlPasswordOK(pass) {
+			return badRequest("SQL Server needs a password of at least 8 characters with three of: uppercase, lowercase, digits, symbols")
+		}
+	}
 	if pass == "" {
 		pass = secrets.RandomPassword(32)
 	}
@@ -233,6 +246,29 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 		db.Status = "starting"
 	}
 	return ok(w, s.dbOut(r.Context(), db))
+}
+
+var mssqlNameRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,128}$`)
+
+// mssqlPasswordOK applies SQL Server's password policy for the sa login.
+func mssqlPasswordOK(p string) bool {
+	if len(p) < 8 {
+		return false
+	}
+	var upper, lower, digit, other int
+	for _, c := range p {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			upper = 1
+		case c >= 'a' && c <= 'z':
+			lower = 1
+		case c >= '0' && c <= '9':
+			digit = 1
+		default:
+			other = 1
+		}
+	}
+	return upper+lower+digit+other >= 3
 }
 
 func (s *Server) getDatabase(w http.ResponseWriter, r *http.Request) error {
@@ -348,7 +384,7 @@ func (s *Server) listBackups(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	bs, err := store.Select[store.Backup](r.Context(), s.db, "SELECT * FROM backups WHERE database_id = ? ORDER BY id", id)
+	bs, err := store.Select[store.Backup](r.Context(), s.db, "SELECT * FROM backups WHERE database_id = ? AND schedule != '' ORDER BY id", id)
 	if err != nil {
 		return err
 	}
@@ -420,9 +456,12 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	go func() { _, _ = s.engine.RunBackup(context.Background(), b) }()
+	run, err := s.engine.EnqueueBackup(r.Context(), b, deploy.BackupScheduled)
+	if err != nil {
+		return badRequest("%v", err)
+	}
 	s.activity(r, "backup.run", fmt.Sprint(b.ID))
-	return ok(w, map[string]bool{"started": true})
+	return ok(w, run)
 }
 
 func (s *Server) listBackupRuns(w http.ResponseWriter, r *http.Request) error {
@@ -467,15 +506,92 @@ func (s *Server) downloadBackup(w http.ResponseWriter, r *http.Request) error {
 	return s.engine.StreamBackup(r.Context(), db, run, w)
 }
 
+// restoreBackup queues the restore: it runs after the database's other backup
+// jobs, and starts with a safety backup of the current data.
 func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) error {
 	run, db, err := s.loadRun(r)
 	if err != nil {
 		return err
 	}
-	if err := s.engine.RestoreBackup(r.Context(), db, run); err != nil {
-		return badRequest("restore failed: %v", err)
+	if err := s.engine.EnqueueRestore(r.Context(), db, run); err != nil {
+		return badRequest("%v", err)
 	}
-	s.activity(r, "backup.restore", db.Name)
+	s.activity(r, "backup.restore", db.Name+": "+path.Base(run.File))
+	return ok(w, map[string]bool{"queued": true})
+}
+
+// backupRunsOf lists every backup of a database (scheduled, manual and safety
+// backups), newest first, with where they are stored.
+func (s *Server) backupRunsOf(w http.ResponseWriter, r *http.Request) error {
+	db, err := s.loadDB(r)
+	if err != nil {
+		return err
+	}
+	runs, err := store.Select[store.BackupRun](r.Context(), s.db,
+		"SELECT r.* FROM backup_runs r JOIN backups b ON b.id = r.backup_id WHERE b.database_id = ? ORDER BY r.id DESC LIMIT 200", db.ID)
+	if err != nil {
+		return err
+	}
+	if runs == nil {
+		runs = []store.BackupRun{}
+	}
+	srv, _ := store.ByID[store.Server](r.Context(), s.db, "servers", db.ServerID)
+	eng := templates.Engines[db.Engine]
+	return ok(w, map[string]any{
+		"runs": runs, "directory": s.engine.BackupDir(db), "server": srv.Name,
+		"supported": deploy.BackupSupported(db), "restore": eng.Restore, "format": eng.BackupExt,
+	})
+}
+
+// backupNow queues a manual backup of the database.
+func (s *Server) backupNow(w http.ResponseWriter, r *http.Request) error {
+	db, err := s.loadDB(r)
+	if err != nil {
+		return err
+	}
+	b, err := s.engine.ManualBackup(r.Context(), db.ID)
+	if err != nil {
+		return err
+	}
+	run, err := s.engine.EnqueueBackup(r.Context(), b, deploy.BackupManual)
+	if err != nil {
+		return badRequest("%v", err)
+	}
+	s.activity(r, "backup.manual", db.Name)
+	return ok(w, run)
+}
+
+// backupAllDatabases queues a manual backup of every database.
+func (s *Server) backupAllDatabases(w http.ResponseWriter, r *http.Request) error {
+	n, err := s.engine.EnqueueAllBackups(r.Context())
+	if err != nil {
+		return err
+	}
+	s.activity(r, "backup.all", fmt.Sprintf("%d database(s)", n))
+	return ok(w, map[string]int{"queued": n})
+}
+
+func (s *Server) deleteBackupRun(w http.ResponseWriter, r *http.Request) error {
+	id, err := pathID(r, "id")
+	if err != nil {
+		return err
+	}
+	run, err := store.ByID[store.BackupRun](r.Context(), s.db, "backup_runs", id)
+	if err != nil {
+		return err
+	}
+	b, err := store.ByID[store.Backup](r.Context(), s.db, "backups", run.BackupID)
+	if err != nil {
+		return err
+	}
+	db, err := store.ByID[store.Database](r.Context(), s.db, "databases", b.DatabaseID)
+	if err != nil {
+		return err
+	}
+	if err := s.engine.DeleteBackupRun(r.Context(), db, run); err != nil {
+		return badRequest("%v", err)
+	}
+	s.activity(r, "backup.delete", db.Name+": "+path.Base(run.File))
 	return ok(w, map[string]bool{"ok": true})
 }
 

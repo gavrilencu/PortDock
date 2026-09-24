@@ -14,6 +14,7 @@ import (
 
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/store"
 	"github.com/portdock/portdock/internal/templates"
@@ -220,7 +221,25 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 		return err
 	}
 	e.setDBStatus(ctx, db.ID, "running")
+	if init := eng.InitCmd(db.Username, pass, db.DatabaseName); init != "" {
+		go e.initDatabase(context.WithoutCancel(ctx), x, db, eng.HealthCmd(db.Username, pass, db.DatabaseName), init)
+	}
 	return nil
+}
+
+// initDatabase waits for a new container to accept connections, then runs the
+// engine's init command (SQL Server doesn't create the database by itself).
+func (e *Engine) initDatabase(ctx context.Context, x executor.Executor, db store.Database, health, init string) {
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		if _, err := executor.Output(ctx, x, "docker exec "+q(db.UUID)+" sh -c "+q(health)); err == nil {
+			if _, err := executor.Output(ctx, x, "docker exec "+q(db.UUID)+" sh -c "+q(init)); err != nil {
+				e.notify.Send(notify.Event{Name: "database.failed", Title: "Database setup failed: " + db.Name, Message: err.Error()})
+			}
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
 }
 
 // publishedPortMatches reports whether the existing container publishes exactly
@@ -285,65 +304,6 @@ func (e *Engine) DeleteDatabase(ctx context.Context, db store.Database, volumes 
 
 // ---- backups ----
 
-func (e *Engine) backupDir(db store.Database) string {
-	return path.Join(e.cfg.DataDir, "backups", db.UUID)
-}
-
-// RunBackup dumps the database into the server's backup directory,
-// applies retention and optionally uploads to S3.
-func (e *Engine) RunBackup(ctx context.Context, b store.Backup) (store.BackupRun, error) {
-	run := store.BackupRun{BackupID: b.ID, Status: "running", CreatedAt: store.Now()}
-	if _, err := store.Insert(ctx, e.db, "backup_runs", &run); err != nil {
-		return run, err
-	}
-	finish := func(err error) (store.BackupRun, error) {
-		run.Status = "success"
-		if err != nil {
-			run.Status, run.Message = "failed", err.Error()
-		}
-		_ = store.Update(ctx, e.db, "backup_runs", &run)
-		_, _ = e.db.ExecContext(ctx, "UPDATE backups SET last_run_at = ? WHERE id = ?", store.Now(), b.ID)
-		e.hub.Event("backup", b.ID, run.Status)
-		return run, err
-	}
-	db, err := store.ByID[store.Database](ctx, e.db, "databases", b.DatabaseID)
-	if err != nil {
-		return finish(err)
-	}
-	eng := templates.Engines[db.Engine]
-	cmd := eng.BackupCmd(db.Username, e.dbPassword(db), db.DatabaseName)
-	if cmd == "" {
-		return finish(fmt.Errorf("backups are not supported for %s", eng.Name))
-	}
-	x, _, err := e.pool.ForID(ctx, db.ServerID)
-	if err != nil {
-		return finish(err)
-	}
-	dir := e.backupDir(db)
-	file := fmt.Sprintf("%s/%s.%s", dir, time.Now().UTC().Format("20060102-150405"), eng.BackupExt)
-	// Enable pipefail where the shell supports it so a failing dump isn't masked by gzip.
-	const pipefail = "(set -o pipefail) 2>/dev/null && set -o pipefail; "
-	script := fmt.Sprintf("mkdir -p %s && docker exec %s sh -c %s > %s && stat -c %%s %s",
-		q(dir), q(db.UUID), q(pipefail+cmd), q(file), q(file))
-	out, err := executor.Output(ctx, x, script)
-	if err != nil {
-		_ = x.Run(ctx, "rm -f "+q(file), executor.RunOpts{})
-		return finish(err)
-	}
-	run.File = file
-	run.Size, _ = strconv.ParseInt(strings.TrimSpace(out), 10, 64)
-
-	if b.Retention > 0 {
-		_ = x.Run(ctx, fmt.Sprintf("cd %s && ls -1t | tail -n +%d | xargs -r rm -f", q(dir), b.Retention+1), executor.RunOpts{})
-	}
-	if b.UploadS3 {
-		if err := e.uploadS3(ctx, x, file, db.UUID); err != nil {
-			return finish(fmt.Errorf("backup stored locally but S3 upload failed: %w", err))
-		}
-	}
-	return finish(nil)
-}
-
 func (e *Engine) uploadS3(ctx context.Context, x executor.Executor, file, prefix string) error {
 	endpoint := e.db.Setting(ctx, "s3_endpoint")
 	bucket := e.db.Setting(ctx, "s3_bucket")
@@ -363,24 +323,6 @@ func (e *Engine) uploadS3(ctx context.Context, x executor.Executor, file, prefix
 		cmd += " --endpoint-url " + q(endpoint)
 	}
 	_, err := executor.Output(ctx, x, cmd)
-	return err
-}
-
-// RestoreBackup pipes a backup file into the database container.
-func (e *Engine) RestoreBackup(ctx context.Context, db store.Database, run store.BackupRun) error {
-	eng := templates.Engines[db.Engine]
-	cmd := eng.RestoreCmd(db.Username, e.dbPassword(db), db.DatabaseName)
-	if cmd == "" {
-		return fmt.Errorf("restore is not supported for %s", eng.Name)
-	}
-	if !strings.HasPrefix(run.File, e.backupDir(db)+"/") {
-		return errors.New("invalid backup file")
-	}
-	x, _, err := e.pool.ForID(ctx, db.ServerID)
-	if err != nil {
-		return err
-	}
-	_, err = executor.Output(ctx, x, fmt.Sprintf("cat %s | docker exec -i %s sh -c %s", q(run.File), q(db.UUID), q(cmd)))
 	return err
 }
 

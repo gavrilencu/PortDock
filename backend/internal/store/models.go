@@ -315,13 +315,21 @@ type Backup struct {
 }
 
 type BackupRun struct {
-	ID        int64  `db:"id" json:"id"`
-	BackupID  int64  `db:"backup_id" json:"backup_id"`
-	Status    string `db:"status" json:"status"`
-	File      string `db:"file" json:"file"`
-	Size      int64  `db:"size" json:"size"`
-	Message   string `db:"message" json:"message"`
-	CreatedAt string `db:"created_at" json:"created_at"`
+	ID       int64  `db:"id" json:"id"`
+	BackupID int64  `db:"backup_id" json:"backup_id"`
+	Kind     string `db:"kind" json:"kind"`     // scheduled | manual | pre-restore
+	Status   string `db:"status" json:"status"` // pending | running | success | failed
+	// File is the backup's path on the database's server.
+	File       string `db:"file" json:"file"`
+	Size       int64  `db:"size" json:"size"`
+	Message    string `db:"message" json:"message"`
+	CreatedAt  string `db:"created_at" json:"created_at"`
+	StartedAt  string `db:"started_at" json:"started_at"`
+	FinishedAt string `db:"finished_at" json:"finished_at"`
+	// Restoring this backup: "" | pending | running | success | failed.
+	RestoreStatus  string `db:"restore_status" json:"restore_status"`
+	RestoreMessage string `db:"restore_message" json:"restore_message"`
+	RestoredAt     string `db:"restored_at" json:"restored_at"`
 }
 
 type NotificationChannel struct {
