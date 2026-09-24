@@ -673,14 +673,24 @@ func (j *job) removeContainers(names ...string) {
 func (j *job) waitHealthy(ctx context.Context, name string) error {
 	timeout := time.Duration(max(j.app.HealthCheckTimeout, 10)) * time.Second
 	deadline := time.Now().Add(timeout)
-	probe := ""
+	// One probe container retries the URL for the whole wait, instead of a
+	// new container (create, start, remove) every two seconds.
+	var probe chan error
+	probeCtx, stopProbe := context.WithCancel(ctx)
+	defer stopProbe()
 	if p := j.app.HealthCheckPath; p != "" && j.app.Port > 0 {
 		if !strings.HasPrefix(p, "/") {
 			p = "/" + p
 		}
-		probe = fmt.Sprintf("docker run --rm --network %s curlimages/curl:latest -fsS -o /dev/null --max-time 5 %s",
-			q(j.e.cfg.ProxyNetwork), q(fmt.Sprintf("http://%s:%d%s", name, j.app.Port, p)))
-		j.log.Printf("Probing http://%s:%d%s (timeout %s)", name, j.app.Port, p, timeout)
+		url := fmt.Sprintf("http://%s:%d%s", name, j.app.Port, p)
+		cmd := fmt.Sprintf("docker run --rm --network %s curlimages/curl:latest -fsS -o /dev/null --max-time 5 --retry %d --retry-delay 2 --retry-all-errors --retry-connrefused %s",
+			q(j.e.cfg.ProxyNetwork), int(timeout/(2*time.Second))+1, q(url))
+		j.log.Printf("Probing %s (timeout %s)", url, timeout)
+		probe = make(chan error, 1)
+		go func() {
+			_, err := executor.Output(probeCtx, j.x, cmd)
+			probe <- err
+		}()
 	}
 	stableSince := time.Time{}
 	for {
@@ -698,20 +708,13 @@ func (j *job) waitHealthy(ctx context.Context, name string) error {
 			return fmt.Errorf("container %s is crash-looping", name)
 		case health == "unhealthy":
 			return fmt.Errorf("container %s reported unhealthy", name)
-		case state == "running" && (health == "" || health == "healthy"):
-			if probe != "" {
-				if _, err := executor.Output(ctx, j.x, probe); err == nil {
-					j.log.Printf("Health check passed.")
-					return nil
-				}
-			} else {
-				if stableSince.IsZero() {
-					stableSince = time.Now()
-				}
-				if time.Since(stableSince) >= 5*time.Second {
-					j.log.Printf("Container is running.")
-					return nil
-				}
+		case state == "running" && (health == "" || health == "healthy") && probe == nil:
+			if stableSince.IsZero() {
+				stableSince = time.Now()
+			}
+			if time.Since(stableSince) >= 5*time.Second {
+				j.log.Printf("Container is running.")
+				return nil
 			}
 		}
 		if time.Now().After(deadline) {
@@ -720,6 +723,12 @@ func (j *job) waitHealthy(ctx context.Context, name string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case err := <-probe:
+			if err == nil {
+				j.log.Printf("Health check passed.")
+				return nil
+			}
+			return fmt.Errorf("health check failed after %s: %s did not answer with success", timeout, j.app.HealthCheckPath)
 		case <-time.After(2 * time.Second):
 		}
 	}
