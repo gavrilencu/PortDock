@@ -28,6 +28,7 @@ import (
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
 	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/internal/stream"
 	"github.com/portdock/portdock/internal/updater"
 	"github.com/portdock/portdock/web"
@@ -120,6 +121,8 @@ func run(resetPassword, disable2FA string) error {
 	go engine.Monitor(ctx, 30*time.Second)
 	go engine.CertificateWatch(ctx, 6*time.Hour)
 	go engine.VersionRetention(ctx)
+	checker := uptime.New(db, notifier, engine.PublicURL)
+	go checker.Run(ctx)
 	go func() {
 		if err := engine.ApplyDashboardRoute(ctx); err != nil && !errors.Is(err, deploy.ErrNotContainerized) {
 			slog.Warn("dashboard domain routing", "err", err)
@@ -127,7 +130,7 @@ func run(resetPassword, disable2FA string) error {
 	}()
 
 	srv := api.New(api.Deps{
-		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh, Monitor: mon, Audit: auditStream,
+		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh, Monitor: mon, Audit: auditStream, Uptime: checker,
 		Auth: auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
 		UI:   web.FS(),
 	})
