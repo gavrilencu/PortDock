@@ -4,6 +4,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -295,12 +298,12 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/servers/{id}", s.getServer)
 	admin("PATCH /api/servers/{id}", s.updateServer)
 	admin("DELETE /api/servers/{id}", s.deleteServer)
-	a("POST /api/servers/{id}/validate", s.validateServer)
+	admin("POST /api/servers/{id}/validate", s.validateServer)
 	admin("POST /api/servers/{id}/setup", s.setupServer)
 	admin("GET /api/servers/{id}/docker-network", s.serverDockerNetwork)
 	admin("POST /api/servers/{id}/docker-network", s.applyServerDockerNetwork)
 	admin("POST /api/network/test", s.testNetwork)
-	a("GET /api/servers/{id}/setup/stream", s.serverSetupStream)
+	admin("GET /api/servers/{id}/setup/stream", s.serverSetupStream)
 	admin("POST /api/servers/{id}/reset-host-key", s.resetHostKey)
 	a("GET /api/servers/{id}/metrics", s.serverMetrics)
 	a("GET /api/servers/{id}/stats", s.serverStats)
@@ -315,11 +318,11 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/servers/{id}/containers/{cid}/logs", s.containerLogs)
 	a("GET /api/servers/{id}/containers/{cid}/terminal", s.containerTerminal)
 	admin("GET /api/servers/{id}/terminal", s.serverTerminal)
-	a("GET /api/servers/{id}/images", s.serverImages)
+	admin("GET /api/servers/{id}/images", s.serverImages)
 	admin("DELETE /api/servers/{id}/images/{iid}", s.deleteImage)
-	a("GET /api/servers/{id}/volumes", s.serverVolumes)
+	admin("GET /api/servers/{id}/volumes", s.serverVolumes)
 	admin("DELETE /api/servers/{id}/volumes/{name}", s.deleteVolume)
-	a("GET /api/servers/{id}/networks", s.serverNetworks)
+	admin("GET /api/servers/{id}/networks", s.serverNetworks)
 	admin("POST /api/servers/{id}/prune", s.pruneServer)
 	admin("POST /api/servers/{id}/proxy/{action}", s.proxyAction)
 
@@ -537,21 +540,62 @@ var Version = "dev"
 // spa serves the embedded frontend, falling back to index.html for client routes.
 func (s *Server) spa() http.Handler {
 	files := http.FileServerFS(s.ui)
+	scriptHashes := inlineScriptHashes(s.ui)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(r.URL.Path, "/")
 		if p == "" {
 			p = "index.html"
 		}
-		if _, err := fs.Stat(s.ui, p); err != nil {
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = "/"
-			w.Header().Set("Cache-Control", "no-cache")
-			files.ServeHTTP(w, r2)
-			return
-		}
 		if strings.HasPrefix(p, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			files.ServeHTTP(w, r)
+			return
+		}
+		if _, err := fs.Stat(s.ui, p); err != nil {
+			p = "index.html"
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		}
+		if p == "index.html" {
+			// Always revalidated, so an update is picked up on the next load.
+			w.Header().Set("Cache-Control", "no-cache")
+			s.pageSecurityHeaders(w, r, scriptHashes)
 		}
 		files.ServeHTTP(w, r)
 	})
 }
+
+// pageSecurityHeaders locks the interface down: only its own scripts (plus the
+// theme bootstrap inlined in index.html, by hash), styles, images and API.
+func (s *Server) pageSecurityHeaders(w http.ResponseWriter, r *http.Request, scriptHashes []string) {
+	host := r.Host // what the browser connected to; proxies forward the Host header
+	csp := "default-src 'self'; script-src 'self'" + strings.Join(scriptHashes, "") +
+		"; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:" +
+		"; connect-src 'self' ws://" + host + " wss://" + host +
+		"; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; worker-src 'self' blob:"
+	w.Header().Set("Content-Security-Policy", csp)
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+	if s.auth.SecureCookies() {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+	}
+}
+
+// inlineScriptHashes returns the CSP hash sources of the inline scripts of
+// index.html (the theme bootstrap), so they run under the policy.
+func inlineScriptHashes(ui fs.FS) []string {
+	if ui == nil {
+		return nil
+	}
+	b, err := fs.ReadFile(ui, "index.html")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range inlineScriptRe.FindAllSubmatch(b, -1) {
+		sum := sha256.Sum256(m[1])
+		out = append(out, " 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+	}
+	return out
+}
+
+var inlineScriptRe = regexp.MustCompile(`(?s)<script(?:\s+(?:type="module"|nonce="[^"]*"))?>(.*?)</script>`)

@@ -352,6 +352,7 @@ docker exec portdock portdock -disable-2fa user@example.com       # turn off two
 | `PORTDOCK_MAX_BUILDS` | `4` | Parallel deployments |
 | `PORTDOCK_NETWORK` | `portdock` | Docker network shared with Traefik |
 | `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API used by the AI assistant |
+| `PORTDOCK_TRUSTED_PROXIES` | private ranges | Proxies whose `X-Forwarded-For` is trusted for client addresses (sign-in limits, audit log): IPs or CIDR ranges, or `none` |
 | `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS for development / debug logs |
 
 Behind Docker Hub rate limits, build through a mirror: `BASE_REGISTRY=mirror.gcr.io/library docker compose build`.

@@ -134,6 +134,7 @@ Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/
 | `PORTDOCK_SECRET_KEY` | generat în `secret.key` | Cheia AES pentru secrete (base64 32 bytes sau passphrase). **Fă backup la ea.** |
 | `PORTDOCK_MAX_BUILDS` | `4` | Deploy-uri paralele |
 | `PORTDOCK_NETWORK` | `portdock` | Rețeaua Docker partajată cu Traefik |
+| `PORTDOCK_TRUSTED_PROXIES` | rețelele private | Proxy-urile al căror `X-Forwarded-For` e crezut pentru adresa clientului (limitele de autentificare, audit log): IP-uri sau intervale CIDR, ori `none` |
 | `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS pentru dev / log-uri debug |
 | `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API-ul folosit de asistentul AI (un gateway compatibil OpenRouter, de exemplu în rețele fără acces direct) |
 

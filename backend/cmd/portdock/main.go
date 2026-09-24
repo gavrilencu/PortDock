@@ -24,14 +24,14 @@ import (
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/github"
 	"github.com/portdock/portdock/internal/monitor"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
-	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/store"
-	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/internal/stream"
 	"github.com/portdock/portdock/internal/updater"
+	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/web"
 )
 
@@ -132,6 +132,9 @@ func run(resetPassword, disable2FA string) error {
 		}
 	}()
 
+	if err := auth.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return err
+	}
 	srv := api.New(api.Deps{
 		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh, Monitor: mon, Audit: auditStream, Uptime: checker,
 		Auth: auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
