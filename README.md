@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="frontend/public/favicon.svg" alt="PortDock" width="72" height="72" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="frontend/public/logo-on-dark.png" />
+  <img src="frontend/public/logo-on-light.png" alt="PortDock" width="283" height="122" />
+</picture>
 
-# PortDock
 
 **Your own Heroku, on your own servers.**
 Deploy applications, databases and services from Git or Docker — with HTTPS, rollbacks, monitoring and an AI assistant — on any Linux server you control.

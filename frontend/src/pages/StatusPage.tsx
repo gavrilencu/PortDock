@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { cn, duration } from "../lib/utils";
 import { intlLocale, t, tk } from "../lib/i18n";
 import { UptimeBars, uptimeText, type UptimeDay } from "../components/uptime";
+import { LogoMark } from "../components/Layout";
 
 interface PublicStatus {
   title: string;
@@ -95,7 +96,8 @@ export function StatusPage() {
 
         <p className="mt-12 text-center text-2xs text-faint">
           {t("Updated {time}", { time: new Date(s.updated_at).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" }) })} · {t("Powered by")}{" "}
-          <a href="https://github.com/gavrilencu/PortDock" target="_blank" rel="noreferrer" className="underline hover:text-muted">
+          <a href="https://github.com/gavrilencu/PortDock" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 underline hover:text-muted">
+            <LogoMark className="size-4 rounded" />
             PortDock
           </a>
         </p>
