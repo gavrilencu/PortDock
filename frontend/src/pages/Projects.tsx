@@ -110,7 +110,7 @@ export function ProjectsPage() {
                     </div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-1.5">
-                    {p.environments.map((e) => (
+                    {(p.environments ?? []).map((e) => (
                       <Badge key={e.id} tone={e.name === "production" ? "accent" : "neutral"}>
                         {e.name}
                       </Badge>
@@ -145,7 +145,7 @@ export function ProjectsPage() {
                       </td>
                       <td>
                         <div className="flex flex-wrap gap-1.5">
-                          {p.environments.map((e) => (
+                          {(p.environments ?? []).map((e) => (
                             <Badge key={e.id}>{e.name}</Badge>
                           ))}
                         </div>
