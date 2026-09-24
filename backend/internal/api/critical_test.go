@@ -1,12 +1,16 @@
 package api
 
 import (
+	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -170,5 +174,73 @@ func TestMemberInfrastructureVisibility(t *testing.T) {
 	}
 	if code, _ := e.do(dev, "POST", "/api/servers/1/validate", nil); code != 403 {
 		t.Errorf("member validate: %d", code)
+	}
+}
+
+// JSON answers are gzip-compressed for browsers that accept it; streams are not.
+func TestGzipResponses(t *testing.T) {
+	e := newTestEnv(t)
+	e.user("owner@corp.com", "correct-horse", "owner")
+	c := e.login("owner@corp.com")
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/auth/me", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("headers: %v", res.Header)
+	}
+	zr, err := gzip.NewReader(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var me map[string]any
+	if err := json.NewDecoder(zr).Decode(&me); err != nil || me["email"] != "owner@corp.com" {
+		t.Fatalf("decoded: %v %v", me, err)
+	}
+	// Without Accept-Encoding, plain JSON.
+	res2, _ := c.Get(e.srv.URL + "/api/auth/me")
+	res2.Body.Close()
+	if res2.Header.Get("Content-Encoding") != "" {
+		t.Fatal("compressed without Accept-Encoding")
+	}
+	// The event stream is never compressed.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req3, _ := http.NewRequestWithContext(ctx, "GET", e.srv.URL+"/api/events", nil)
+	req3.Header.Set("Accept-Encoding", "gzip")
+	if res3, err := c.Do(req3); err == nil {
+		res3.Body.Close()
+		if res3.Header.Get("Content-Encoding") == "gzip" {
+			t.Fatal("event stream compressed")
+		}
+	}
+}
+
+// Two concurrent first registrations produce exactly one owner.
+func TestFirstOwnerRace(t *testing.T) {
+	e := newTestEnv(t)
+	var wg sync.WaitGroup
+	codes := make([]int, 8)
+	for i := range codes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i], _ = e.do(e.client(), "POST", "/api/auth/register", map[string]string{"email": fmt.Sprintf("u%d@corp.com", i), "password": "correct-horse"})
+		}()
+	}
+	wg.Wait()
+	okCount := 0
+	for _, c := range codes {
+		if c == 200 {
+			okCount++
+		}
+	}
+	var owners int
+	_ = e.db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'owner'").Scan(&owners)
+	if okCount != 1 || owners != 1 {
+		t.Fatalf("registrations ok=%d owners=%d codes=%v", okCount, owners, codes)
 	}
 }
