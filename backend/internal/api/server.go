@@ -3,6 +3,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -598,7 +599,10 @@ func inlineScriptHashes(ui fs.FS) []string {
 	}
 	var out []string
 	for _, m := range inlineScriptRe.FindAllSubmatch(b, -1) {
-		sum := sha256.Sum256(m[1])
+		// The HTML parser turns CR and CRLF into LF before the browser hashes
+		// the script, so the hash is taken over the same normalized text.
+		src := bytes.ReplaceAll(bytes.ReplaceAll(m[1], []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
+		sum := sha256.Sum256(src)
 		out = append(out, " 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
 	}
 	return out
