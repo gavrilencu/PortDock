@@ -232,6 +232,11 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 	})
 }
 
+// handlerChain wraps the mux with the request middleware and JSON compression.
+func (s *Server) handlerChain(mux http.Handler) http.Handler {
+	return s.middleware(gzipMiddleware(mux))
+}
+
 // Handler builds the full HTTP handler.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -529,7 +534,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 404, map[string]string{"error": "no such endpoint"})
 	})
 	mux.Handle("/", s.spa())
-	return s.middleware(mux)
+	return s.handlerChain(mux)
 }
 
 // publicURL is the instance URL configured in Settings, or PORTDOCK_PUBLIC_URL.
