@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -134,7 +135,8 @@ func (s *Server) fleetContainers(w http.ResponseWriter, r *http.Request) error {
 	var mu sync.Mutex
 	list := []fleetContainer{}
 	servers := s.eachServer(ctx, only, func(ctx context.Context, x executor.Executor, srv store.Server) (int, error) {
-		cs, err := docker.PS(ctx, x, true)
+		sid := strconv.FormatInt(srv.ID, 10)
+		cs, err := cached(s.cache, "ps:"+sid, 5*time.Second, func() ([]docker.Container, error) { return docker.PS(ctx, x, true) })
 		if err != nil {
 			return 0, err
 		}
@@ -147,7 +149,8 @@ func (s *Server) fleetContainers(w http.ResponseWriter, r *http.Request) error {
 				}
 			}
 			if len(ids) > 0 {
-				if st, err := docker.Stats(ctx, x, ids...); err == nil {
+				// `docker stats` samples for a second on the server: one sample serves every viewer.
+				if st, err := cached(s.cache, "stats:"+sid, 10*time.Second, func() ([]docker.Stat, error) { return docker.Stats(ctx, x, ids...) }); err == nil {
 					for _, s := range st {
 						stats[s.Container] = s
 					}

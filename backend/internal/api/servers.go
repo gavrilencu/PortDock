@@ -325,6 +325,8 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) error {
 		return badRequest("%v", err)
 	}
 	s.activity(r, "container."+action, srv.Name+"/"+cid)
+	s.cache.forget("ps:")
+	s.cache.forget("inspect:")
 	return ok(w, map[string]bool{"ok": true})
 }
 
