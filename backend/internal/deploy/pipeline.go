@@ -635,15 +635,16 @@ func (j *job) rollout(ctx context.Context, image string) error {
 		j.removeContainers(started...)
 		return fmt.Errorf("update routing: %w", err)
 	}
+	// Traffic has moved: from here on a cancellation must not leave the old
+	// and the new version running side by side, so the teardown finishes
+	// even if the deployment was cancelled meanwhile.
+	ctx = context.WithoutCancel(ctx)
 	if routes != nil {
 		j.log.Printf("Routing %d domain(s) to the new version.", len(j.routes))
 		if len(old) > 0 {
 			// Give Traefik time to load the file before old upstreams disappear
 			// (inotify is instant on Linux; bind mounts on Docker Desktop lag).
-			select {
-			case <-ctx.Done():
-			case <-time.After(4 * time.Second):
-			}
+			time.Sleep(4 * time.Second)
 		}
 	}
 

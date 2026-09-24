@@ -69,9 +69,18 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	if u.Name == "" {
 		u.Name = strings.Split(c.Email, "@")[0]
 	}
-	if _, err := store.Insert(r.Context(), s.db, "users", &u); err != nil {
+	// The owner is created only while there is still no user at all; the
+	// check and the insert are one statement, so two concurrent first
+	// registrations cannot both become owner.
+	res, err := s.db.ExecContext(r.Context(), `INSERT INTO users(email, name, password_hash, role, created_at)
+		SELECT ?, ?, ?, 'owner', ? WHERE NOT EXISTS (SELECT 1 FROM users)`, u.Email, u.Name, u.PasswordHash, u.CreatedAt)
+	if err != nil {
 		return err
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return errStatus(403, "registration is closed; ask an administrator to invite you")
+	}
+	u.ID, _ = res.LastInsertId()
 	if err := s.ensureLocalServer(r); err != nil {
 		return err
 	}

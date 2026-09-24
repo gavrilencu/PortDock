@@ -65,6 +65,10 @@ func New(cfg config.Config, db *store.DB, box *secrets.Box, pool *executor.Pool,
 func (e *Engine) Start(ctx context.Context) {
 	_, _ = e.db.ExecContext(ctx, "UPDATE deployments SET status = 'failed', finished_at = ?, logs = logs || ? WHERE status = 'running'",
 		store.Now(), "\n[portdock] Deployment interrupted by a PortDock restart.\n")
+	// Their applications would otherwise stay "deploying" forever (reconcile
+	// skips that status and down alerts treat it as intentional).
+	_, _ = e.db.ExecContext(ctx, `UPDATE applications SET status = 'failed' WHERE status IN ('deploying', 'queued')
+		AND id NOT IN (SELECT application_id FROM deployments WHERE status IN ('queued', 'running'))`)
 	queued, _ := store.Select[store.Deployment](ctx, e.db, "SELECT id, uuid, application_id, status FROM deployments WHERE status = 'queued' ORDER BY id")
 	for i := 0; i < e.cfg.MaxConcurrentBuilds; i++ {
 		go e.worker(ctx)
