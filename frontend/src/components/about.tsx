@@ -54,7 +54,7 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
     icon: <Database />,
     title: tk("Databases and services"),
     items: [
-      tk("PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse"),
+      tk("PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, MongoDB, Redis, Valkey, ClickHouse"),
       tk("Scheduled backups, locally or to S3"),
       tk("Access from outside by domain"),
       tk("13 one-click services and a catalog of 127 Docker images"),

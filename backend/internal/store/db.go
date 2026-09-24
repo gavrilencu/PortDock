@@ -99,6 +99,12 @@ var migrations = []string{
 	`DELETE FROM settings WHERE key IN ('license_key', 'license_trial_started')`,
 	`ALTER TABLE databases ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE deployments ADD COLUMN version_id INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE backup_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'scheduled'`,
+	`ALTER TABLE backup_runs ADD COLUMN started_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE backup_runs ADD COLUMN finished_at TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE backup_runs ADD COLUMN restore_status TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE backup_runs ADD COLUMN restore_message TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE backup_runs ADD COLUMN restored_at TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

@@ -54,7 +54,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - Terminal SSH pe server (doar admin).
 
 **Resurse**
-- Baze de date: PostgreSQL 18, MySQL 8.4, MariaDB 11, MongoDB 8, Redis 8, Valkey 8, ClickHouse — parole generate, URL-uri de conexiune interne/publice, **backup programat (cron)**, retenție, **upload S3** (AWS, R2, B2, MinIO), download și **restore** din UI.
+- Baze de date: PostgreSQL 18, MySQL 8.4, MariaDB 11, Microsoft SQL Server 2022, MongoDB 8, Redis 8, Valkey 8, ClickHouse — parole generate, URL-uri de conexiune interne/publice, **backup programat (cron)**, retenție, **upload S3** (AWS, R2, B2, MinIO), download și **restore** din UI.
 - Servicii one-click: WordPress, n8n, Gitea, MinIO, Umami, Grafana, Vaultwarden, Ghost, Metabase, pgAdmin, NocoDB, Uptime Kuma, plus compose custom.
 - Variabile de mediu criptate (AES-256-GCM), build-time/runtime, secrete, override-uri pentru preview, editor `.env` bulk.
 - Domenii multiple cu HTTPS automat, redirect HTTP→HTTPS, domenii wildcard per server.

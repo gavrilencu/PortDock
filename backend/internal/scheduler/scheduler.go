@@ -53,7 +53,7 @@ func (s *Scheduler) Reload(ctx context.Context) {
 		s.cron.Remove(entry)
 		delete(s.jobs, id)
 	}
-	backups, err := store.Select[store.Backup](ctx, s.db, "SELECT * FROM backups WHERE enabled = 1")
+	backups, err := store.Select[store.Backup](ctx, s.db, "SELECT * FROM backups WHERE enabled = 1 AND schedule != ''")
 	if err != nil {
 		return
 	}
@@ -79,7 +79,8 @@ func (s *Scheduler) runBackup(id int64) {
 	if err != nil || !b.Enabled {
 		return
 	}
-	if _, err := s.engine.RunBackup(ctx, b); err != nil {
+	// The job itself notifies when the backup fails; this covers backups that can't start.
+	if _, err := s.engine.EnqueueBackup(ctx, b, deploy.BackupScheduled); err != nil {
 		db, _ := store.ByID[store.Database](ctx, s.db, "databases", b.DatabaseID)
 		s.notify.Send(notify.Event{
 			Name:    "backup.failed",

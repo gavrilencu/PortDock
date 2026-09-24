@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, Globe, History, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, Globe, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { Backup, BackupRun, DatabaseDetail } from "../lib/types";
-import { Badge, Button, Card, CopyField, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
+import type { Backup, BackupRunsResponse, DatabaseDetail } from "../lib/types";
+import { Badge, Button, Card, CopyButton, CopyField, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
 import { ContainerLogs } from "../components/ContainerTable";
 import { DNSBadge } from "../components/Domains";
 import { Terminal } from "../components/Terminal";
-import { formatBytes, timeAgo } from "../lib/utils";
+import { cn, formatBytes, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
-import { t, tk } from "../lib/i18n";
+import { intlLocale, t, tk, tMaybe, tx } from "../lib/i18n";
 
 type Tab = "overview" | "metrics" | "backups" | "logs" | "terminal" | "settings";
 
@@ -246,10 +246,29 @@ function PublicAccess({ db }: { db: DatabaseDetail }) {
   );
 }
 
+const runKind: Record<string, string> = {
+  manual: tk("Manual"),
+  scheduled: tk("Scheduled"),
+  "pre-restore": tk("Before restore"),
+};
+const runStatus: Record<string, { status: string; label: string }> = {
+  pending: { status: "queued", label: tk("Pending") },
+  running: { status: "deploying", label: tk("Running") },
+  success: { status: "success", label: tk("Success") },
+  failed: { status: "failed", label: tk("Failed") },
+};
+
 function Backups({ db }: { db: DatabaseDetail }) {
   const qc = useQueryClient();
   const confirm = useConfirm();
   const backups = useQuery({ queryKey: ["backups", db.id], queryFn: () => api.get<Backup[]>(`/databases/${db.id}/backups`) });
+  const runs = useQuery({
+    queryKey: ["backup-runs", db.id],
+    queryFn: () => api.get<BackupRunsResponse>(`/databases/${db.id}/backup-runs`),
+    refetchInterval: (q) =>
+      q.state.data?.runs.some((r) => r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running") ? 2000 : 15_000,
+  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["backup-runs", db.id] });
   const [edit, setEdit] = useState<Partial<Backup> | null>(null);
   const save = useMutation({
     mutationFn: (b: Partial<Backup>) => (b.id ? api.patch(`/backups/${b.id}`, b) : api.post(`/databases/${db.id}/backups`, b)),
@@ -264,26 +283,188 @@ function Backups({ db }: { db: DatabaseDetail }) {
     mutationFn: (bid: number) => api.del(`/backups/${bid}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["backups", db.id] }),
   });
-  if (backups.isLoading) return <Loading />;
+  const now = useMutation({
+    mutationFn: () => api.post(`/databases/${db.id}/backup-now`),
+    onSuccess: () => {
+      refresh();
+      toast.success(t("Backup queued"), { description: t("It starts as soon as other backups of this database have finished.") });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const restore = useMutation({
+    mutationFn: (rid: number) => api.post(`/backup-runs/${rid}/restore`),
+    onSuccess: () => {
+      refresh();
+      toast.success(t("Restore queued"), { description: t("A safety backup of the current data is taken first.") });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: (rid: number) => api.del(`/backup-runs/${rid}`),
+    onSuccess: () => {
+      refresh();
+      toast.success(t("Backup deleted"));
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  if (backups.isLoading || runs.isLoading) return <Loading />;
+  const info = runs.data!;
   return (
     <div className="space-y-6">
       <Card
-        title={t("Scheduled backups")}
-        description={t("Dumps are stored on the server under the PortDock data directory, with optional S3 upload.")}
+        title={t("Backups")}
+        description={tx("Stored on {server} in {directory}. Backups and restores of this database run one at a time; new requests wait as pending.", {
+          server: <span className="font-medium text-fg">{info.server}</span>,
+          directory: <code className="font-mono text-fg">{info.directory}</code>,
+        })}
         actions={
-          <Button size="sm" variant="primary" icon={<Plus className="size-3.5" />} onClick={() => setEdit({ schedule: "0 3 * * *", retention: 7, enabled: true, upload_s3: false })}>
+          info.supported && (
+            <Button size="sm" variant="primary" icon={<DatabaseBackup className="size-3.5" />} loading={now.isPending} onClick={() => now.mutate()}>
+              {t("Back up now")}
+            </Button>
+          )
+        }
+      >
+        {!info.supported ? (
+          <p className="px-5 py-4 text-sm text-muted">{t("Backups are not available for this database engine.")}</p>
+        ) : info.runs.length === 0 ? (
+          <div className="p-5">
+            <Empty icon={<DatabaseBackup />} title={t("No backups yet")} description={t("Back up now, or add a schedule below.")} />
+          </div>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <th>{t("Status")}</th>
+                <th>{t("Created")}</th>
+                <th>{t("Type")}</th>
+                <th className="!text-right">{t("Size")}</th>
+                <th>{t("File on the server")}</th>
+                <th className="!text-right">{t("Actions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {info.runs.map((r) => {
+                const st = runStatus[r.status] ?? { status: r.status, label: r.status };
+                const busy = r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running";
+                return (
+                  <tr key={r.id}>
+                    <td className="align-top">
+                      <div className="flex flex-col items-start gap-1 py-1">
+                        <StatusBadge status={st.status} label={t(st.label)} />
+                        {r.restore_status === "pending" && <Badge tone="info">{t("Restore pending")}</Badge>}
+                        {r.restore_status === "running" && <Badge tone="info">{r.restore_message ? tMaybe(r.restore_message) : t("Restoring…")}</Badge>}
+                        {r.restore_status === "success" && <Badge tone="success">{t("Restored {time}", { time: timeAgo(r.restored_at) })}</Badge>}
+                        {r.restore_status === "failed" && <Badge tone="danger">{t("Restore failed")}</Badge>}
+                      </div>
+                    </td>
+                    <td className="align-top text-xs text-muted" title={new Date(r.created_at).toLocaleString(intlLocale())}>
+                      <div className="py-2">{timeAgo(r.created_at)}</div>
+                    </td>
+                    <td className="align-top text-xs text-muted">
+                      <div className="py-2">{runKind[r.kind] ? t(runKind[r.kind]) : r.kind}</div>
+                    </td>
+                    <td className="align-top text-right text-xs tabular-nums">
+                      <div className="py-2">{r.size ? formatBytes(r.size) : "—"}</div>
+                    </td>
+                    <td className="max-w-md align-top">
+                      <div className="py-1.5">
+                        {r.file && r.status === "success" ? (
+                          <div className="flex min-w-0 items-center gap-1">
+                            <code className="truncate font-mono text-xs text-muted" title={r.file}>
+                              {r.file.split("/").pop()}
+                            </code>
+                            <CopyButton value={r.file} />
+                          </div>
+                        ) : (
+                          <span className="text-xs text-faint">{r.status === "failed" ? "" : "—"}</span>
+                        )}
+                        {r.message && <p className={cn("mt-1 text-xs", r.status === "failed" ? "text-danger" : "text-warning")}>{tMaybe(r.message)}</p>}
+                        {r.restore_status === "failed" && r.restore_message && <p className="mt-1 text-xs text-danger">{tMaybe(r.restore_message)}</p>}
+                      </div>
+                    </td>
+                    <td className="align-top">
+                      <div className="flex justify-end gap-1 py-1">
+                        {r.status === "success" && (
+                          <>
+                            <a href={`/api/backup-runs/${r.id}/download`} download>
+                              <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
+                                {t("Download")}
+                              </Button>
+                            </a>
+                            {info.restore && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={busy}
+                                loading={restore.isPending && restore.variables === r.id}
+                                onClick={async () => {
+                                  if (
+                                    await confirm({
+                                      title: t("Restore this backup?"),
+                                      description: t("The data in {name} is replaced by this backup. A safety backup of the current data is taken first, so you can go back.", { name: db.name }),
+                                      danger: true,
+                                      confirmText: t("Restore"),
+                                      typeToConfirm: db.name,
+                                    })
+                                  )
+                                    restore.mutate(r.id);
+                                }}
+                              >
+                                <RotateCw className="size-3.5" />
+                                {t("Restore")}
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        {!busy && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            title={t("Delete backup")}
+                            onClick={async () => {
+                              if (await confirm({ title: t("Delete this backup?"), description: t("The file is removed from the server."), danger: true, confirmText: t("Delete") })) remove.mutate(r.id);
+                            }}
+                          >
+                            <Trash2 className="text-danger" />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+        {info.supported && !info.restore && (
+          <p className="border-t border-border px-5 py-3 text-xs text-muted">{t("This engine's backups can be downloaded but not restored from PortDock: restore them with the engine's own tools.")}</p>
+        )}
+      </Card>
+
+      <Card
+        title={t("Scheduled backups")}
+        description={t("Backups on a schedule, each keeping its last N files, with optional S3 upload.")}
+        actions={
+          <Button size="sm" icon={<Plus className="size-3.5" />} onClick={() => setEdit({ schedule: "0 3 * * *", retention: 7, enabled: true, upload_s3: false })}>
             {t("Add schedule")}
           </Button>
         }
       >
         {backups.data!.length === 0 ? (
           <div className="p-5">
-            <Empty icon={<CalendarClock />} title={t("No backup schedules")} description={t("Create a schedule, or run a one-off backup after adding one.")} />
+            <Empty icon={<CalendarClock />} title={t("No backup schedules")} description={t("Add a schedule to back up this database automatically.")} />
           </div>
         ) : (
           <div className="divide-y divide-border">
             {backups.data!.map((b) => (
-              <BackupItem key={b.id} b={b} onEdit={() => setEdit(b)} onDelete={async () => (await confirm({ title: t("Delete this schedule?"), danger: true, confirmText: t("Delete") })) && del.mutate(b.id)} db={db} />
+              <BackupItem
+                key={b.id}
+                b={b}
+                onRun={refresh}
+                onEdit={() => setEdit(b)}
+                onDelete={async () => (await confirm({ title: t("Delete this schedule?"), danger: true, confirmText: t("Delete") })) && del.mutate(b.id)}
+              />
             ))}
           </div>
         )}
@@ -315,102 +496,30 @@ function Backups({ db }: { db: DatabaseDetail }) {
   );
 }
 
-function BackupItem({ b, db, onEdit, onDelete }: { b: Backup; db: DatabaseDetail; onEdit: () => void; onDelete: () => void }) {
-  const qc = useQueryClient();
-  const confirm = useConfirm();
-  const [open, setOpen] = useState(false);
-  const runs = useQuery({ queryKey: ["backup-runs", b.id], queryFn: () => api.get<BackupRun[]>(`/backups/${b.id}/runs`), enabled: open, refetchInterval: open ? 5000 : false });
+function BackupItem({ b, onRun, onEdit, onDelete }: { b: Backup; onRun: () => void; onEdit: () => void; onDelete: () => void }) {
   const run = useMutation({
     mutationFn: () => api.post(`/backups/${b.id}/run`),
     onSuccess: () => {
-      toast.success(t("Backup started"));
-      setOpen(true);
-      setTimeout(() => qc.invalidateQueries({ queryKey: ["backup-runs", b.id] }), 1500);
+      toast.success(t("Backup queued"));
+      onRun();
     },
     onError: (e) => toast.error(e.message),
   });
-  const restore = useMutation({
-    mutationFn: (rid: number) => api.post(`/backup-runs/${rid}/restore`),
-    onSuccess: () => toast.success(t("Restore completed")),
-    onError: (e) => toast.error(e.message),
-  });
   return (
-    <div>
-      <div className="flex flex-wrap items-center gap-4 px-5 py-3">
-        <code className="rounded-md bg-panel-2 px-2 py-1 font-mono text-xs">{b.schedule}</code>
-        <div className="flex-1 text-sm text-muted">
-          {t("keep {count} · last run {time}", { count: b.retention, time: timeAgo(b.last_run_at) })} {b.upload_s3 && <Badge tone="info">S3</Badge>} {!b.enabled && <Badge>{t("paused")}</Badge>}
-        </div>
-        <Button size="sm" icon={<History className="size-3.5" />} onClick={() => setOpen(!open)}>
-          {t("History")}
-        </Button>
-        <Button size="sm" variant="primary" icon={<Play className="size-3.5" />} loading={run.isPending} onClick={() => run.mutate()}>
-          {t("Run now")}
-        </Button>
-        <Button size="icon" variant="ghost" onClick={onEdit}>
-          <Settings2 className="size-4" />
-        </Button>
-        <Button size="icon" variant="ghost" onClick={onDelete}>
-          <Trash2 className="size-4 text-danger" />
-        </Button>
+    <div className="flex flex-wrap items-center gap-4 px-5 py-3">
+      <code className="rounded-md bg-panel-2 px-2 py-1 font-mono text-xs">{b.schedule}</code>
+      <div className="flex-1 text-sm text-muted">
+        {t("keep {count} · last run {time}", { count: b.retention, time: timeAgo(b.last_run_at) })} {b.upload_s3 && <Badge tone="info">S3</Badge>} {!b.enabled && <Badge>{t("paused")}</Badge>}
       </div>
-      {open && (
-        <div className="border-t border-border bg-panel-2/30">
-          {runs.isLoading ? (
-            <Loading />
-          ) : !runs.data?.length ? (
-            <p className="px-5 py-4 text-sm text-muted">{t("No runs yet.")}</p>
-          ) : (
-            <Table>
-              <thead>
-                <tr>
-                  <th>{t("Status")}</th>
-                  <th>{t("When")}</th>
-                  <th>{t("Size")}</th>
-                  <th>{t("File / message")}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {runs.data.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <StatusBadge status={r.status === "running" ? "deploying" : r.status} />
-                    </td>
-                    <td className="text-xs text-muted">{timeAgo(r.created_at)}</td>
-                    <td className="text-xs tabular-nums">{r.size ? formatBytes(r.size) : "—"}</td>
-                    <td className="max-w-md truncate font-mono text-xs text-muted" title={r.message || r.file}>
-                      {r.message || r.file.split("/").pop()}
-                    </td>
-                    <td>
-                      {r.status === "success" && (
-                        <div className="flex justify-end gap-1">
-                          <a href={`/api/backup-runs/${r.id}/download`}>
-                            <Button size="sm" variant="ghost" icon={<Download className="size-3.5" />}>
-                              {t("Download")}
-                            </Button>
-                          </a>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            loading={restore.isPending && restore.variables === r.id}
-                            onClick={async () => {
-                              if (await confirm({ title: t("Restore this backup?"), description: t("Data in {name} will be overwritten by this dump.", { name: db.name }), danger: true, confirmText: t("Restore"), typeToConfirm: db.name }))
-                                restore.mutate(r.id);
-                            }}
-                          >
-                            {t("Restore")}
-                          </Button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          )}
-        </div>
-      )}
+      <Button size="sm" icon={<Play className="size-3.5" />} loading={run.isPending} onClick={() => run.mutate()}>
+        {t("Run now")}
+      </Button>
+      <Button size="icon" variant="ghost" onClick={onEdit}>
+        <Settings2 className="size-4" />
+      </Button>
+      <Button size="icon" variant="ghost" onClick={onDelete}>
+        <Trash2 className="size-4 text-danger" />
+      </Button>
     </div>
   );
 }

@@ -814,6 +814,26 @@ function Notifications() {
   );
 }
 
+/** Queues a manual backup of every database of the instance. */
+function BackupAll() {
+  const all = useMutation({
+    mutationFn: () => api.post<{ queued: number }>("/databases/backup-all"),
+    onSuccess: (r) => toast.success(t("{n} database backup queued|{n} database backups queued", { n: r.queued }), { description: t("Follow them in the Backups tab of each database.") }),
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <Card
+      title={t("Back up all databases")}
+      description={t("Queues a backup of every database now. Each is stored on its own server and can be downloaded from the database's Backups tab.")}
+      actions={
+        <Button size="sm" variant="primary" loading={all.isPending} onClick={() => all.mutate()}>
+          {t("Back up all now")}
+        </Button>
+      }
+    />
+  );
+}
+
 function Storage() {
   const qc = useQueryClient();
   const { data, isLoading } = useSettings();
@@ -831,6 +851,8 @@ function Storage() {
   });
   if (isLoading) return <Loading />;
   return (
+    <div className="space-y-6">
+    <BackupAll />
     <Card title={t("S3 backup destination")} description={t("AWS S3, Cloudflare R2, Backblaze B2, MinIO or any S3-compatible storage. Enable 'Upload to S3' per backup schedule.")}>
       <div className="grid gap-4 p-5 md:grid-cols-2">
         <Field label={t("Endpoint")} hint={t("Leave empty for AWS S3.")}>
@@ -855,5 +877,6 @@ function Storage() {
         </div>
       </div>
     </Card>
+    </div>
   );
 }

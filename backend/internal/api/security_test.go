@@ -51,7 +51,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	pool := executor.NewPool(db, box)
 	n := notify.New(db, box)
 	g := gh.New(db, box)
-	cfg := config.Config{DataDir: dir, PublicURL: "http://placeholder"}
+	cfg := config.Config{DataDir: filepath.ToSlash(dir), PublicURL: "http://placeholder", ProxyNetwork: "portdock-test"}
 	engine := deploy.New(cfg, db, box, pool, hub, n, g)
 	s := New(Deps{Config: cfg, DB: db, Box: box, Auth: auth.New(db, false), Pool: pool, Hub: hub, Engine: engine, Notifier: n, GitHub: g})
 	ts := httptest.NewServer(s.Handler())

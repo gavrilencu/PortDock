@@ -93,8 +93,9 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 <td valign="top">
 
 **🗄️ Databases & services**
-- PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse
-- Scheduled backups with retention, upload to S3 (AWS, R2, B2, MinIO), one-click restore
+- PostgreSQL, MySQL, MariaDB, Microsoft SQL Server, MongoDB, Redis, Valkey, ClickHouse
+- Online backups for every engine, following each one's documentation; manual, scheduled or all at once, queued per database, downloadable
+- Restore in one click, after an automatic safety backup; retention, upload to S3 (AWS, R2, B2, MinIO)
 - Access from outside by domain or public IP
 - 13 one-click services (n8n, WordPress, Gitea, Grafana, Vaultwarden, MinIO…) and a catalog of 127 Docker images
 
@@ -202,6 +203,27 @@ If you know Coolify, Dokploy or CapRover, PortDock will feel familiar — with v
 - Every successful production deployment is saved as a numbered version. Single-container applications tag their image; compose applications tag the image of every built service and keep the compose file.
 - The live version plus the last 5 are kept for 15 days; older ones are removed automatically.
 - In the **Versions** tab, drag a version onto **Live**, press **Deploy** or **Roll back to vN**. Nothing is rebuilt, the current variables are used, and the old version stops only once the new one is healthy. Approvals apply when the environment requires them.
+
+</details>
+
+<details>
+<summary><b>Database backups</b></summary>
+
+- **Back up now**, a **schedule** (cron, keeps its last N files, optional S3 upload) or **Settings → Backup storage → Back up all now**.
+- Backups and restores of a database run one at a time: new requests wait as **Pending**; at most two jobs run per server.
+- Files are stored on the database's server in `/data/portdock/backups/<database>/`; the Backups tab shows the path and downloads them.
+- **Restore** first takes a safety backup of the current data (kept as *Before restore*), then replaces the data; if the safety backup fails, nothing is restored.
+
+| Engine | Backup | Restore |
+|---|---|---|
+| PostgreSQL | `pg_dump` custom format | `pg_restore --clean --if-exists` in a single transaction |
+| MySQL / MariaDB | `mysqldump` / `mariadb-dump --single-transaction` with routines, events and triggers | `mysql` / `mariadb` |
+| Microsoft SQL Server | copy-only full backup `WITH CHECKSUM`, checked with `RESTORE VERIFYONLY` | `RESTORE … WITH REPLACE` (sessions closed with `SINGLE_USER`, reopened afterwards) |
+| MongoDB | `mongodump --archive --gzip` | `mongorestore --drop` |
+| ClickHouse | table schemas and data in Native format | tables recreated and reloaded, then views |
+| Redis / Valkey | `BGSAVE` (doesn't block clients) → RDB file | download only |
+
+SQL Server runs the free **Express** edition (`MSSQL_PID`); it needs about 2 GB of memory.
 
 </details>
 
