@@ -76,9 +76,9 @@ func TestReadOnly(t *testing.T) {
 		"clickhouse": {"SELECT 1", "SHOW TABLES", "DESCRIBE t", "EXISTS TABLE t"},
 	}
 	bad := map[string][]string{
-		"postgres":   {"INSERT INTO t VALUES (1)", "DELETE FROM t", "COMMIT", "SET ROLE postgres", "RESET ROLE", "SELECT set_config('role', 'none', false)", "SELECT pg_terminate_backend(1)", "COPY t TO STDOUT"},
+		"postgres":   {"INSERT INTO t VALUES (1)", "DELETE FROM t", "COMMIT", "SET ROLE postgres", "RESET ROLE", "SELECT set_config('role', 'none', false)", "SELECT pg_terminate_backend(1)", "COPY t TO STDOUT", `SELECT "set_config"('role', 'none', true)`, `SELECT "pg_terminate_backend"(1)`, `SELECT "dblink_connect"('x')`},
 		"mysql":      {"UPDATE t SET a = 1", "SELECT * FROM t INTO OUTFILE '/tmp/x'", "SET SESSION TRANSACTION READ WRITE", "CALL p()"},
-		"mssql":      {"EXEC xp_cmdshell 'id'", "SELECT * INTO t2 FROM t", "REVERT", "SELECT * FROM OPENROWSET('x')", "UPDATE t SET a = 1"},
+		"mssql":      {"EXEC xp_cmdshell 'id'", "SELECT * INTO t2 FROM t", "REVERT", "SELECT * FROM OPENROWSET('x')", "UPDATE t SET a = 1", "SELECT * [into] t2 FROM t", `SELECT * FROM "OPENROWSET"('x')`},
 		"clickhouse": {"INSERT INTO t VALUES (1)", "SET readonly = 0", "SELECT 1 INTO OUTFILE 'x'", "SYSTEM SHUTDOWN"},
 	}
 	for eng, list := range ok {
@@ -157,5 +157,22 @@ func TestParseNoOutput(t *testing.T) {
 		if res == nil || string(b) != "[]" {
 			t.Errorf("%s: %s", engine, b)
 		}
+	}
+}
+
+// Read-only PostgreSQL scripts run as a login role that can only read, not as
+// the superuser with SET ROLE.
+func TestPostgresReadOnlyRunsAsReadOnlyRole(t *testing.T) {
+	st, _ := Split("postgres", "SELECT 1")
+	cmd, in := Command("postgres", "postgres", "", "shop", st, true)
+	if !strings.Contains(cmd, "psql -U portdock_readonly -d shop") || !strings.Contains(cmd, "CREATE ROLE portdock_readonly LOGIN") || !strings.Contains(cmd, " && ") {
+		t.Fatalf("command: %s", cmd)
+	}
+	if strings.Contains(in, "SET LOCAL ROLE") || !strings.Contains(in, "BEGIN READ ONLY") || !strings.Contains(in, "ROLLBACK") {
+		t.Fatalf("script: %s", in)
+	}
+	cmd, in = Command("postgres", "postgres", "", "shop", st, false)
+	if strings.Contains(cmd, "portdock_readonly") || strings.Contains(in, "READ ONLY") {
+		t.Fatalf("write mode: %s %s", cmd, in)
 	}
 }

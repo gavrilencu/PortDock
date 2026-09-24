@@ -253,7 +253,51 @@ func (s *Server) serverStats(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest("%v", err)
 	}
+	if !auth.UserFrom(r.Context()).IsAdmin() {
+		// Members see the usage of their own containers only.
+		cs, err := docker.PS(r.Context(), x, true)
+		if err != nil {
+			return badRequest("%v", err)
+		}
+		visible := map[string]bool{}
+		for _, c := range s.visibleContainers(r, cs) {
+			visible[c.Name] = true
+			if len(c.ID) >= 12 {
+				visible[c.ID[:12]] = true
+			}
+		}
+		stats = filterBy(stats, func(st docker.Stat) bool {
+			id := st.Container
+			if len(id) >= 12 {
+				id = id[:12]
+			}
+			return visible[st.Name] || visible[id]
+		})
+	}
 	return ok(w, stats)
+}
+
+// visibleContainers keeps the containers of resources the user can access.
+func (s *Server) visibleContainers(r *http.Request, cs []docker.Container) []docker.Container {
+	if auth.UserFrom(r.Context()).IsAdmin() {
+		return cs
+	}
+	uuids := map[string]int64{}
+	for _, t := range []string{"applications", "databases", "services"} {
+		type row struct {
+			UUID string `db:"uuid"`
+			Env  int64  `db:"environment_id"`
+		}
+		rows, _ := store.Select[row](r.Context(), s.db, "SELECT uuid, environment_id FROM "+t)
+		for _, x := range rows {
+			uuids[x.UUID] = x.Env
+		}
+	}
+	visible := s.envVisibility(r.Context())
+	return filterBy(cs, func(c docker.Container) bool {
+		env, ok := uuids[c.Labels[docker.LabelResource]]
+		return ok && visible(env)
+	})
 }
 
 func (s *Server) serverContainers(w http.ResponseWriter, r *http.Request) error {
@@ -265,26 +309,7 @@ func (s *Server) serverContainers(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return badRequest("%v", err)
 	}
-	if !auth.UserFrom(r.Context()).IsAdmin() {
-		// Members only see containers of resources they can access.
-		uuids := map[string]int64{}
-		for _, t := range []string{"applications", "databases", "services"} {
-			type row struct {
-				UUID string `db:"uuid"`
-				Env  int64  `db:"environment_id"`
-			}
-			rows, _ := store.Select[row](r.Context(), s.db, "SELECT uuid, environment_id FROM "+t)
-			for _, x := range rows {
-				uuids[x.UUID] = x.Env
-			}
-		}
-		visible := s.envVisibility(r.Context())
-		cs = filterBy(cs, func(c docker.Container) bool {
-			env, ok := uuids[c.Labels[docker.LabelResource]]
-			return ok && visible(env)
-		})
-	}
-	return ok(w, cs)
+	return ok(w, s.visibleContainers(r, cs))
 }
 
 func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) error {
