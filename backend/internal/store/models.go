@@ -156,6 +156,13 @@ type Application struct {
 	GitHubAppID         int64  `db:"github_app_id" json:"github_app_id"`
 	GitHubInstallation  int64  `db:"github_installation_id" json:"github_installation_id"`
 	GitFullName         string `db:"git_full_name" json:"git_full_name"`
+	// Azure DevOps source: the connection (token), project and repository ids, and
+	// the service hook that notifies PortDock of pushes.
+	AzureConnectionID int64  `db:"azure_connection_id" json:"azure_connection_id"`
+	AzureProjectID    string `db:"azure_project_id" json:"azure_project_id"`
+	AzureRepoID       string `db:"azure_repo_id" json:"azure_repo_id"`
+	AzureHookID       string `db:"azure_hook_id" json:"azure_hook_id"`
+	AzureHookError    string `db:"azure_hook_error" json:"azure_hook_error"`
 	BuildPack           string `db:"build_pack" json:"build_pack"`
 	BaseDirectory       string `db:"base_directory" json:"base_directory"`
 	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`
@@ -360,6 +367,15 @@ func SplitList(s string) []string {
 		}
 	}
 	return out
+}
+
+// AzureConnection is an Azure DevOps organization (or collection) reached with a personal access token.
+type AzureConnection struct {
+	ID        int64  `db:"id" json:"id"`
+	Name      string `db:"name" json:"name"`
+	URL       string `db:"url" json:"url"`
+	Token     string `db:"token" json:"-"` // encrypted
+	CreatedAt string `db:"created_at" json:"created_at"`
 }
 
 type GitHubApp struct {

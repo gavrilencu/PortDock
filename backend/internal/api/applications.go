@@ -47,6 +47,7 @@ func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
 		"github": base + "github/" + a.UUID,
 		"gitlab": base + "gitlab/" + a.UUID,
 		"gitea":  base + "gitea/" + a.UUID,
+		"azure":  base + "azure/" + a.UUID,
 		"deploy": base + "deploy/" + a.UUID + "?token=" + a.WebhookSecret,
 	}}
 	dto.Environment, _ = store.ByID[store.Environment](ctx, s.db, "environments", a.EnvironmentID)
@@ -89,6 +90,13 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	if a.BuildPack == "image" {
 		a.SourceType = "image"
 		a.GitHubAppID = 0
+		a.AzureConnectionID = 0
+	}
+	if a.AzureConnectionID != 0 {
+		a.GitHubAppID = 0
+	}
+	if err := s.validAzureSource(ctx, a); err != nil {
+		return err
 	}
 	if err := s.ensureGitHubSource(ctx, a); err != nil {
 		return err
@@ -243,6 +251,7 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	a.UUID = secrets.RandomToken(8)
 	a.WebhookSecret = secrets.RandomToken(20)
 	a.CreatedAt, a.UpdatedAt = store.Now(), store.Now()
+	a.AzureHookID, a.AzureHookError = "", ""
 	if in.GitToken != nil {
 		a.GitToken = s.box.Encrypt(*in.GitToken)
 	}
@@ -311,6 +320,10 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	if err := s.applyAppServers(r, a, in.ServerIDs); err != nil {
 		return err
 	}
+	if a.AzureConnectionID != 0 {
+		_ = s.ensureAzureHook(r.Context(), a) // the outcome is shown on the CI/CD tab
+		a, _ = store.ByID[store.Application](r.Context(), s.db, "applications", a.ID)
+	}
 	s.activity(r, "application.create", a.Name)
 	return ok(w, s.appOut(r.Context(), a))
 }
@@ -337,6 +350,7 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 	a.ID, a.UUID, a.CreatedAt, a.Status, a.CurrentImage, a.WebhookSecret, a.GitToken =
 		orig.ID, orig.UUID, orig.CreatedAt, orig.Status, orig.CurrentImage, orig.WebhookSecret, orig.GitToken
 	a.Domains, a.HTTPS = orig.Domains, orig.HTTPS
+	a.AzureHookID, a.AzureHookError = orig.AzureHookID, orig.AzureHookError
 	if in.GitToken != nil {
 		a.GitToken = s.box.Encrypt(*in.GitToken)
 	}
@@ -358,6 +372,17 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 	if err := s.applyAppServers(r, a, in.ServerIDs); err != nil {
 		return err
 	}
+	// A new Azure DevOps repository needs its own service hook.
+	if a.AzureConnectionID != orig.AzureConnectionID || a.AzureProjectID != orig.AzureProjectID || a.AzureRepoID != orig.AzureRepoID {
+		s.removeAzureHook(r.Context(), orig)
+		a.AzureHookID = ""
+		if a.AzureConnectionID != 0 {
+			_ = s.ensureAzureHook(r.Context(), a)
+		} else {
+			_, _ = s.db.ExecContext(r.Context(), "UPDATE applications SET azure_hook_id = '', azure_hook_error = '' WHERE id = ?", a.ID)
+		}
+		a, _ = store.ByID[store.Application](r.Context(), s.db, "applications", a.ID)
+	}
 	s.activity(r, "application.update", a.Name)
 	s.hub.Event("application", a.ID, a.Status)
 	return ok(w, s.appOut(r.Context(), a))
@@ -374,6 +399,7 @@ func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) error
 	if err := store.Delete(r.Context(), s.db, "applications", a.ID); err != nil {
 		return err
 	}
+	s.removeAzureHook(r.Context(), a)
 	_, _ = s.db.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = 'application' AND owner_id = ?", a.ID)
 	s.activity(r, "application.delete", a.Name)
 	s.hub.Event("application", a.ID, "deleted")
@@ -439,6 +465,10 @@ func (s *Server) regenerateWebhookSecret(w http.ResponseWriter, r *http.Request)
 	a.WebhookSecret = secrets.RandomToken(20)
 	if _, err := s.db.ExecContext(r.Context(), "UPDATE applications SET webhook_secret = ? WHERE id = ?", a.WebhookSecret, a.ID); err != nil {
 		return err
+	}
+	if a.AzureConnectionID != 0 {
+		_ = s.ensureAzureHook(r.Context(), a) // the service hook sends the secret
+		a, _ = store.ByID[store.Application](r.Context(), s.db, "applications", a.ID)
 	}
 	return ok(w, s.appOut(r.Context(), a))
 }

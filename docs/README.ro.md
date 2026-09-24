@@ -17,7 +17,8 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 ## Funcționalități
 
 **CI/CD**
-- Deploy din orice repo Git (GitHub, GitLab, Gitea/Forgejo, Bitbucket), public sau privat (token).
+- Deploy din orice repo Git (GitHub, **Azure DevOps**, GitLab, Gitea/Forgejo, Bitbucket), public sau privat (token).
+- **Azure DevOps**: conectezi organizația din *Settings → Git sources* cu un personal access token (scope-uri *Code: Read* și *Service Hooks: Read, query & manage*), alegi repozitoriul la creare, iar PortDock adaugă singur un service hook care face deploy la fiecare push.
 - Build packs: **Dockerfile**, **Nixpacks**, **static** (nginx + fallback SPA), **auto-detect** (generează Dockerfile pentru Node/Bun/pnpm/yarn, Python, Go, site static), **Docker Compose**, **imagine Docker**.
 - Webhook-uri cu verificare HMAC/token: push → deploy; pull request → **preview deployment** cu domeniu propriu, șters automat la închiderea PR-ului.
 - **Watch paths** (glob-uri cu `**` și `!`) pentru monorepo-uri.

@@ -7,15 +7,21 @@ import { api } from "../lib/api";
 import type { ApplicationDetail, BuildPack, BuildSuggestion, ComposeService, GitHubRepo } from "../lib/types";
 import { Button, Card, Field, Input, PasswordInput, SegmentedControl, Switch } from "../components/ui";
 import { BranchSelect, GitHubMark, RepoPicker, useGitHubApps } from "../components/github";
+import { AzureBranchSelect, AzureMark, AzureRepoPicker, ConnectAzureLink, useAzureConnections, type AzureSelection } from "../components/azure";
 import { BuildSettings, applySuggestion } from "../components/BuildSettings";
 import { t, tx } from "../lib/i18n";
 
-/** Creates an application from GitHub, any Git URL, or a Docker image. */
+/** Creates an application from GitHub, Azure DevOps, any Git URL, or a Docker image. */
 export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "image" | "compose"; envId: number; serverId: number; onCreated: (a: ApplicationDetail) => void }) {
   const ghApps = useGitHubApps();
   const hasGitHub = (ghApps.data?.length ?? 0) > 0;
-  const [source, setSource] = useState<"github" | "url">("github");
+  const azConns = useAzureConnections();
+  const hasAzure = (azConns.data?.length ?? 0) > 0;
+  const [picked, setSource] = useState<"github" | "azure" | "url" | null>(null);
+  // Until one is picked, the first connected provider is the source.
+  const source = picked === "github" && hasGitHub ? "github" : picked === "azure" && hasAzure ? "azure" : picked === "url" ? "url" : hasGitHub ? "github" : hasAzure ? "azure" : "url";
   const [repo, setRepo] = useState<GitHubRepo | null>(null);
+  const [azRepo, setAzRepo] = useState<AzureSelection | null>(null);
   const [picking, setPicking] = useState(true);
   const [touchedPack, setTouchedPack] = useState(false);
   const [privateRepo, setPrivateRepo] = useState(false);
@@ -40,26 +46,31 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
     deploy: true,
   });
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
-  const useGH = kind !== "image" && source === "github" && hasGitHub;
+  const useGH = kind !== "image" && source === "github";
+  const useAZ = kind !== "image" && source === "azure";
   // Domains per compose service (frontend, backend…), keyed by service name.
   const [svcDomains, setSvcDomains] = useState<Record<string, { domain: string; port: string }>>({});
 
   // Suggest the deployment type from the selected repository and branch.
   const detect = useQuery({
-    queryKey: ["github-detect", repo?.github_app_id, repo?.installation_id, repo?.full_name, f.git_branch, f.base_directory],
+    queryKey: useAZ
+      ? ["azure-detect", azRepo?.connection_id, azRepo?.id, f.git_branch, f.base_directory]
+      : ["github-detect", repo?.github_app_id, repo?.installation_id, repo?.full_name, f.git_branch, f.base_directory],
     queryFn: () =>
       api.get<BuildSuggestion>(
-        `/github/detect?app=${repo!.github_app_id}&installation=${repo!.installation_id}&repo=${encodeURIComponent(repo!.full_name)}&ref=${encodeURIComponent(f.git_branch)}&base=${encodeURIComponent(f.base_directory)}`,
+        useAZ
+          ? `/azure/detect?connection=${azRepo!.connection_id}&project=${encodeURIComponent(azRepo!.project.id)}&repo=${encodeURIComponent(azRepo!.id)}&ref=${encodeURIComponent(f.git_branch)}&base=${encodeURIComponent(f.base_directory)}`
+          : `/github/detect?app=${repo!.github_app_id}&installation=${repo!.installation_id}&repo=${encodeURIComponent(repo!.full_name)}&ref=${encodeURIComponent(f.git_branch)}&base=${encodeURIComponent(f.base_directory)}`,
       ),
-    enabled: useGH && !!repo && !!f.git_branch,
+    enabled: ((useGH && !!repo) || (useAZ && !!azRepo)) && !!f.git_branch,
     retry: false,
   });
   useEffect(() => {
     if (detect.data && !touchedPack && kind === "git") setF((x) => ({ ...x, ...applySuggestion(detect.data) }));
   }, [detect.data, touchedPack, kind]);
 
-  const repoName = useGH ? (repo?.name ?? "") : (f.git_repository.replace(/\.git$/, "").split("/").pop() ?? "");
-  const composeServices = useGH && f.build_pack === "compose" ? (detect.data?.compose_services ?? []) : [];
+  const repoName = useGH ? (repo?.name ?? "") : useAZ ? (azRepo?.name ?? "") : (f.git_repository.replace(/\.git$/, "").split("/").pop() ?? "");
+  const composeServices = (useGH || useAZ) && f.build_pack === "compose" ? (detect.data?.compose_services ?? []) : [];
 
   const create = useMutation({
     mutationFn: async () => {
@@ -82,6 +93,13 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
         body.github_app_id = repo.github_app_id;
         body.github_installation_id = repo.installation_id;
         body.git_full_name = repo.full_name;
+        delete body.git_token;
+      } else if (useAZ) {
+        if (!azRepo) throw new Error(t("Select a repository"));
+        body.azure_connection_id = azRepo.connection_id;
+        body.azure_project_id = azRepo.project.id;
+        body.azure_repo_id = azRepo.id;
+        body.git_repository = azRepo.remote_url;
         delete body.git_token;
       } else if (!privateRepo) {
         delete body.git_token;
@@ -129,29 +147,52 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
       </Card>
     );
 
-  const ready = !useGH || (repo && !picking);
+  const ready = useGH ? repo && !picking : useAZ ? azRepo && !picking : true;
 
   return (
     <div className="space-y-6">
       <Card
         title={t("Source")}
-        description={useGH ? t("Pick a repository from your connected GitHub accounts.") : t("Clone from any Git host over HTTPS.")}
+        description={
+          useGH ? t("Pick a repository from your connected GitHub accounts.") : useAZ ? t("Pick a repository from your connected Azure DevOps organizations.") : t("Clone from any Git host over HTTPS.")
+        }
         actions={
-          hasGitHub && (
+          (hasGitHub || hasAzure) && (
             <SegmentedControl
               value={source}
-              onChange={setSource}
+              onChange={(v) => {
+                setSource(v);
+                setPicking(true);
+                setTouchedPack(false);
+              }}
               options={[
-                {
-                  value: "github",
-                  label: (
-                    <span className="flex items-center gap-1.5">
-                      <GitHubMark className="size-3.5" />
-                      GitHub
-                    </span>
-                  ),
-                },
-                { value: "url", label: t("Git URL") },
+                ...(hasGitHub
+                  ? [
+                      {
+                        value: "github" as const,
+                        label: (
+                          <span className="flex items-center gap-1.5">
+                            <GitHubMark className="size-3.5" />
+                            GitHub
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(hasAzure
+                  ? [
+                      {
+                        value: "azure" as const,
+                        label: (
+                          <span className="flex items-center gap-1.5">
+                            <AzureMark className="size-3.5 text-[#0078d4]" />
+                            Azure DevOps
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
+                { value: "url" as const, label: t("Git URL") },
               ]}
             />
           )
@@ -194,6 +235,45 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
               }}
             />
           )
+        ) : useAZ ? (
+          azRepo && !picking ? (
+            <div className="grid gap-4 p-5 md:grid-cols-3">
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 md:col-span-3">
+                <span className="flex size-8 items-center justify-center rounded-lg border border-border bg-surface-2 text-[#0078d4]">
+                  <AzureMark />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium">
+                    {azRepo.project.name} / {azRepo.name}
+                  </div>
+                  <div className="truncate text-xs text-subtle">{azRepo.remote_url}</div>
+                </div>
+                <Button size="sm" onClick={() => setPicking(true)}>
+                  {t("Change")}
+                </Button>
+              </div>
+              <Field label={t("Branch")} hint={t("Commits to this branch are deployed.")}>
+                <AzureBranchSelect connection={azRepo.connection_id} project={azRepo.project.id} repo={azRepo.id} value={f.git_branch} defaultBranch={azRepo.default_branch} onChange={(b) => set({ git_branch: b })} />
+              </Field>
+              <Field label={t("Root directory")} hint={t("For monorepos, e.g. /apps/web")}>
+                <Input value={f.base_directory} onChange={(e) => set({ base_directory: e.target.value || "/" })} />
+              </Field>
+              <div className="flex items-end pb-1">
+                <Switch checked={f.auto_deploy} onChange={(v) => set({ auto_deploy: v })} label={t("Deploy on push")} description={t("Build every new commit on this branch.")} />
+              </div>
+            </div>
+          ) : (
+            <AzureRepoPicker
+              connections={azConns.data ?? []}
+              selected={azRepo}
+              onSelect={(r) => {
+                setAzRepo(r);
+                setPicking(false);
+                setTouchedPack(false);
+                set({ git_branch: r.default_branch || "main", name: f.name || r.name });
+              }}
+            />
+          )
         ) : (
           <div className="grid gap-4 p-5 md:grid-cols-2">
             <Field label={t("Repository URL")} required className="md:col-span-2">
@@ -209,14 +289,15 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
               <Switch checked={privateRepo} onChange={setPrivateRepo} label={t("Private repository")} description={t("Authenticate with a personal access or deploy token.")} />
               {privateRepo && <PasswordInput value={f.git_token} onChange={(e) => set({ git_token: e.target.value })} placeholder="glpat-… / ghp_…" />}
             </div>
-            {!hasGitHub && (
+            {!hasGitHub && !hasAzure && (
               <div className="rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 text-xs text-muted md:col-span-2">
-                {tx("Tip: {link} to browse repositories and deploy automatically on every push.", {
-                  link: (
+                {tx("Tip: {github} or {azure} to browse repositories and deploy automatically on every push.", {
+                  github: (
                     <Link to="/settings?tab=git" className="font-medium text-fg underline">
                       {t("connect GitHub")}
                     </Link>
                   ),
+                  azure: <ConnectAzureLink />,
                 })}
               </div>
             )}
@@ -230,7 +311,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
             <div className="p-5">
               <BuildSettings
                 value={f}
-                suggestion={useGH ? detect.data : null}
+                suggestion={useGH || useAZ ? detect.data : null}
                 onChange={(patch) => {
                   if (patch.build_pack) setTouchedPack(true);
                   set(patch);

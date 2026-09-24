@@ -182,7 +182,7 @@ export const ro: Record<string, string> = {
 
   // NewResource
   "Git repository": "Repository Git",
-  "Import from GitHub or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more.": "Importă din GitHub sau din orice URL Git. Fă deploy cu Docker, Compose, Node, Python, Go, un script shell și altele.",
+  "Import from GitHub, Azure DevOps or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more.": "Importă din GitHub, Azure DevOps sau din orice URL Git. Fă deploy cu Docker, Compose, Node, Python, Go, un script shell și altele.",
   "Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own.": "Explorează peste 120 de imagini populare — baze de date, CMS, AI, monitorizare, DevOps — sau folosește-o pe a ta.",
   "Deploy a multi-container stack from a compose file in Git.": "Fă deploy unui stack multi-container dintr-un fișier compose din Git.",
   "One-click service": "Serviciu cu un clic",
@@ -436,7 +436,7 @@ export const ru: Record<string, string> = {
 
   // NewResource
   "Git repository": "Git-репозиторий",
-  "Import from GitHub or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more.": "Импорт из GitHub или любого Git URL. Развёртывание через Docker, Compose, Node, Python, Go, shell-скрипт и не только.",
+  "Import from GitHub, Azure DevOps or any Git URL. Deploy with Docker, Compose, Node, Python, Go, a shell script and more.": "Импорт из GitHub, Azure DevOps или любого Git URL. Развёртывание через Docker, Compose, Node, Python, Go, shell-скрипт и не только.",
   "Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own.": "Более 120 популярных образов — базы данных, CMS, AI, мониторинг, DevOps — или ваш собственный.",
   "Deploy a multi-container stack from a compose file in Git.": "Развернуть многоконтейнерный стек из compose-файла в Git.",
   "One-click service": "Сервис в один клик",

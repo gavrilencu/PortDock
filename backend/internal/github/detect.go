@@ -45,6 +45,14 @@ func (c *Client) Detect(ctx context.Context, app store.GitHubApp, installationID
 	if err != nil {
 		return Suggestion{}, err
 	}
+	return DetectFrom(entries, func(name string) (string, error) {
+		return c.File(ctx, app, installationID, fullName, path.Join(baseDir, name), ref)
+	}), nil
+}
+
+// DetectFrom suggests a build pack from the entries of a repository directory;
+// read returns the content of a file of that directory. Any Git host can use it.
+func DetectFrom(entries []Entry, read func(name string) (string, error)) Suggestion {
 	files := map[string]bool{}
 	s := Suggestion{Files: []string{}}
 	for _, e := range entries {
@@ -69,12 +77,12 @@ func (c *Client) Detect(ctx context.Context, app store.GitHubApp, installationID
 	case file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml") != "":
 		s.BuildPack, s.Reason = "compose", "Docker Compose file found"
 		s.ComposePath = file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
-		if raw, err := c.File(ctx, app, installationID, fullName, path.Join(baseDir, s.ComposePath), ref); err == nil {
+		if raw, err := read(s.ComposePath); err == nil {
 			s.ComposeServices, _ = composefile.Services(raw)
 		}
 	case file("package.json") != "":
 		var p pkgJSON
-		if raw, err := c.File(ctx, app, installationID, fullName, path.Join(baseDir, "package.json"), ref); err == nil {
+		if raw, err := read("package.json"); err == nil {
 			_ = json.Unmarshal([]byte(raw), &p)
 		}
 		pm := "npm"
@@ -126,5 +134,5 @@ func (c *Client) Detect(ctx context.Context, app store.GitHubApp, installationID
 	default:
 		s.BuildPack, s.Port, s.Reason = "shell", 3000, "No known project type; use a shell script build"
 	}
-	return s, nil
+	return s
 }

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, GitBranch, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { APIToken, DNSStatus, NotificationChannel, Settings, SSHKey, User } from "../lib/types";
 import { DNSBadge } from "../components/Domains";
 import { useUser } from "../components/Layout";
-import { GitHubMark, GitSourcesSettings } from "../components/github";
+import { GitSourcesSettings } from "../components/github";
+import { AzureDevOpsSettings } from "../components/azure";
 import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
 import { SecuritySettings } from "../components/security";
 import { AuthenticationSettings } from "../components/sso";
@@ -45,7 +46,7 @@ export function SettingsPage() {
         { id: "users", label: t("Team members"), icon: <Users />, hidden: !admin },
         { id: "auth", label: t("Authentication"), icon: <LockKeyhole />, hidden: !admin },
         { id: "assistant", label: t("AI assistant"), icon: <Bot />, hidden: !admin },
-        { id: "git", label: t("Git sources"), icon: <GitHubMark />, hidden: !admin },
+        { id: "git", label: t("Git sources"), icon: <GitBranch />, hidden: !admin },
         { id: "registries", label: t("Container registries"), icon: <Boxes />, hidden: !admin },
         { id: "certificates", label: t("Certificates"), icon: <FileKey2 />, hidden: !admin },
         { id: "updates", label: t("Updates"), icon: <ArrowUpCircle />, hidden: !admin },
@@ -101,7 +102,12 @@ export function SettingsPage() {
           {tab === "updates" && <UpdateSettings />}
           {tab === "general" && <General />}
           {tab === "users" && <Team />}
-          {tab === "git" && <GitSourcesSettings />}
+          {tab === "git" && (
+            <div className="space-y-6">
+              <GitSourcesSettings />
+              <AzureDevOpsSettings />
+            </div>
+          )}
           {tab === "keys" && <Keys />}
           {tab === "tokens" && <Tokens />}
           {tab === "notifications" && <Notifications />}
