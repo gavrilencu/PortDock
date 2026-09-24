@@ -10,6 +10,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/portdock/portdock/internal/executor"
 )
@@ -158,8 +160,9 @@ func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) (
 	if err != nil {
 		return nil, err
 	}
-	// Workloads created before the rename carry shipyard.* labels.
-	if legacy, ok := legacyFilters(filters); ok {
+	// Workloads created before the rename carry shipyard.* labels. Once a
+	// server has none, the second query is skipped for a while.
+	if legacy, ok := legacyFilters(filters); ok && legacyDue(e) {
 		lcmd := "docker ps --no-trunc --format '{{json .}}'"
 		if all {
 			lcmd += " -a"
@@ -170,6 +173,7 @@ func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) (
 		if lout, err := executor.Output(ctx, e, lcmd); err == nil {
 			if more, err := jsonLines[rawContainer](lout); err == nil {
 				raws = append(raws, more...)
+				legacyNote(e, len(more) > 0)
 			}
 		}
 	}
@@ -186,6 +190,25 @@ func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) (
 		})
 	}
 	return res, nil
+}
+
+// legacyAbsent remembers, per executor, until when the legacy-label query can
+// be skipped because the last one returned nothing.
+var legacyAbsent sync.Map // executor.Executor -> time.Time
+
+func legacyDue(e executor.Executor) bool {
+	if until, ok := legacyAbsent.Load(e); ok && time.Now().Before(until.(time.Time)) {
+		return false
+	}
+	return true
+}
+
+func legacyNote(e executor.Executor, found bool) {
+	if found {
+		legacyAbsent.Delete(e)
+		return
+	}
+	legacyAbsent.Store(e, time.Now().Add(10*time.Minute))
 }
 
 // ContainerAction runs start/stop/restart/pause/unpause/kill/rm on a container.

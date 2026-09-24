@@ -40,6 +40,14 @@ type Engine struct {
 	appLocks map[int64]*sync.Mutex
 	// scanSlots limits the vulnerability scans running at a time.
 	scanSlots chan struct{}
+	// recon remembers, per server, when to try an unreachable one again and
+	// when the proxy container was last checked.
+	recon struct {
+		sync.Mutex
+		fails   map[int64]int
+		next    map[int64]time.Time
+		proxyAt map[int64]time.Time
+	}
 }
 
 func New(cfg config.Config, db *store.DB, box *secrets.Box, pool *executor.Pool, hub *stream.Hub, n *notify.Notifier, gh *github.Client) *Engine {
