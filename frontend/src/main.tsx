@@ -21,6 +21,7 @@ import { SettingsPage } from "./pages/Settings";
 import { AlertsPage } from "./pages/Alerts";
 import { TopologyPage } from "./pages/Topology";
 import { UptimePage } from "./pages/Uptime";
+import { FleetPage } from "./pages/Fleet";
 import { StatusPage } from "./pages/StatusPage";
 import { ApiError } from "./lib/api";
 import { LocaleRoot, t } from "./lib/i18n";
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
       { path: "alerts", element: <AlertsPage /> },
       { path: "uptime", element: <UptimePage /> },
+      { path: "containers", element: <FleetPage /> },
       { path: "topology", element: <TopologyPage /> },
       { path: "*", element: <NotFound /> },
     ],

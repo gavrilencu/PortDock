@@ -13,6 +13,7 @@ import (
 
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/store"
 	"go.yaml.in/yaml/v3"
@@ -29,6 +30,21 @@ func (j *job) buildArgs(flag string) string {
 		b.WriteString(" " + flag + " " + q(k+"="+j.env.Build[k]))
 	}
 	return b.String()
+}
+
+func proxyArgs(flag string, env map[string]string) string {
+	var b strings.Builder
+	for _, k := range netcfg.Keys(env) {
+		b.WriteString(" " + flag + " " + q(k+"="+env[k]))
+	}
+	return b.String()
+}
+
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }
 
 func (j *job) imageLabels() string {
@@ -75,8 +91,10 @@ func (j *job) build(ctx context.Context, image string) error {
 }
 
 func (j *job) dockerBuild(ctx context.Context, image, dockerfile string) error {
-	cmd := fmt.Sprintf("DOCKER_BUILDKIT=1 docker build --progress=plain -t %s -f %s%s%s %s",
-		q(image), q(dockerfile), j.buildArgs("--build-arg"), j.imageLabels(), q(j.ctxDir))
+	// HTTP_PROXY… are predefined build arguments: RUN steps see them without
+	// an ARG line, and they are left out of the image history.
+	cmd := fmt.Sprintf("DOCKER_BUILDKIT=1 docker build --progress=plain -t %s -f %s%s%s%s %s",
+		q(image), q(dockerfile), j.buildArgs("--build-arg"), proxyArgs("--build-arg", buildProxyEnv(j.net)), j.imageLabels(), q(j.ctxDir))
 	if err := j.run(ctx, cmd); err != nil {
 		return fmt.Errorf("docker build failed: %w", err)
 	}
@@ -97,7 +115,7 @@ func (j *job) nixpacksBuild(ctx context.Context, image string) error {
 	if c := j.app.StartCommand; c != "" {
 		cmd += " --start-cmd " + q(c)
 	}
-	cmd += j.buildArgs("--env")
+	cmd += j.buildArgs("--env") + proxyArgs("--env", buildProxyEnv(j.net))
 	cmd += fmt.Sprintf(" --label %s=true --label %s=%s", docker.LabelManaged, docker.LabelResource, q(j.app.UUID))
 	if err := j.run(ctx, cmd); err != nil {
 		return fmt.Errorf("nixpacks build failed: %w", err)
@@ -327,14 +345,14 @@ type composeSpec struct {
 
 // ComposeUp deploys a compose project with PortDock routing and labels injected via an override file.
 type ComposeUp struct {
-	X        executor.Executor
-	Project  string
-	Dir      string // directory on the server holding the compose file
-	File     string // compose file path
-	Service  string // service to expose (defaults to x-portdock.service)
-	Port     int
-	Domains  []string
-	HTTPS    bool
+	X       executor.Executor
+	Project string
+	Dir     string // directory on the server holding the compose file
+	File    string // compose file path
+	Service string // service to expose (defaults to x-portdock.service)
+	Port    int
+	Domains []string
+	HTTPS   bool
 	// FileRoutes routes through the proxy's file provider (written by the caller)
 	// instead of container labels; Routed services join the proxy network.
 	FileRoutes bool
@@ -345,13 +363,17 @@ type ComposeUp struct {
 	ServiceEnv map[string]map[string]string
 	// Images pins services to existing images (a version's), so nothing is built or pulled for them.
 	Images map[string]string
-	Env      map[string]string
-	Kind     string // application | service
-	Resource string
-	Network  string
-	Build    bool
-	Timeout  int
-	Log      interface {
+	Env    map[string]string
+	// ProxyEnv (the corporate proxy) is added to every service, below its own variables.
+	ProxyEnv map[string]string
+	// BuildArgs are passed to the builds of the compose file (proxy for builds).
+	BuildArgs map[string]string
+	Kind      string // application | service
+	Resource  string
+	Network   string
+	Build     bool
+	Timeout   int
+	Log       interface {
 		Write([]byte) (int, error)
 		Printf(string, ...any)
 	}
@@ -437,6 +459,9 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 		}
 		if c.FileRoutes {
 			env := map[string]string{}
+			for k, v := range c.ProxyEnv {
+				env[k] = v
+			}
 			if n == main {
 				for k, v := range c.Env {
 					env[k] = v
@@ -448,8 +473,13 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 			if len(env) > 0 {
 				svc["environment"] = escapeCompose(env)
 			}
-		} else if n == main {
-			svc["env_file"] = []string{envPath}
+		} else {
+			if n == main {
+				svc["env_file"] = []string{envPath}
+			}
+			if len(c.ProxyEnv) > 0 {
+				svc["environment"] = escapeCompose(c.ProxyEnv)
+			}
 		}
 		services[n] = svc
 	}
@@ -464,7 +494,14 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 	timeout := max(c.Timeout, 60)
 	cmd := fmt.Sprintf("cd %s && docker compose -p %s -f %s -f %s --env-file %s up -d --remove-orphans --wait --wait-timeout %d",
 		q(c.Dir), q(c.Project), q(c.File), q(overridePath), q(envPath), timeout)
-	if c.Build {
+	if c.Build && len(c.BuildArgs) > 0 {
+		build := fmt.Sprintf("cd %s && docker compose -p %s -f %s -f %s --env-file %s build%s",
+			q(c.Dir), q(c.Project), q(c.File), q(overridePath), q(envPath), proxyArgs("--build-arg", c.BuildArgs))
+		c.Log.Printf("$ docker compose build (with the corporate proxy)")
+		if err := c.X.Run(ctx, build, executor.RunOpts{Stdout: c.Log}); err != nil {
+			return res, fmt.Errorf("docker compose build failed: %w", err)
+		}
+	} else if c.Build {
 		cmd += " --build"
 	}
 	c.Log.Printf("$ %s", cmd)
@@ -581,6 +618,7 @@ func (j *job) deployCompose(ctx context.Context) error {
 		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir, File: file,
 		Service: main, Port: mainPort, FileRoutes: true, Routed: routedServices(routes),
 		Env: vars, ServiceEnv: j.env.Services, Images: images, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
+		ProxyEnv: containerProxyEnv(j.net, j.app.ProxyMode), BuildArgs: buildProxyEnv(j.net),
 		Build: !reuse, Timeout: j.app.HealthCheckTimeout, Log: j.log,
 	}); err != nil {
 		return err

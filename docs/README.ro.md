@@ -84,6 +84,8 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - Notificări: Discord, Slack, Microsoft Teams (Workflows sau incoming webhook, Adaptive Card), Telegram, email (SMTP), webhook semnat.
 - **Uptime**: monitoare pentru site-uri și API-uri (cod de status, cuvânt-cheie, timp de răspuns, expirarea certificatului TLS), incidente, alerte `monitor.down` / `monitor.up` și o **pagină de status publică** la `/status`, cu uptime-ul pe 90 de zile.
 - **Scanare de vulnerabilități cu Trivy**: la fiecare deploy sau la cerere, din tab-ul *Security* al aplicației; deploy-ul poate fi blocat la vulnerabilități critice sau ridicate.
+- **Containere de pe toate serverele** într-o singură pagină (*Containere*): containere, imagini și volume ale fiecărui server conectat, cu serverul, resursa PortDock, CPU și memorie, loguri, terminal și acțiuni; pagina proiectului arată pe ce server rulează fiecare resursă.
+- **Proxy corporativ și Nexus** (*Setări → Rețea și proxy*): proxy HTTP(S) cu utilizator/parolă și NO_PROXY, folosit pentru PortDock, build-uri și containere (cu excepție per aplicație); mirror pentru Docker Hub (Nexus, Artifactory, Harbor) aplicat în `daemon.json` pe fiecare server cu reload fără oprirea containerelor; mirror-uri npm / PyPI / Go / Maven pentru build-uri; buton de test al conexiunii.
 - **Consolă SQL** în browser pentru PostgreSQL, MySQL, MariaDB, SQL Server și ClickHouse: tabele, rezultate, export CSV; membrii fără rol de admin au acces doar de citire (sesiune care nu poate scrie), iar fiecare interogare ajunge în audit log.
 - UI în timp real (evenimente SSE), temă dark/light.
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/registry"
 	"github.com/portdock/portdock/internal/store"
@@ -37,6 +38,7 @@ type job struct {
 	env     Env
 	routes  []proxy.DomainRoute // production domains, or preview domains for PRs
 	reg     *store.Registry     // push/pull registry (nil: images stay on the servers)
+	net     netcfg.Config       // corporate proxy and mirrors
 }
 
 func (j *job) run(ctx context.Context, cmd string) error {
@@ -89,6 +91,19 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		return err
 	}
 	log.Mask(j.env.Secrets...)
+	j.net = e.Network(ctx)
+	if j.net.Password != "" {
+		log.Mask(j.net.Password)
+	}
+	// Package mirrors (npm, PyPI, Go…) are build variables of every build.
+	for k, v := range j.net.PackageEnv() {
+		if _, set := j.env.Build[k]; !set {
+			j.env.Build[k] = v
+		}
+	}
+	if j.net.Enabled() && (j.net.Builds || j.net.Containers || app.ProxyMode == "on") {
+		log.Printf("Corporate proxy: builds %s, containers %s", onOff(j.net.Builds), onOff(containerProxyEnv(j.net, app.ProxyMode) != nil))
+	}
 	if tok := e.box.MustDecrypt(app.GitToken); tok != "" {
 		log.Mask(tok)
 	}
@@ -373,7 +388,7 @@ func (j *job) checkout(ctx context.Context) error {
 		steps = []string{fmt.Sprintf("clone -q --depth 1 --branch %s --single-branch --recurse-submodules --shallow-submodules %s .", q(d.Branch), q(repo))}
 	}
 	script := "set -e; git config --global --add safe.directory '*'; git " + strings.Join(steps, "; git ") + "; git log -1 --format='%H%n%s'"
-	cmd := fmt.Sprintf("docker run --rm -v %s:/work -w /work/src --entrypoint sh %s -c %s", q(j.workdir), gitImage, q(script))
+	cmd := fmt.Sprintf("docker run --rm%s -v %s:/work -w /work/src --entrypoint sh %s -c %s", envFlags(buildProxyEnv(j.net)), q(j.workdir), gitImage, q(script))
 	j.log.Printf("$ git clone %s (branch %s)", app.GitRepository, d.Branch)
 	out, err := j.output(ctx, cmd)
 	if err != nil {
@@ -435,6 +450,12 @@ func (j *job) writeEnvFile(ctx context.Context) (string, error) {
 	}
 	if _, ok := vars["PORT"]; !ok && j.app.Port > 0 {
 		vars["PORT"] = strconv.Itoa(j.app.Port)
+	}
+	// The corporate proxy, unless the application sets its own.
+	for k, v := range containerProxyEnv(j.net, j.app.ProxyMode) {
+		if _, set := vars[k]; !set {
+			vars[k] = v
+		}
 	}
 	if err := executor.WriteFile(ctx, j.x, file, []byte(envFile(vars)), "0600"); err != nil {
 		return "", err

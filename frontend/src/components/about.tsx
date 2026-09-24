@@ -76,6 +76,8 @@ const features: { icon: ReactNode; title: string; items: string[] }[] = [
     items: [
       tk("The local server and remote servers over SSH"),
       tk("Web terminal, live logs, container actions"),
+      tk("Containers, images and volumes of every server in one view"),
+      tk("Corporate proxy and Nexus mirrors for images and packages"),
       tk("Live topology map with crash-loop detection"),
     ],
   },

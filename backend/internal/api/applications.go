@@ -118,6 +118,9 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	if a.Port < 0 || a.Port > 65535 {
 		return badRequest("invalid port")
 	}
+	if !slices.Contains([]string{"", "on", "off"}, a.ProxyMode) {
+		return badRequest("proxy_mode must be empty, on or off")
+	}
 	if !slices.Contains([]string{"", "critical", "high"}, a.ScanBlock) {
 		return badRequest("scan_block must be empty, critical or high")
 	}

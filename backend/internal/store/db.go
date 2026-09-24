@@ -113,6 +113,7 @@ var migrations = []string{
 	`ALTER TABLE applications ADD COLUMN scan_on_deploy INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE applications ADD COLUMN scan_block TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN scan_ignore_unfixed INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE applications ADD COLUMN proxy_mode TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

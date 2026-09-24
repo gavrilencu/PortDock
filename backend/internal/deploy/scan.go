@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/store"
 )
@@ -131,13 +132,16 @@ func (e *Engine) trivyImage(ctx context.Context) string {
 	return DefaultTrivyImage
 }
 
-func trivyCmd(scanner, image string, ignoreUnfixed bool) string {
+func trivyCmd(scanner, image string, ignoreUnfixed bool, net netcfg.Config) string {
 	args := "image --quiet --format json --scanners vuln --timeout 15m"
 	if ignoreUnfixed {
 		args += " --ignore-unfixed"
 	}
-	return fmt.Sprintf("docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v %s:/root/.cache/ %s %s %s",
-		trivyCacheVolume, q(scanner), args, q(image))
+	if net.TrivyDB != "" {
+		args += " --db-repository " + q(net.TrivyDB)
+	}
+	return fmt.Sprintf("docker run --rm%s -v /var/run/docker.sock:/var/run/docker.sock -v %s:/root/.cache/ %s %s %s",
+		envFlags(buildProxyEnv(net)), trivyCacheVolume, q(scanner), args, q(image))
 }
 
 // scanTarget is an image to scan, with its compose service if any.
@@ -179,7 +183,7 @@ func (e *Engine) runScans(ctx context.Context, x executor.Executor, app store.Ap
 			}
 			log.Printf("Scanning %s with %s…", label, scanner)
 		}
-		out, err := executor.Output(ctx, x, trivyCmd(scanner, s.Image, app.ScanIgnoreUnfixed))
+		out, err := executor.Output(ctx, x, trivyCmd(scanner, s.Image, app.ScanIgnoreUnfixed, e.Network(ctx)))
 		<-e.scanSlots
 		var fs []Finding
 		if err == nil {

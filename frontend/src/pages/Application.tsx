@@ -435,6 +435,13 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           <Field label={t("Host port mappings")} hint={t("e.g. 8080:80 (disables zero-downtime)")}>
             <Input value={f.ports_mapping} onChange={(e) => set("ports_mapping", e.target.value)} />
           </Field>
+          <Field label={t("Corporate proxy")} hint={t("HTTP_PROXY, HTTPS_PROXY and NO_PROXY in the containers (Settings → Network). Variables of the application win.")}>
+            <Select value={f.proxy_mode} onChange={(e) => set("proxy_mode", e.target.value as ApplicationDetail["proxy_mode"])}>
+              <option value="">{t("Follow the setting of the organization")}</option>
+              <option value="on">{t("Always use the proxy")}</option>
+              <option value="off">{t("Never use the proxy")}</option>
+            </Select>
+          </Field>
         </Section>
         <Section title={t("Health check & hooks")} description={t("New versions only receive traffic after passing the health check.")}>
           <Field label={t("Health check path")} hint={t("HTTP GET must return 2xx. Empty = container running.")}>

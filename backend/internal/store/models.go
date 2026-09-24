@@ -142,20 +142,20 @@ type ProjectMember struct {
 }
 
 type Application struct {
-	ID                  int64  `db:"id" json:"id"`
-	UUID                string `db:"uuid" json:"uuid"`
-	EnvironmentID       int64  `db:"environment_id" json:"environment_id"`
-	ServerID            int64  `db:"server_id" json:"server_id"`
-	Name                string `db:"name" json:"name"`
-	Description         string `db:"description" json:"description"`
-	SourceType          string `db:"source_type" json:"source_type"`
-	GitRepository       string `db:"git_repository" json:"git_repository"`
-	GitBranch           string `db:"git_branch" json:"git_branch"`
-	GitCommit           string `db:"git_commit" json:"git_commit"`
-	GitToken            string `db:"git_token" json:"-"`
-	GitHubAppID         int64  `db:"github_app_id" json:"github_app_id"`
-	GitHubInstallation  int64  `db:"github_installation_id" json:"github_installation_id"`
-	GitFullName         string `db:"git_full_name" json:"git_full_name"`
+	ID                 int64  `db:"id" json:"id"`
+	UUID               string `db:"uuid" json:"uuid"`
+	EnvironmentID      int64  `db:"environment_id" json:"environment_id"`
+	ServerID           int64  `db:"server_id" json:"server_id"`
+	Name               string `db:"name" json:"name"`
+	Description        string `db:"description" json:"description"`
+	SourceType         string `db:"source_type" json:"source_type"`
+	GitRepository      string `db:"git_repository" json:"git_repository"`
+	GitBranch          string `db:"git_branch" json:"git_branch"`
+	GitCommit          string `db:"git_commit" json:"git_commit"`
+	GitToken           string `db:"git_token" json:"-"`
+	GitHubAppID        int64  `db:"github_app_id" json:"github_app_id"`
+	GitHubInstallation int64  `db:"github_installation_id" json:"github_installation_id"`
+	GitFullName        string `db:"git_full_name" json:"git_full_name"`
 	// Azure DevOps source: the connection (token), project and repository ids, and
 	// the service hook that notifies PortDock of pushes.
 	AzureConnectionID int64  `db:"azure_connection_id" json:"azure_connection_id"`
@@ -168,6 +168,8 @@ type Application struct {
 	ScanOnDeploy      bool   `db:"scan_on_deploy" json:"scan_on_deploy"`
 	ScanBlock         string `db:"scan_block" json:"scan_block"`
 	ScanIgnoreUnfixed bool   `db:"scan_ignore_unfixed" json:"scan_ignore_unfixed"`
+	// ProxyMode: "" follows the corporate proxy setting for containers, "on" or "off" overrides it.
+	ProxyMode           string `db:"proxy_mode" json:"proxy_mode"`
 	BuildPack           string `db:"build_pack" json:"build_pack"`
 	BaseDirectory       string `db:"base_directory" json:"base_directory"`
 	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`

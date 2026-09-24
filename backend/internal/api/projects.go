@@ -222,7 +222,33 @@ func (s *Server) environmentResources(w http.ResponseWriter, r *http.Request) er
 	for i := range svcs {
 		svcs[i].Compose = ""
 	}
-	return ok(w, map[string]any{"environment": env, "applications": apps, "databases": dbs, "services": svcs})
+	// The servers each resource runs on (applications can run on several).
+	names := map[int64]serverRef{}
+	if all, err := store.Select[store.Server](ctx, s.db, "SELECT * FROM servers"); err == nil {
+		for _, srv := range all {
+			names[srv.ID] = serverRef{ID: srv.ID, Name: srv.Name, Host: srv.Host, Status: srv.Status}
+		}
+	}
+	refs := func(ids ...int64) []serverRef {
+		out := []serverRef{}
+		for _, id := range ids {
+			if r, ok := names[id]; ok {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	servers := map[string][]serverRef{}
+	for _, a := range apps {
+		servers[fmt.Sprintf("application-%d", a.ID)] = refs(s.engine.AppServerIDs(ctx, a)...)
+	}
+	for _, d := range dbs {
+		servers[fmt.Sprintf("database-%d", d.ID)] = refs(d.ServerID)
+	}
+	for _, sv := range svcs {
+		servers[fmt.Sprintf("service-%d", sv.ID)] = refs(sv.ServerID)
+	}
+	return ok(w, map[string]any{"environment": env, "applications": apps, "databases": dbs, "services": svcs, "servers": servers})
 }
 
 // updateEnvironment changes protection settings (and the name) of an environment.
@@ -353,7 +379,6 @@ func (s *Server) setProjectMembers(w http.ResponseWriter, r *http.Request) error
 	s.activity(r, "project.members", fmt.Sprintf("project #%d: %d member(s)", id, len(in.Members)))
 	return s.listProjectMembers(w, r)
 }
-
 
 // memberCandidates lists active users a maintainer can add to the project.
 func (s *Server) memberCandidates(w http.ResponseWriter, r *http.Request) error {

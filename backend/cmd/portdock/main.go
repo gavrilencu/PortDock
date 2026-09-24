@@ -27,6 +27,7 @@ import (
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
+	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/store"
 	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/internal/stream"
@@ -118,6 +119,8 @@ func run(resetPassword, disable2FA string) error {
 	go auditStream.Run(ctx)
 	engine.RecoverBackups(ctx) // jobs interrupted by the previous run
 	engine.RecoverScans(ctx)
+	netcfg.Install() // PortDock's own requests follow the corporate proxy setting
+	engine.ReloadNetwork(ctx)
 	go engine.Monitor(ctx, 30*time.Second)
 	go engine.CertificateWatch(ctx, 6*time.Hour)
 	go engine.VersionRetention(ctx)
