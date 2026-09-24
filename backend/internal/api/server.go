@@ -27,6 +27,7 @@ import (
 	"github.com/portdock/portdock/internal/scheduler"
 	"github.com/portdock/portdock/internal/secrets"
 	"github.com/portdock/portdock/internal/store"
+	"github.com/portdock/portdock/internal/uptime"
 	"github.com/portdock/portdock/internal/stream"
 	"github.com/portdock/portdock/internal/templates"
 )
@@ -48,6 +49,7 @@ type Server struct {
 	monitor *monitor.Monitor
 	audit   *audit.Streamer
 	ai      *assistant.Client
+	uptime  *uptime.Checker
 }
 
 type Deps struct {
@@ -63,6 +65,7 @@ type Deps struct {
 	GitHub    *github.Client
 	Monitor   *monitor.Monitor
 	Audit     *audit.Streamer
+	Uptime    *uptime.Checker
 	UI        fs.FS
 }
 
@@ -70,8 +73,11 @@ func New(d Deps) *Server {
 	if d.Audit == nil {
 		d.Audit = audit.New(d.DB, d.Box)
 	}
+	if d.Uptime == nil && d.Engine != nil {
+		d.Uptime = uptime.New(d.DB, d.Notifier, d.Engine.PublicURL)
+	}
 	s := &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
-		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New()}
+		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New(), uptime: d.Uptime}
 	s.ai.Referer = func() string { return s.engine.PublicURL(context.Background()) }
 	// An OpenRouter-compatible gateway (or a fake one in tests) can replace openrouter.ai.
 	if u := strings.TrimRight(config.Env("OPENROUTER_URL", ""), "/"); u != "" {
@@ -478,6 +484,13 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/github/branches", s.listGitHubBranches)
 	a("GET /api/github/detect", s.detectGitHubRepo)
 	public("POST /api/webhooks/github-app", s.githubAppWebhook)
+	a("GET /api/monitors", s.listMonitors)
+	a("GET /api/monitors/{id}", s.getMonitor)
+	admin("POST /api/monitors", s.createMonitor)
+	admin("PATCH /api/monitors/{id}", s.updateMonitor)
+	admin("DELETE /api/monitors/{id}", s.deleteMonitor)
+	admin("POST /api/monitors/{id}/check", s.checkMonitor)
+	public("GET /api/public/status", s.publicStatus)
 	a("GET /api/azure/connections", s.listAzureConnections)
 	admin("POST /api/azure/connections", s.createAzureConnection)
 	admin("PATCH /api/azure/connections/{id}", s.updateAzureConnection)

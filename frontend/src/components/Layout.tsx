@@ -4,6 +4,7 @@ import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
+  HeartPulse,
   ChevronsUpDown,
   FolderKanban,
   KeyRound,
@@ -82,6 +83,7 @@ const navGroups = [
     label: tk("Infrastructure"),
     items: [
       { to: "/servers", label: tk("Servers"), icon: ServerIcon },
+      { to: "/uptime", label: tk("Uptime"), icon: HeartPulse },
       { to: "/alerts", label: tk("Alerts"), icon: BellRing },
     ],
   },

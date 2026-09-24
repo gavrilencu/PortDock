@@ -20,6 +20,8 @@ import { ServerPage } from "./pages/Server";
 import { SettingsPage } from "./pages/Settings";
 import { AlertsPage } from "./pages/Alerts";
 import { TopologyPage } from "./pages/Topology";
+import { UptimePage } from "./pages/Uptime";
+import { StatusPage } from "./pages/StatusPage";
 import { ApiError } from "./lib/api";
 import { LocaleRoot, t } from "./lib/i18n";
 
@@ -39,6 +41,7 @@ function NotFound() {
 
 const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  { path: "/status", element: <StatusPage /> },
   {
     element: <AppLayout />,
     children: [
@@ -55,6 +58,7 @@ const router = createBrowserRouter([
       { path: "servers/:id", element: <ServerPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "alerts", element: <AlertsPage /> },
+      { path: "uptime", element: <UptimePage /> },
       { path: "topology", element: <TopologyPage /> },
       { path: "*", element: <NotFound /> },
     ],

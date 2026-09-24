@@ -519,6 +519,10 @@ export interface Settings {
   s3_region: string;
   s3_access_key: string;
   s3_secret_key_set: boolean;
+  trivy_image?: string;
+  status_page_enabled?: string;
+  status_page_title?: string;
+  status_page_description?: string;
   public_url: string;
   version: string;
 }
@@ -562,6 +566,50 @@ export interface GitHubApp {
   webhook_url: string;
   webhook_configured: boolean;
   public_url: boolean;
+}
+
+export interface Monitor {
+  id: number;
+  name: string;
+  url: string;
+  application_id: number;
+  interval_seconds: number;
+  timeout_seconds: number;
+  expected_status: string;
+  keyword: string;
+  ssl_warn_days: number;
+  failures_to_alert: number;
+  enabled: boolean;
+  public: boolean;
+  status: "pending" | "up" | "down" | "paused";
+  consecutive_failures: number;
+  last_checked_at: string;
+  last_change_at: string;
+  last_response_ms: number;
+  last_status_code: number;
+  last_error: string;
+  ssl_expires_at: string;
+  created_at: string;
+  uptime_24h: number | null;
+  uptime_30d: number | null;
+  recent: { ok: boolean; response_ms: number; created_at: string }[];
+}
+
+export interface MonitorCheck {
+  id: number;
+  ok: boolean;
+  status_code: number;
+  response_ms: number;
+  error: string;
+  created_at: string;
+}
+
+export interface MonitorIncident {
+  id: number;
+  monitor_id: number;
+  error: string;
+  started_at: string;
+  resolved_at: string;
 }
 
 export interface ImageScan {
