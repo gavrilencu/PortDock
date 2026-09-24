@@ -105,7 +105,22 @@ func (e *Engine) RunQuery(ctx context.Context, db store.Database, script string,
 			o.Error = runErr.Error()
 		}
 	}
+	// The client ended without the output of every statement and without an
+	// error: show what it printed instead of an empty result.
+	if o.Error == "" && len(o.Results) < len(stmts) && !o.OutputTruncated {
+		o.Error = fmt.Sprintf("the database client returned no result for statement %d", len(o.Results)+1)
+		if detail := strings.TrimSpace(sqlconsole.CleanError(db.Engine, errOut.b.String()+"\n"+tail(out.b.String(), 2000))); detail != "" {
+			o.Error += ":\n" + detail
+		}
+	}
 	return o, nil
+}
+
+func tail(s string, n int) string {
+	if len(s) > n {
+		return s[len(s)-n:]
+	}
+	return s
 }
 
 // DatabaseTables lists the tables and views of a database (read-only).
