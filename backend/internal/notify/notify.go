@@ -1,4 +1,4 @@
-// Package notify sends event notifications to Discord, Slack, Telegram, email or generic webhooks.
+// Package notify sends event notifications to Discord, Slack, Microsoft Teams, Telegram, email or generic webhooks.
 package notify
 
 import (
@@ -94,6 +94,8 @@ func (n *Notifier) SendTo(ctx context.Context, c store.NotificationChannel, ev E
 		}, nil)
 	case "slack":
 		return n.postJSON(ctx, cfg["webhook_url"], map[string]any{"text": text}, nil)
+	case "teams":
+		return n.postJSON(ctx, cfg["webhook_url"], teamsCard(ev), nil)
 	case "telegram":
 		url := "https://api.telegram.org/bot" + cfg["bot_token"] + "/sendMessage"
 		return n.postJSON(ctx, url, map[string]any{"chat_id": cfg["chat_id"], "text": text, "disable_web_page_preview": true}, nil)
@@ -111,6 +113,46 @@ func (n *Notifier) SendTo(ctx context.Context, c store.NotificationChannel, ev E
 		return sendMail(cfg, ev.Title, text)
 	}
 	return fmt.Errorf("unknown channel type %q", c.Type)
+}
+
+// teamsCard is an Adaptive Card message, accepted by Teams Workflows ("Post to a
+// channel when a webhook request is received") and by incoming webhooks.
+func teamsCard(ev Event) map[string]any {
+	color := "Attention"
+	if ev.Success {
+		color = "Good"
+	}
+	body := []map[string]any{
+		{"type": "TextBlock", "text": ev.Title, "weight": "Bolder", "size": "Medium", "color": color, "wrap": true},
+	}
+	if ev.Message != "" {
+		body = append(body, map[string]any{"type": "TextBlock", "text": ev.Message, "wrap": true})
+	}
+	if len(ev.Fields) > 0 {
+		keys := make([]string, 0, len(ev.Fields))
+		for k := range ev.Fields {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		facts := make([]map[string]string, 0, len(keys))
+		for _, k := range keys {
+			facts = append(facts, map[string]string{"title": k, "value": ev.Fields[k]})
+		}
+		body = append(body, map[string]any{"type": "FactSet", "facts": facts})
+	}
+	card := map[string]any{
+		"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+		"type":    "AdaptiveCard", "version": "1.4", "body": body,
+		"msteams": map[string]any{"width": "Full"},
+	}
+	if ev.URL != "" {
+		card["actions"] = []map[string]any{{"type": "Action.OpenUrl", "title": "Open in PortDock", "url": ev.URL}}
+	}
+	return map[string]any{
+		"type":        "message",
+		"summary":     ev.Title,
+		"attachments": []map[string]any{{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}},
+	}
 }
 
 func (n *Notifier) postJSON(ctx context.Context, url string, payload any, headers map[string]string) error {

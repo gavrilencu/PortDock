@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/portdock/portdock/internal/azuredevops"
 	"github.com/portdock/portdock/internal/config"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/github"
@@ -362,8 +363,13 @@ func (e *Engine) AttachLogs(id int64) (snapshot string, ch <-chan stream.Message
 	return l.buf.String(), ch, unsub, true
 }
 
-// reportCommitStatus posts the deployment state to GitHub for GitHub App sources.
+// reportCommitStatus posts the deployment state to GitHub (GitHub App sources)
+// or Azure DevOps (on the commit, and on the pull request for previews).
 func (e *Engine) reportCommitStatus(app store.Application, d store.Deployment, state, description string) {
+	if app.AzureConnectionID != 0 {
+		e.reportAzureStatus(app, d, state, description)
+		return
+	}
 	if e.github == nil || app.GitHubAppID == 0 || app.GitHubInstallation == 0 || app.GitFullName == "" || len(d.CommitSHA) < 7 {
 		return
 	}
@@ -377,6 +383,37 @@ func (e *Engine) reportCommitStatus(app store.Application, d store.Deployment, s
 		}
 		if err := e.github.SetStatus(ctx, ghApp, app.GitHubInstallation, app.GitFullName, d.CommitSHA, state, description, target); err != nil {
 			slog.Warn("commit status", "app", app.Name, "err", err)
+		}
+	}()
+}
+
+// azureStates maps GitHub commit states to Azure DevOps status states.
+var azureStates = map[string]string{"pending": "pending", "success": "succeeded", "failure": "failed", "error": "error"}
+
+func (e *Engine) reportAzureStatus(app store.Application, d store.Deployment, state, description string) {
+	if len(d.CommitSHA) < 7 && d.PRNumber == 0 {
+		return
+	}
+	target := fmt.Sprintf("%s/applications/%d/deployments/%d", e.PublicURL(context.Background()), app.ID, d.ID)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		conn, err := store.ByID[store.AzureConnection](ctx, e.db, "azure_connections", app.AzureConnectionID)
+		if err != nil {
+			return
+		}
+		c := azuredevops.New(conn.URL, e.box.MustDecrypt(conn.Token))
+		st := azuredevops.Status{State: azureStates[state], Description: description, TargetURL: target, Name: "deploy"}
+		if d.PRNumber > 0 {
+			st.Name = "preview"
+			if err := c.SetPullRequestStatus(ctx, app.AzureProjectID, app.AzureRepoID, d.PRNumber, st); err != nil {
+				slog.Warn("pull request status", "app", app.Name, "err", err)
+			}
+		}
+		if len(d.CommitSHA) >= 7 {
+			if err := c.SetCommitStatus(ctx, app.AzureProjectID, app.AzureRepoID, d.CommitSHA, st); err != nil {
+				slog.Warn("commit status", "app", app.Name, "err", err)
+			}
 		}
 	}()
 }

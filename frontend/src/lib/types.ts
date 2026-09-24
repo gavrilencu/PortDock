@@ -489,7 +489,7 @@ export interface APIToken {
 export interface NotificationChannel {
   id: number;
   name: string;
-  type: "discord" | "slack" | "telegram" | "webhook" | "email";
+  type: "discord" | "slack" | "teams" | "telegram" | "webhook" | "email";
   events: string;
   enabled: boolean;
   config: Record<string, string>;
@@ -580,6 +580,8 @@ export interface AzureRepo {
 
 export interface AzureHook {
   hook_id: string;
+  hooks: number;
+  events: number;
   error: string;
   url: string;
   header: string;

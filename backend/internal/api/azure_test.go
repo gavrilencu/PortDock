@@ -163,8 +163,13 @@ func TestAzureDevOpsPushToDeploy(t *testing.T) {
 	appIn["azure_repo_id"] = "r1"
 	app := e.expect(c, "POST", "/api/applications", appIn, 200)
 	id, uuid, secret := int64(app["id"].(float64)), app["uuid"].(string), app["webhook_secret"].(string)
-	if app["azure_hook_id"] != "hook-1" || app["azure_hook_error"] != "" {
-		t.Fatalf("hook not created: %v", app)
+	if app["azure_hook_id"] != "hook-1,hook-2,hook-3" || app["azure_hook_error"] != "" {
+		t.Fatalf("hooks not created: %v", app)
+	}
+	for id, ev := range map[string]string{"hook-2": "git.pullrequest.created", "hook-3": "git.pullrequest.updated"} {
+		if az.hook(id)["eventType"] != ev {
+			t.Fatalf("%s: %v", id, az.hook(id))
+		}
 	}
 	h := az.hook("hook-1")
 	ci, pi := h["consumerInputs"].(map[string]any), h["publisherInputs"].(map[string]any)
@@ -223,24 +228,61 @@ func TestAzureDevOpsPushToDeploy(t *testing.T) {
 	if _, out := push(secret, azurePush("main", strings.Repeat("b", 40), "docs")); out["message"] != "no changes in watch paths" {
 		t.Fatalf("watch paths: %v", out)
 	}
-	if got := e.expect(c, "GET", fmt.Sprintf("/api/applications/%d", id), nil, 200); got["azure_hook_id"] != "hook-1" {
+	if got := e.expect(c, "GET", fmt.Sprintf("/api/applications/%d", id), nil, 200); got["azure_hook_id"] != "hook-1,hook-2,hook-3" {
 		t.Fatalf("an update must keep the hook: %v", got)
 	}
 
-	// A new webhook secret replaces the hook, which carries it.
+	// Pull requests targeting the branch get preview deployments.
+	pr := func(event, status, target, sha string) map[string]any {
+		return map[string]any{"eventType": event, "resource": map[string]any{
+			"pullRequestId": 7, "status": status, "title": "Login page", "sourceRefName": "refs/heads/feature/login",
+			"targetRefName": "refs/heads/" + target, "lastMergeSourceCommit": map[string]string{"commitId": sha},
+		}}
+	}
+	prSHA := strings.Repeat("d", 40)
+	if _, out := push(secret, pr("git.pullrequest.created", "active", "main", prSHA)); out["status"] != "ignored" {
+		t.Fatalf("previews are off: %v", out)
+	}
+	app["preview_enabled"] = true
+	e.expect(c, "PATCH", fmt.Sprintf("/api/applications/%d", id), app, 200)
+	if _, out := push(secret, pr("git.pullrequest.created", "active", "dev", prSHA)); out["status"] != "ignored" {
+		t.Fatalf("pull request to another branch: %v", out)
+	}
+	_, out = push(secret, pr("git.pullrequest.created", "active", "main", prSHA))
+	if out["status"] != "queued" {
+		t.Fatalf("pull request: %v", out)
+	}
+	d = e.expect(c, "GET", fmt.Sprintf("/api/deployments/%v", out["deployment_id"]), nil, 200)
+	if dep, _ := d["deployment"].(map[string]any); dep != nil {
+		d = dep
+	}
+	if d["pr_number"].(float64) != 7 || d["branch"] != "feature/login" || d["commit_sha"] != prSHA {
+		t.Fatalf("preview deployment: %v", d)
+	}
+	if _, out := push(secret, pr("git.pullrequest.updated", "active", "main", prSHA)); out["status"] != "ignored" {
+		t.Fatalf("a vote or a new title must not redeploy: %v", out)
+	}
+	if _, out := push(secret, pr("git.pullrequest.updated", "active", "main", strings.Repeat("e", 40))); out["status"] != "queued" {
+		t.Fatalf("a new commit on the pull request: %v", out)
+	}
+	if _, out := push(secret, pr("git.pullrequest.updated", "completed", "main", prSHA)); out["status"] != "cleaned" {
+		t.Fatalf("completed pull request: %v", out)
+	}
+
+	// A new webhook secret replaces the hooks, which carry it.
 	e.expect(c, "POST", fmt.Sprintf("/api/applications/%d/webhook-secret", id), nil, 200)
 	info := e.expect(c, "GET", fmt.Sprintf("/api/applications/%d/azure-hook", id), nil, 200)
-	if info["hook_id"] != "hook-2" || az.hook("hook-1") != nil || info["url"] != e.srv.URL+"/api/webhooks/azure/"+uuid {
+	if info["hook_id"] != "hook-4,hook-5,hook-6" || info["hooks"].(float64) != 3 || az.hook("hook-1") != nil || az.hook("hook-3") != nil || info["url"] != e.srv.URL+"/api/webhooks/azure/"+uuid {
 		t.Fatalf("hook after new secret: %v (deleted %v)", info, az.deleted)
 	}
-	if info = e.expect(c, "POST", fmt.Sprintf("/api/applications/%d/azure-hook", id), nil, 200); info["hook_id"] != "hook-3" || az.hook("hook-2") != nil {
+	if info = e.expect(c, "POST", fmt.Sprintf("/api/applications/%d/azure-hook", id), nil, 200); info["hook_id"] != "hook-7,hook-8,hook-9" || az.hook("hook-6") != nil {
 		t.Fatalf("recreated hook: %v", info)
 	}
 
 	// A connection in use can't be removed; deleting the application removes its hook.
 	e.expect(c, "DELETE", fmt.Sprintf("/api/azure/connections/%d", cid), nil, 409)
 	e.expect(c, "DELETE", fmt.Sprintf("/api/applications/%d", id), nil, 200)
-	if az.hook("hook-3") != nil {
+	if az.hook("hook-7") != nil || az.hook("hook-9") != nil {
 		t.Fatalf("hook left behind after deleting the application: %v", az.deleted)
 	}
 	e.expect(c, "DELETE", fmt.Sprintf("/api/azure/connections/%d", cid), nil, 200)

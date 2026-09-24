@@ -115,7 +115,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 **📈 Monitoring & alerts**
 - CPU, memory, disk, network and load history for servers and every resource
-- Alert rules with duration and severity; notifications by email, Slack, Discord, Telegram or signed webhook
+- Alert rules with duration and severity; notifications by email, Slack, Microsoft Teams, Discord, Telegram or signed webhook
 
 </td>
 </tr>
@@ -242,12 +242,14 @@ GitHub needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver webhooks.
 <details>
 <summary><b>Azure DevOps integration</b></summary>
 
-1. In Azure DevOps create a **personal access token** (*User settings → Personal access tokens*) for the organization with the scopes **Code: Read** and **Service Hooks: Read, query & manage**. To add service hooks, the token's user must be allowed to edit subscriptions in the project (project administrators are).
+1. In Azure DevOps create a **personal access token** (*User settings → Personal access tokens*) for the organization with the scopes **Code: Read, Status** and **Service Hooks: Read, query & manage**. To add service hooks, the token's user must be allowed to edit subscriptions in the project (project administrators are).
 2. **Settings → Git sources → Connect Azure DevOps**: enter the organization (`contoso`, `https://dev.azure.com/contoso`, `https://contoso.visualstudio.com`, or the collection URL of Azure DevOps Server 2020+) and the token. PortDock checks it by listing the repositories and stores it encrypted.
 3. **New resource → Git repository → Azure DevOps**: pick the repository and branch; the build pack is detected from the repository, like for GitHub.
-4. PortDock clones with the token and adds a **service hook** (*Code pushed* → Web Hooks) to the repository, authenticated by a secret HTTP header. Every push to the branch deploys; watch paths are checked against the files of the pushed commits. The hook is replaced when the webhook secret is regenerated and removed when the application is deleted.
+4. PortDock clones with the token and adds **service hooks** (*Code pushed*, *Pull request created*, *Pull request updated* → Web Hooks) to the repository, authenticated by a secret HTTP header. Every push to the branch deploys; watch paths are checked against the files of the pushed commits. The hooks are replaced when the webhook secret is regenerated and removed when the application is deleted.
+5. With previews enabled, every active pull request targeting the branch gets a **preview deployment** with its own domain, redeployed on new commits (not on votes or title changes) and removed when the pull request is completed or abandoned.
+6. Each deployment is reported as **`portdock/deploy`** on the commit, and as **`portdock/preview`** on the pull request, linking to the deployment in PortDock.
 
-*CI/CD & Webhooks* shows the state of the hook, recreates it, and gives the URL and header to add it by hand if the token can't. Tokens expire: replace them from *Settings → Git sources* without touching the applications. Azure DevOps needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver push events. Pull request previews are GitHub, GitLab and Gitea only for now.
+*CI/CD & Webhooks* shows the state of the hooks, recreates them, and gives the URL and header to add it by hand if the token can't. Tokens expire: replace them from *Settings → Git sources* without touching the applications. Azure DevOps needs a public HTTPS `PORTDOCK_PUBLIC_URL` to deliver events.
 
 </details>
 

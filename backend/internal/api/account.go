@@ -465,7 +465,7 @@ func (s *Server) applyNotification(c *store.NotificationChannel, in notification
 	}
 	if in.Type != nil {
 		switch *in.Type {
-		case "discord", "slack", "telegram", "webhook", "email":
+		case "discord", "slack", "teams", "telegram", "webhook", "email":
 			c.Type = *in.Type
 		default:
 			return badRequest("unsupported type")

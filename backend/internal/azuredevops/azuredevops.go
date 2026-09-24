@@ -276,11 +276,22 @@ func (c *Client) Detect(ctx context.Context, project, repo, ref, baseDir string)
 // HookHeader carries the application's webhook secret in service hook requests.
 const HookHeader = "X-PortDock-Token"
 
-// CreatePushHook subscribes target to every push to the repository.
-func (c *Client) CreatePushHook(ctx context.Context, project, repo, target, secret string) (string, error) {
+// Service hook events PortDock subscribes to for every application.
+const (
+	EventPush      = "git.push"
+	EventPRCreated = "git.pullrequest.created"
+	EventPRUpdated = "git.pullrequest.updated"
+)
+
+// HookEvents are the events of an application's service hooks: pushes deploy,
+// pull requests get preview deployments.
+var HookEvents = []string{EventPush, EventPRCreated, EventPRUpdated}
+
+// CreateHook subscribes target to an event of the repository.
+func (c *Client) CreateHook(ctx context.Context, event, project, repo, target, secret string) (string, error) {
 	body := map[string]any{
 		"publisherId":      "tfs",
-		"eventType":        "git.push",
+		"eventType":        event,
 		"resourceVersion":  "1.0",
 		"consumerId":       "webHooks",
 		"consumerActionId": "httpRequest",
@@ -296,13 +307,46 @@ func (c *Client) CreatePushHook(ctx context.Context, project, repo, target, secr
 	return res.ID, nil
 }
 
+// CreatePushHook subscribes target to every push to the repository.
+func (c *Client) CreatePushHook(ctx context.Context, project, repo, target, secret string) (string, error) {
+	return c.CreateHook(ctx, EventPush, project, repo, target, secret)
+}
+
+// Status is a commit or pull request status, shown as genre/name ("portdock/deploy").
+type Status struct {
+	State       string // pending | succeeded | failed | error
+	Description string
+	TargetURL   string
+	Name        string
+}
+
+func statusBody(st Status) map[string]any {
+	return map[string]any{
+		"state":       st.State,
+		"description": st.Description,
+		"targetUrl":   st.TargetURL,
+		"context":     map[string]string{"genre": "portdock", "name": st.Name},
+	}
+}
+
+// SetCommitStatus reports a status on a commit (needs the Code: Status scope).
+func (c *Client) SetCommitStatus(ctx context.Context, project, repo, sha string, st Status) error {
+	return c.do(ctx, http.MethodPost, repoPath(project, repo)+"/commits/"+url.PathEscape(sha)+"/statuses", nil, statusBody(st), nil)
+}
+
+// SetPullRequestStatus reports a status on a pull request.
+func (c *Client) SetPullRequestStatus(ctx context.Context, project, repo string, pr int, st Status) error {
+	return c.do(ctx, http.MethodPost, repoPath(project, repo)+fmt.Sprintf("/pullRequests/%d/statuses", pr), nil, statusBody(st), nil)
+}
+
 // DeleteHook removes a service hook subscription.
 func (c *Client) DeleteHook(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/_apis/hooks/subscriptions/"+url.PathEscape(id), nil, nil, nil)
 }
 
-// Push is the part of a git.push service hook event PortDock uses.
-type Push struct {
+// Event is the part of a service hook event PortDock uses: a push
+// (commits, refUpdates) or a pull request (the other fields).
+type Event struct {
 	EventType string `json:"eventType"`
 	Resource  struct {
 		Commits []struct {
@@ -314,6 +358,14 @@ type Push struct {
 			OldObjectID string `json:"oldObjectId"`
 			NewObjectID string `json:"newObjectId"`
 		} `json:"refUpdates"`
+		PullRequestID         int    `json:"pullRequestId"`
+		Status                string `json:"status"` // active | completed | abandoned
+		Title                 string `json:"title"`
+		SourceRefName         string `json:"sourceRefName"`
+		TargetRefName         string `json:"targetRefName"`
+		LastMergeSourceCommit struct {
+			CommitID string `json:"commitId"`
+		} `json:"lastMergeSourceCommit"`
 	} `json:"resource"`
 }
 

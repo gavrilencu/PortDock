@@ -18,7 +18,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 
 **CI/CD**
 - Deploy din orice repo Git (GitHub, **Azure DevOps**, GitLab, Gitea/Forgejo, Bitbucket), public sau privat (token).
-- **Azure DevOps**: conectezi organizația din *Settings → Git sources* cu un personal access token (scope-uri *Code: Read* și *Service Hooks: Read, query & manage*), alegi repozitoriul la creare, iar PortDock adaugă singur un service hook care face deploy la fiecare push.
+- **Azure DevOps**: conectezi organizația din *Settings → Git sources* cu un personal access token (scope-uri *Code: Read, Status* și *Service Hooks: Read, query & manage*), alegi repozitoriul la creare, iar PortDock adaugă singur service hook-uri: fiecare push face deploy, pull request-urile primesc preview-uri, iar statusul deploy-ului apare pe commit (`portdock/deploy`) și pe pull request (`portdock/preview`).
 - Build packs: **Dockerfile**, **Nixpacks**, **static** (nginx + fallback SPA), **auto-detect** (generează Dockerfile pentru Node/Bun/pnpm/yarn, Python, Go, site static), **Docker Compose**, **imagine Docker**.
 - Webhook-uri cu verificare HMAC/token: push → deploy; pull request → **preview deployment** cu domeniu propriu, șters automat la închiderea PR-ului.
 - **Watch paths** (glob-uri cu `**` și `!`) pentru monorepo-uri.
@@ -43,7 +43,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - Grafice pentru 1h, 6h, 24h, 7 zile și 30 de zile. Pentru intervalele lungi se afișează media și vârful pe fiecare oră. Datele la minut se păstrează 48 de ore, cele pe oră 90 de zile. Pentru aplicațiile pe mai multe servere sau cu mai multe replici, valorile se adună.
 - **Reguli de alertă**: CPU, memorie, disc sau load peste un prag pe o durată dată, crash loop (restarturi într-un interval) și resursă căzută. Se aplică pe toate resursele de un tip sau pe una anume, cu severitate warning sau critical.
 - Alerta pornește doar dacă pragul e depășit la fiecare măsurare de pe toată durata (fără alarme false din vârfuri scurte) și se rezolvă automat când valoarea revine. Resursele oprite manual nu generează alerte „down”.
-- Pagina **Alerts** are alertele active (cu *Acknowledge*), istoricul, regulile și alegerea canalelor de notificare (Slack, Discord, Telegram, email, webhook). În meniu apare un badge cu numărul de alerte active.
+- Pagina **Alerts** are alertele active (cu *Acknowledge*), istoricul, regulile și alegerea canalelor de notificare (Slack, Microsoft Teams, Discord, Telegram, email, webhook). În meniu apare un badge cu numărul de alerte active.
 - Reguli implicite pe o instalare nouă: CPU server peste 90% timp de 10 minute, memorie peste 90% timp de 5 minute, disc peste 85%, crash loop de aplicație, aplicație căzută, bază de date căzută.
 
 **Management containere & servere**
@@ -81,7 +81,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 
 **Platformă**
 - Proiecte și medii (production, staging…), echipă cu roluri (owner/admin/member), tokenuri API, audit log.
-- Notificări: Discord, Slack, Telegram, email (SMTP), webhook semnat.
+- Notificări: Discord, Slack, Microsoft Teams (Workflows sau incoming webhook, Adaptive Card), Telegram, email (SMTP), webhook semnat.
 - UI în timp real (evenimente SSE), temă dark/light.
 
 ## Pornire rapidă (producție)
