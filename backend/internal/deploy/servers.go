@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/portdock/portdock/internal/docker"
@@ -147,29 +148,67 @@ func (e *Engine) Monitor(ctx context.Context, every time.Duration) {
 	}
 }
 
+// reconcile checks every server (in parallel, backing off from unreachable
+// ones) and aligns the stored status of each resource with its containers.
+// One `docker ps` per server feeds everything, including applications that
+// run on several servers.
 func (e *Engine) reconcile(ctx context.Context) {
 	servers, err := store.Select[store.Server](ctx, e.db, "SELECT * FROM servers")
 	if err != nil {
 		return
 	}
+	var mu sync.Mutex
+	reached := map[int64]bool{}
+	byRes := map[string][]docker.Container{} // resource uuid -> containers on every reached server
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, 4)
 	for _, srv := range servers {
-		srv, err := e.ValidateServer(ctx, srv)
-		if err != nil {
+		if !e.reconcileDue(srv) {
 			continue
 		}
-		if err := e.reconcileServer(ctx, srv); err != nil {
-			slog.Debug("reconcile", "server", srv.Name, "err", err)
-		}
+		wg.Add(1)
+		go func(srv store.Server) {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			srv, err := e.ValidateServer(ctx, srv)
+			e.reconcileNote(srv.ID, err == nil)
+			if err != nil {
+				return
+			}
+			found, err := e.reconcileServer(ctx, srv)
+			if err != nil {
+				slog.Debug("reconcile", "server", srv.Name, "err", err)
+				return
+			}
+			mu.Lock()
+			reached[srv.ID] = true
+			for uuid, cs := range found {
+				byRes[uuid] = append(byRes[uuid], cs...)
+			}
+			mu.Unlock()
+		}(srv)
 	}
-	// Applications on several servers: status is aggregated over all of them.
+	wg.Wait()
+	// Applications on several servers: status is aggregated over all of them,
+	// once every one of their servers answered.
 	apps, err := store.Select[store.Application](ctx, e.db,
 		"SELECT * FROM applications WHERE id IN (SELECT application_id FROM application_servers) AND status NOT IN ('deploying', 'queued')")
 	if err != nil {
 		return
 	}
 	for _, app := range apps {
-		status := e.liveStatus(ctx, app)
-		if status == "unknown" || (status == "stopped" && app.Status == "failed") || status == app.Status {
+		complete := true
+		for _, id := range e.AppServerIDs(ctx, app) {
+			if !reached[id] {
+				complete = false
+			}
+		}
+		if !complete {
+			continue
+		}
+		status := aggregateStatus(byRes[app.UUID], true)
+		if (status == "stopped" && app.Status == "failed") || status == app.Status {
 			continue
 		}
 		_, _ = e.db.ExecContext(ctx, "UPDATE applications SET status = ? WHERE id = ?", status, app.ID)
@@ -177,12 +216,54 @@ func (e *Engine) reconcile(ctx context.Context) {
 	}
 }
 
-func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) error {
+// reconcileDue skips a server that failed recently: the wait doubles with
+// every failure, up to ten minutes, so unreachable servers do not stretch
+// every tick with connection timeouts.
+func (e *Engine) reconcileDue(srv store.Server) bool {
+	e.recon.Lock()
+	defer e.recon.Unlock()
+	if e.recon.next == nil {
+		e.recon.fails, e.recon.next, e.recon.proxyAt = map[int64]int{}, map[int64]time.Time{}, map[int64]time.Time{}
+	}
+	return time.Now().After(e.recon.next[srv.ID])
+}
+
+func (e *Engine) reconcileNote(serverID int64, ok bool) {
+	e.recon.Lock()
+	defer e.recon.Unlock()
+	if ok {
+		delete(e.recon.fails, serverID)
+		delete(e.recon.next, serverID)
+		return
+	}
+	n := e.recon.fails[serverID] + 1
+	e.recon.fails[serverID] = n
+	wait := min(time.Duration(1<<min(n, 5))*30*time.Second, 10*time.Minute)
+	e.recon.next[serverID] = time.Now().Add(wait)
+}
+
+// proxyCheckDue limits the proxy upgrade check to once every ten minutes per server.
+func (e *Engine) proxyCheckDue(serverID int64) bool {
+	e.recon.Lock()
+	defer e.recon.Unlock()
+	if e.recon.proxyAt == nil {
+		e.recon.proxyAt = map[int64]time.Time{}
+	}
+	if time.Since(e.recon.proxyAt[serverID]) < 10*time.Minute {
+		return false
+	}
+	e.recon.proxyAt[serverID] = time.Now()
+	return true
+}
+
+// reconcileServer aligns the resources of one server with its containers and
+// returns the managed containers found, by resource.
+func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) (map[string][]docker.Container, error) {
 	x, err := e.pool.For(ctx, srv)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if srv.ProxyEnabled && srv.ProxyStatus == "running" {
+	if srv.ProxyEnabled && srv.ProxyStatus == "running" && e.proxyCheckDue(srv.ID) {
 		// Upgrades a proxy running an outdated Traefik image (no-op otherwise).
 		if err := proxy.Ensure(ctx, x, e.ProxyOptions(ctx), false); err != nil {
 			slog.Warn("proxy upgrade", "server", srv.Name, "err", err)
@@ -190,7 +271,7 @@ func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) error {
 	}
 	cs, err := docker.PS(ctx, x, true, "label="+docker.LabelManaged+"=true")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	byRes := map[string][]docker.Container{}
 	for _, c := range cs {
@@ -227,5 +308,5 @@ func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) error {
 			}
 		}
 	}
-	return nil
+	return byRes, nil
 }
