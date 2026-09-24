@@ -149,14 +149,24 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 	if a.HealthCheckTimeout <= 0 {
 		a.HealthCheckTimeout = 60
 	}
+	// Paths inside the checkout: normalized, and never allowed to climb out
+	// of the repository with "..".
+	for _, f := range []struct {
+		name string
+		val  *string
+		def  string
+	}{{"base_directory", &a.BaseDirectory, ""}, {"dockerfile_path", &a.DockerfilePath, "Dockerfile"}, {"compose_path", &a.ComposePath, "docker-compose.yml"}, {"publish_directory", &a.PublishDirectory, ""}} {
+		rel, err := store.SafeRelPath(*f.val)
+		if err != nil {
+			return badRequest("%s: %v", f.name, err)
+		}
+		if rel == "" {
+			rel = f.def
+		}
+		*f.val = rel
+	}
 	if a.BaseDirectory == "" {
 		a.BaseDirectory = "/"
-	}
-	if a.DockerfilePath == "" {
-		a.DockerfilePath = "Dockerfile"
-	}
-	if a.ComposePath == "" {
-		a.ComposePath = "docker-compose.yml"
 	}
 	var clean []string
 	for _, d := range store.SplitList(a.Domains) {

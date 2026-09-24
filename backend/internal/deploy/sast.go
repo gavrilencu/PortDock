@@ -252,7 +252,12 @@ func (e *Engine) ScanSource(ctx context.Context, app store.Application) error {
 		defer log.Close()
 		j := &job{e: e, app: app, x: x, log: log, workdir: dir, srcDir: dir + "/src", net: e.Network(bg),
 			d: &store.Deployment{Branch: app.GitBranch}}
-		j.ctxDir = path.Join(j.srcDir, strings.Trim(app.BaseDirectory, "/"))
+		var perr error
+		if j.ctxDir, perr = subPath(j.srcDir, app.BaseDirectory); perr != nil {
+			s.Status, s.Error = "failed", perr.Error()
+			e.finishScan(context.WithoutCancel(bg), &s, nil)
+			return
+		}
 		defer func() {
 			parent, name := path.Split(dir)
 			_ = x.Run(context.WithoutCancel(bg), fmt.Sprintf("rm -rf %s 2>/dev/null || docker run --rm -v %s:/w alpine rm -rf /w/%s", q(dir), q(parent), q(name)), executor.RunOpts{})
