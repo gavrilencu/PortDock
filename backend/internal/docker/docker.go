@@ -25,6 +25,7 @@ const (
 	LabelResource   = "portdock.resource"
 	LabelDeployment = "portdock.deployment"
 	LabelPR         = "portdock.pr"
+	LabelVolume     = "portdock.volume" // name of an application's persistent volume
 
 	labelPrefix       = "portdock."
 	legacyLabelPrefix = "shipyard." // containers created before the rename

@@ -36,6 +36,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - **Aceeași aplicație pe mai multe servere**: deploy de tip rolling, server cu server. Dacă un server pică la health check, deploy-ul se oprește, iar mesajul arată pe câte servere rulează deja versiunea nouă.
 - **Fără registry**, imaginea e transmisă direct, prin SSH, de pe serverul de build pe celelalte (`docker save | docker load`, comprimat).
 - **Server de build dedicat**, ca build-urile să nu consume resursele serverelor de producție.
+- **Stocare persistentă** per aplicație (tab-ul *Stocare*): volume Docker păstrate între deploy-uri, volume separate pentru preview-uri, montare read-only; directoare de pe server doar pentru administratori. La ștergerea aplicației alegi dacă păstrezi sau ștergi datele.
 - Start/stop/restart, log-uri, terminal, rute Traefik, status și ștergerea funcționează pe toate serverele aplicației. Un server scos din listă e curățat automat de aplicație.
 
 **Monitorizare & alerte**

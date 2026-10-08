@@ -140,8 +140,8 @@ func checkRunValue(flag, value string, trusted bool) error {
 			if !trusted {
 				return fmt.Errorf("docker options: only named volumes can be mounted (%q); bind mounts of server paths are for administrators", value)
 			}
-			if err := checkBindSource(src); err != nil {
-				return err
+			if err := CheckBindSource(src); err != nil {
+				return fmt.Errorf("docker options: %w", err)
 			}
 		}
 	case "--mount":
@@ -165,8 +165,8 @@ func checkRunValue(flag, value string, trusted bool) error {
 			if !trusted {
 				return fmt.Errorf("docker options: bind mounts of server paths are for administrators")
 			}
-			if err := checkBindSource(src); err != nil {
-				return err
+			if err := CheckBindSource(src); err != nil {
+				return fmt.Errorf("docker options: %w", err)
 			}
 		default:
 			return fmt.Errorf("docker options: mount type %q is not allowed", typ)
@@ -201,17 +201,17 @@ func checkRunValue(flag, value string, trusted bool) error {
 	return nil
 }
 
-// checkBindSource refuses the host paths that hand over the host even to an
+// CheckBindSource refuses the host paths that hand over the host even to an
 // administrator's application: the root filesystem, the Docker socket and the
 // directories Docker and the system keep their state in.
-func checkBindSource(src string) error {
+func CheckBindSource(src string) error {
 	p := strings.TrimRight(src, "/")
 	if p == "" || p == "/" {
-		return fmt.Errorf("docker options: the root of the server cannot be mounted")
+		return fmt.Errorf("the root of the server cannot be mounted")
 	}
 	for _, bad := range []string{"/var/run/docker.sock", "/run/docker.sock", "/var/lib/docker", "/etc", "/proc", "/sys", "/dev", "/boot", "/root", "/var/run", "/run"} {
 		if p == bad || strings.HasPrefix(p, bad+"/") {
-			return fmt.Errorf("docker options: %s cannot be mounted into a container", src)
+			return fmt.Errorf("%s cannot be mounted into a container", src)
 		}
 	}
 	return nil

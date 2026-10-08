@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Network,
   History,
+  HardDrive,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -66,9 +67,10 @@ import { MetricsPanel } from "../components/metrics";
 import { ResourceTopology } from "../components/resourceTopology";
 import { VersionsBoard } from "../components/versions";
 import { SecurityTab } from "../components/scans";
+import { VolumesTab, useVolumes } from "../components/Volumes";
 import { t, tx } from "../lib/i18n";
 
-type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks" | "security";
+type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "storage" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks" | "security";
 
 export function useApp(id: number) {
   return useQuery({ queryKey: ["application", id], queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`) });
@@ -181,6 +183,7 @@ export function ApplicationPage() {
           { id: "metrics", label: t("Metrics"), icon: <Activity /> },
           { id: "config", label: t("Configuration"), icon: <Settings2 /> },
           { id: "domains", label: t("Domains"), icon: <Globe /> },
+          { id: "storage", label: t("Storage"), icon: <HardDrive />, hidden: a.build_pack === "compose" },
           { id: "env", label: t("Environment"), icon: <KeyRound />, hidden: !a.access.can_write },
           { id: "versions", label: t("Versions"), icon: <History /> },
           { id: "deployments", label: t("Deployments"), icon: <Rocket /> },
@@ -202,6 +205,7 @@ export function ApplicationPage() {
       {tab !== "overview" && tab !== "metrics" && tab !== "deployments" && tab !== "logs" && <AccessNotice access={a.access} />}
       {tab === "config" && <Configuration app={a} />}
       {tab === "domains" && <DomainsTab app={a} />}
+      {tab === "storage" && <VolumesTab app={a} />}
       {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} app={a} />}
       {tab === "versions" && <VersionsBoard app={a} />}
       {tab === "deployments" && <DeploymentsList appId={id} />}
@@ -336,8 +340,9 @@ function Configuration({ app }: { app: ApplicationDetail }) {
     },
     onError: (e) => toast.error(e.message),
   });
+  const volumes = (useVolumes(app.id).data?.volumes ?? []).filter((v) => !v.host_path);
   const del = useMutation({
-    mutationFn: () => api.del(`/applications/${app.id}`),
+    mutationFn: (withVolumes: boolean) => api.del(`/applications/${app.id}?volumes=${withVolumes}`),
     onSuccess: () => {
       toast.success(t("Application deleted"));
       nav(`/projects/${app.project.id}?env=${app.environment_id}`);
@@ -490,7 +495,7 @@ function Configuration({ app }: { app: ApplicationDetail }) {
               />
             </div>
           )}
-          <Field label={t("Custom docker run options")} hint={t("Appended to docker run, e.g. -v data:/data --shm-size 1g. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.")} className="sm:col-span-2">
+          <Field label={t("Custom docker run options")} hint={t("Appended to docker run, e.g. --shm-size 1g. For persistent data use the Storage tab. Privileged mode, host namespaces and capabilities are refused; server paths can be mounted by administrators only.")} className="sm:col-span-2">
             <Input value={f.custom_docker_options} onChange={(e) => set("custom_docker_options", e.target.value)} />
           </Field>
         </Section>
@@ -505,17 +510,44 @@ function Configuration({ app }: { app: ApplicationDetail }) {
       {app.access.can_manage && (
       <Card title={t("Danger zone")} className="border-danger/30">
         <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <p className="text-sm text-muted">{t("Delete this application, its containers, images and deployment history.")}</p>
-          <Button
-            variant="danger"
-            icon={<Trash2 className="size-4" />}
-            loading={del.isPending}
-            onClick={async () => {
-              if (await confirm({ title: t("Delete application"), description: t("This cannot be undone."), danger: true, confirmText: t("Delete"), typeToConfirm: app.name })) del.mutate();
-            }}
-          >
-            {t("Delete application")}
-          </Button>
+          <p className="text-sm text-muted">
+            {t("Delete this application, its containers, images and deployment history.")}
+            {volumes.length > 0 && " " + t("Its persistent volumes can be kept for later or deleted with it.")}
+          </p>
+          {volumes.length === 0 ? (
+            <Button
+              variant="danger"
+              icon={<Trash2 className="size-4" />}
+              loading={del.isPending}
+              onClick={async () => {
+                if (await confirm({ title: t("Delete application"), description: t("This cannot be undone."), danger: true, confirmText: t("Delete"), typeToConfirm: app.name })) del.mutate(false);
+              }}
+            >
+              {t("Delete application")}
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                variant="danger"
+                loading={del.isPending && !del.variables}
+                onClick={async () => {
+                  if (await confirm({ title: t("Delete application (keep data)?"), description: t("The Docker volumes stay on the servers."), danger: true, confirmText: t("Delete"), typeToConfirm: app.name })) del.mutate(false);
+                }}
+              >
+                {t("Delete, keep volumes")}
+              </Button>
+              <Button
+                variant="danger"
+                icon={<Trash2 className="size-4" />}
+                loading={del.isPending && del.variables}
+                onClick={async () => {
+                  if (await confirm({ title: t("Delete application and ALL data?"), description: t("Its persistent volumes are destroyed on every server. This cannot be undone."), danger: true, confirmText: t("Delete everything"), typeToConfirm: app.name })) del.mutate(true);
+                }}
+              >
+                {t("Delete with data")}
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
       )}

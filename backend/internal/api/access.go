@@ -157,6 +157,7 @@ func (s *Server) envOf(ctx context.Context, kind string, id int64) (int64, error
 		"environment": "SELECT id FROM environments WHERE id = ?",
 		"deployment":  "SELECT a.environment_id FROM deployments d JOIN applications a ON a.id = d.application_id WHERE d.id = ?",
 		"domain":      "SELECT a.environment_id FROM app_domains x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
+		"volume":      "SELECT a.environment_id FROM app_volumes x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
 		"backup":      "SELECT d.environment_id FROM backups b JOIN databases d ON d.id = b.database_id WHERE b.id = ?",
 		"backup_run":  "SELECT d.environment_id FROM backup_runs r JOIN backups b ON b.id = r.backup_id JOIN databases d ON d.id = b.database_id WHERE r.id = ?",
 		"env_var": `SELECT COALESCE(
