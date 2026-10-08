@@ -106,6 +106,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 **⚙️ Configuration**
 - Encrypted environment variables (AES-256-GCM), build-time and runtime, per compose service
 - Variables from `docker-compose.yml` shown and overridable; apply with a restart
+- Persistent storage per application: Docker volumes kept across deployments (separate ones for previews), read-only mounts, server directories for administrators
 - Registries: Docker Hub, GHCR, GitLab, Amazon ECR, Harbor, Quay, any OCI registry
 - Corporate networks: HTTP(S) proxy for PortDock, builds and containers (NO_PROXY with domains and CIDRs), Docker Hub mirror (Nexus, Artifactory, Harbor) applied to each server's daemon, npm / PyPI / Go / Maven mirrors for builds
 

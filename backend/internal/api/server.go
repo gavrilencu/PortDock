@@ -493,6 +493,14 @@ func (s *Server) Handler() http.Handler {
 	g("PATCH /api/domains/{id}", "domain", permWrite, s.updateDomain)
 	g("DELETE /api/domains/{id}", "domain", permWrite, s.deleteDomain)
 	g("POST /api/domains/{id}/check", "domain", permRead, s.checkDomainDNS)
+
+	// persistent storage
+	g("GET /api/applications/{id}/volumes", "application", permRead, s.listAppVolumes)
+	g("GET /api/applications/{id}/volumes/usage", "application", permRead, s.appVolumeUsage)
+	g("POST /api/applications/{id}/volumes", "application", permWrite, s.createAppVolume)
+	g("DELETE /api/applications/{id}/volume-data/{name}", "application", permManage, s.deleteAppVolumeData)
+	g("PATCH /api/volumes/{id}", "volume", permWrite, s.updateAppVolume)
+	g("DELETE /api/volumes/{id}", "volume", permWrite, s.deleteAppVolume)
 	admin("POST /api/settings/detect-ip", s.detectPublicIPs)
 	a("GET /api/dns/check", s.checkHostDNS)
 

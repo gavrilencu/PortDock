@@ -80,9 +80,18 @@ func (e *Engine) removeAppFrom(ctx context.Context, x executor.Executor, app sto
 	return x.Run(ctx, script, executor.RunOpts{})
 }
 
-// DeleteApp removes all containers, images and files of an application from every server.
-func (e *Engine) DeleteApp(ctx context.Context, app store.Application) error {
-	err := e.eachTarget(ctx, app, func(t target) error { return e.removeAppFrom(ctx, t.x, app) })
+// DeleteApp removes all containers, images and files of an application from
+// every server, and its persistent volumes when volumes is set.
+func (e *Engine) DeleteApp(ctx context.Context, app store.Application, volumes bool) error {
+	err := e.eachTarget(ctx, app, func(t target) error {
+		if err := e.removeAppFrom(ctx, t.x, app); err != nil {
+			return err
+		}
+		if volumes {
+			return removeAppVolumes(ctx, t.x, app.UUID)
+		}
+		return nil
+	})
 	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID {
 		if x, _, berr := e.pool.ForID(ctx, app.BuildServerID); berr == nil {
 			_ = e.removeAppFrom(ctx, x, app)
@@ -113,7 +122,10 @@ func (e *Engine) CleanupPreview(ctx context.Context, app store.Application, pr i
 			"rm -f %s; true",
 		app.UUID, pr,
 		q(fmt.Sprintf("%s/apps/%s/.env.pr%d", e.cfg.DataDir, app.UUID, pr)))
-	return x.Run(ctx, script, executor.RunOpts{})
+	if err := x.Run(ctx, script, executor.RunOpts{}); err != nil {
+		return err
+	}
+	return removeAppVolumes(ctx, x, app.UUID, fmt.Sprintf("%s=%d", docker.LabelPR, pr))
 }
 
 // ---- databases ----

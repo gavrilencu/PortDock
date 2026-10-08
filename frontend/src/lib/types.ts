@@ -828,6 +828,30 @@ export interface AppDomain {
 export type CertMode = "auto" | "dns" | "custom";
 export type CertStatus = "" | "valid" | "expiring" | "expired" | "pending" | "missing" | "local" | "error";
 
+/** Persistent storage of an application: a Docker volume managed by PortDock, or a server directory when host_path is set. */
+export interface AppVolume {
+  id: number;
+  application_id: number;
+  name: string;
+  mount_path: string;
+  host_path: string;
+  read_only: boolean;
+  created_at: string;
+}
+
+export interface VolumesResponse {
+  volumes: AppVolume[];
+  requires_deploy: boolean;
+}
+
+/** Docker volumes of an application present on one of its servers. */
+export interface VolumeUsage {
+  server_id: number;
+  server_name: string;
+  volumes: string[];
+  error?: string;
+}
+
 export interface DomainsResponse {
   domains: AppDomain[];
   requires_deploy: boolean;

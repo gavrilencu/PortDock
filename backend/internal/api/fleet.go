@@ -253,8 +253,9 @@ func (s *Server) fleetVolumes(w http.ResponseWriter, r *http.Request) error {
 		defer mu.Unlock()
 		for _, v := range vols {
 			fv := fleetVolume{Volume: v, ServerID: srv.ID, ServerName: srv.Name}
-			// Volumes of databases are named sy-<uuid>; compose volumes <project>_<name>.
-			name := strings.TrimPrefix(v.Name, "sy-")
+			// Volumes of databases are named sy-<uuid>; compose volumes <project>_<name>;
+			// application volumes pd-<uuid>_<name>.
+			name := strings.TrimPrefix(strings.TrimPrefix(v.Name, "sy-"), "pd-")
 			if i := strings.Index(name, "_"); i > 0 {
 				name = name[:i]
 			}

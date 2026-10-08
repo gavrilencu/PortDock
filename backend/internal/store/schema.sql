@@ -374,6 +374,21 @@ CREATE TABLE IF NOT EXISTS app_domains (
   UNIQUE(host, path)
 );
 
+-- Persistent storage mounted into an application's containers: a Docker volume
+-- managed by PortDock (pd-<app uuid>_<name>, one per server) or, when host_path
+-- is set, a directory of the server (administrators only).
+CREATE TABLE IF NOT EXISTS app_volumes (
+  id             INTEGER PRIMARY KEY,
+  application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL,
+  mount_path     TEXT NOT NULL,
+  host_path      TEXT NOT NULL DEFAULT '',
+  read_only      INTEGER NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL DEFAULT '',
+  UNIQUE(application_id, name),
+  UNIQUE(application_id, mount_path)
+);
+
 -- Additional servers an application is deployed to (besides applications.server_id).
 CREATE TABLE IF NOT EXISTS application_servers (
   application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,

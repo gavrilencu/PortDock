@@ -463,7 +463,8 @@ func (s *Server) deleteApplication(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	if err := s.engine.DeleteApp(r.Context(), a); err != nil {
+	// ?volumes=true also deletes the persistent volumes; by default their data is kept.
+	if err := s.engine.DeleteApp(r.Context(), a, r.URL.Query().Get("volumes") == "true"); err != nil {
 		return badRequest("cleanup failed: %v", err)
 	}
 	if err := store.Delete(r.Context(), s.db, "applications", a.ID); err != nil {

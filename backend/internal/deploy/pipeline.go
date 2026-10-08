@@ -560,6 +560,11 @@ func (j *job) rollout(ctx context.Context, image string) error {
 		labels[k] = v
 	}
 
+	mounts, err := j.volumeArgs(ctx)
+	if err != nil {
+		return err
+	}
+
 	var started []string
 	for r := 1; r <= replicas; r++ {
 		name := j.containerName(r)
@@ -584,6 +589,7 @@ func (j *job) rollout(ctx context.Context, image string) error {
 				b.WriteString(" -p " + q(p))
 			}
 		}
+		b.WriteString(mounts)
 		b.WriteString(proxy.LabelArgs(labels))
 		// Validated again here: rows written before the allow-list existed
 		// must not reach the shell unchecked.
