@@ -1,0 +1,17 @@
+# Uptime Kuma: https://uptime.kuma.pet
+x-portdock:
+  name: Uptime Kuma
+  description: "Self-hosted uptime monitoring with status pages."
+  category: Monitoring & Observability
+  website: https://uptime.kuma.pet
+  tags: [monitoring, uptime, status-page]
+  service: uptime-kuma
+  port: 3001
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2
+    restart: unless-stopped
+    volumes:
+      - data:/app/data
+volumes:
+  data:

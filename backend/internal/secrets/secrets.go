@@ -17,7 +17,10 @@ import (
 
 const prefix = "enc:v1:"
 
-type Box struct{ aead cipher.AEAD }
+type Box struct {
+	aead cipher.AEAD
+	key  []byte
+}
 
 // LoadOrCreate returns a Box using the explicit key, or a key persisted in dataDir.
 func LoadOrCreate(explicit, dataDir string) (*Box, error) {
@@ -48,6 +51,14 @@ func LoadOrCreate(explicit, dataDir string) (*Box, error) {
 			}
 		}
 	}
+	return NewBox(key)
+}
+
+// NewBox returns a Box for a 32-byte key.
+func NewBox(key []byte) (*Box, error) {
+	if len(key) != 32 {
+		return nil, errors.New("secrets: the key must be 32 bytes")
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -56,7 +67,23 @@ func LoadOrCreate(explicit, dataDir string) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Box{aead: aead}, nil
+	return &Box{aead: aead, key: append([]byte(nil), key...)}, nil
+}
+
+// Key returns the key, for the instance backup (which carries it encrypted
+// with the backup passphrase, so the backup can be restored on a new server).
+func (b *Box) Key() []byte { return append([]byte(nil), b.key...) }
+
+// KeyFile renders a key the way secret.key stores it.
+func KeyFile(key []byte) []byte { return []byte(base64.StdEncoding.EncodeToString(key)) }
+
+// ParseKeyFile reads the contents of a secret.key file.
+func ParseKeyFile(b []byte) ([]byte, error) {
+	k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b)))
+	if err != nil || len(k) != 32 {
+		return nil, errors.New("secrets: invalid key file")
+	}
+	return k, nil
 }
 
 func (b *Box) Encrypt(plain string) string {

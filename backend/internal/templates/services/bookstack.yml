@@ -1,0 +1,45 @@
+# BookStack: https://www.bookstackapp.com
+x-portdock:
+  name: BookStack
+  description: "Documentation platform organised in shelves, books and pages, with MariaDB. Sign in with admin@admin.com / password and change them at once."
+  category: Collaboration & Productivity
+  website: https://www.bookstackapp.com
+  tags: [wiki, documentation, knowledge-base]
+  service: bookstack
+  port: 80
+services:
+  bookstack:
+    image: lscr.io/linuxserver/bookstack:latest
+    restart: unless-stopped
+    environment:
+      APP_URL: ${PORTDOCK_URL}
+      APP_KEY: base64:${PORTDOCK_BASE64_APPKEY}
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: bookstack
+      DB_USERNAME: bookstack
+      DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - config:/config
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: bookstack
+      MARIADB_USER: bookstack
+      MARIADB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      MARIADB_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+volumes:
+  config:
+  db-data:

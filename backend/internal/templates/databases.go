@@ -34,6 +34,14 @@ type Engine struct {
 	restore func(user, pass, db, file string) string
 	// init runs inside the container once it is healthy (e.g. creating the database).
 	init func(user, pass, db string) string
+	// check prints how many tables (collections, keys) the database holds: a
+	// restored backup is verified with it.
+	check func(user, pass, db string) string
+	// CheckUnit names what check counts.
+	CheckUnit string `json:"-"`
+	// fromFile starts a server on a backup file mounted at /restore, for
+	// engines that are not restored by a command (Redis, Valkey).
+	fromFile func(pass, file string) string
 }
 
 func (e Engine) Env(user, pass, db string) map[string]string { return e.env(user, pass, db) }
@@ -66,6 +74,35 @@ func (e Engine) InitCmd(user, pass, db string) string {
 		return ""
 	}
 	return e.init(user, pass, db)
+}
+
+// CheckCmd prints the number of tables, collections or keys ("" when unknown).
+func (e Engine) CheckCmd(user, pass, db string) string {
+	if e.check == nil {
+		return ""
+	}
+	return e.check(user, pass, db)
+}
+
+// FromFileCmd is the shell command that starts the engine on the backup file
+// /restore/<file> ("" when backups are restored by RestoreCmd instead).
+func (e Engine) FromFileCmd(pass, file string) string {
+	if e.fromFile == nil {
+		return ""
+	}
+	return e.fromFile(pass, file)
+}
+
+// Verifiable reports whether a backup of the engine can be test-restored.
+func (e Engine) Verifiable() bool {
+	return e.check != nil && (e.restore != nil || e.fromFile != nil)
+}
+
+// redisFromFile loads an RDB file in a fresh server: append-only is off, or
+// the server would start empty instead of reading the file.
+func redisFromFile(server, user, pass, file string) string {
+	return `cp /restore/` + q(file) + ` /data/dump.rdb && chown ` + user + `:` + user + ` /data/dump.rdb 2>/dev/null; ` +
+		`exec docker-entrypoint.sh ` + server + ` --requirepass ` + q(pass) + ` --appendonly no --dir /data --dbfilename dump.rdb`
 }
 
 // Backups are written by the commands below following each engine's own
@@ -102,6 +139,9 @@ func sqlcmd(pass string) string {
 		`else /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ` + q(pass) + ` -b "$@"; fi; }; `
 }
 
+// sqlString escapes a value for a single-quoted SQL literal.
+func sqlString(s string) string { return strings.ReplaceAll(s, "'", "''") }
+
 func userinfo(user, pass string) string {
 	return url.UserPassword(user, pass).String()
 }
@@ -129,6 +169,10 @@ var Engines = map[string]Engine{
 			// --single-transaction: either the whole backup is restored or nothing changes.
 			return fmt.Sprintf("pg_restore -U %s -d %s --clean --if-exists --no-owner --no-privileges --single-transaction", q(u), q(d))
 		},
+		CheckUnit: "tables",
+		check: func(u, p, d string) string {
+			return fmt.Sprintf("psql -U %s -d %s -tAc %s", q(u), q(d), q("SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"))
+		},
 	},
 	"mysql": {
 		ID: "mysql", Name: "MySQL", DefaultImage: "mysql:8.4", Port: 3306,
@@ -148,6 +192,10 @@ var Engines = map[string]Engine{
 		restore: func(u, p, d, file string) string {
 			return fmt.Sprintf("gunzip | mysql -uroot -p%s %s", q(p), q(d))
 		},
+		CheckUnit: "tables",
+		check: func(u, p, d string) string {
+			return fmt.Sprintf("mysql -uroot -p%s -N -B -e %s 2>/dev/null", q(p), q("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '"+sqlString(d)+"'"))
+		},
 	},
 	"mariadb": {
 		ID: "mariadb", Name: "MariaDB", DefaultImage: "mariadb:11", Port: 3306,
@@ -165,6 +213,10 @@ var Engines = map[string]Engine{
 		},
 		restore: func(u, p, d, file string) string {
 			return fmt.Sprintf("gunzip | mariadb -uroot -p%s %s", q(p), q(d))
+		},
+		CheckUnit: "tables",
+		check: func(u, p, d string) string {
+			return fmt.Sprintf("mariadb -uroot -p%s -N -B -e %s", q(p), q("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '"+sqlString(d)+"'"))
 		},
 	},
 	"mongodb": {
@@ -188,6 +240,12 @@ var Engines = map[string]Engine{
 		restore: func(u, p, d, file string) string {
 			return fmt.Sprintf("mongorestore --quiet --username %s --password %s --authenticationDatabase admin --archive --gzip --drop", q(u), q(p))
 		},
+		// Backups hold every database: count the collections outside the system ones.
+		CheckUnit: "collections",
+		check: func(u, p, d string) string {
+			return fmt.Sprintf("mongosh --quiet -u %s -p %s --authenticationDatabase admin --eval %s", q(u), q(p),
+				q(`let n = 0; db.adminCommand({listDatabases: 1}).databases.forEach(x => { if (!["admin", "config", "local"].includes(x.name)) n += db.getSiblingDB(x.name).getCollectionNames().length }); print(n)`))
+		},
 	},
 	"redis": {
 		ID: "redis", Name: "Redis", DefaultImage: "redis:8-alpine", Port: 6379,
@@ -199,6 +257,9 @@ var Engines = map[string]Engine{
 			return fmt.Sprintf("redis://default:%s@%s:%d/0", url.QueryEscape(p), h, port)
 		},
 		backupCmd: func(u, p, d string) string { return redisBackup("redis-cli", p) },
+		CheckUnit: "keys",
+		check:     func(u, p, d string) string { return "redis-cli -a " + q(p) + " --no-auth-warning DBSIZE" },
+		fromFile:  func(p, file string) string { return redisFromFile("redis-server", "redis", p, file) },
 	},
 	"valkey": {
 		ID: "valkey", Name: "Valkey", DefaultImage: "valkey/valkey:8-alpine", Port: 6379,
@@ -210,6 +271,9 @@ var Engines = map[string]Engine{
 			return fmt.Sprintf("redis://default:%s@%s:%d/0", url.QueryEscape(p), h, port)
 		},
 		backupCmd: func(u, p, d string) string { return redisBackup("valkey-cli", p) },
+		CheckUnit: "keys",
+		check:     func(u, p, d string) string { return "valkey-cli -a " + q(p) + " --no-auth-warning DBSIZE" },
+		fromFile:  func(p, file string) string { return redisFromFile("valkey-server", "valkey", p, file) },
 	},
 	"clickhouse": {
 		ID: "clickhouse", Name: "ClickHouse", DefaultImage: "clickhouse/clickhouse-server:25.8", Port: 8123,
@@ -242,6 +306,10 @@ var Engines = map[string]Engine{
 				`while IFS= read -r n; do [ -n "$n" ] || continue; C --multiquery < "$t/$n.sql"; done < "$t/views.txt"; ` +
 				`rm -rf "$t"`
 		},
+		CheckUnit: "tables",
+		check: func(u, p, d string) string {
+			return clickhouseClient(u, p, d) + `C -q "SELECT count() FROM system.tables WHERE database = currentDatabase()"`
+		},
 	},
 	"mssql": {
 		ID: "mssql", Name: "Microsoft SQL Server", DefaultImage: "mcr.microsoft.com/mssql/server:2022-latest", Port: 1433,
@@ -272,6 +340,10 @@ var Engines = map[string]Engine{
 			return `set -e; ` + sqlcmd(p) + `mkdir -p /var/opt/mssql/backup; f=/var/opt/mssql/backup/portdock-restore.bak; gunzip -c > "$f"; ` +
 				`S -Q "IF DB_ID(N'` + d + `') IS NOT NULL ALTER DATABASE [` + d + `] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; RESTORE DATABASE [` + d + `] FROM DISK = N'$f' WITH REPLACE, CHECKSUM; ALTER DATABASE [` + d + `] SET MULTI_USER" >&2 ` +
 				`|| { S -Q "IF DB_ID(N'` + d + `') IS NOT NULL ALTER DATABASE [` + d + `] SET MULTI_USER" >&2; rm -f "$f"; exit 1; }; rm -f "$f"`
+		},
+		CheckUnit: "tables",
+		check: func(u, p, d string) string {
+			return sqlcmd(p) + `S -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM [` + d + `].INFORMATION_SCHEMA.TABLES"`
 		},
 	},
 }

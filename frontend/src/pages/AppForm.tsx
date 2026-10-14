@@ -10,6 +10,7 @@ import { BranchSelect, GitHubMark, RepoPicker, useGitHubApps } from "../componen
 import { AzureBranchSelect, AzureMark, AzureRepoPicker, ConnectAzureLink, useAzureConnections, type AzureSelection } from "../components/azure";
 import { BuildSettings, applySuggestion } from "../components/BuildSettings";
 import { t, tx } from "../lib/i18n";
+import { NewDeployKey, isSSHRepo } from "../components/gitssh";
 
 /** Creates an application from GitHub, Azure DevOps, any Git URL, or a Docker image. */
 export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "image" | "compose"; envId: number; serverId: number; onCreated: (a: ApplicationDetail) => void }) {
@@ -25,6 +26,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
   const [picking, setPicking] = useState(true);
   const [touchedPack, setTouchedPack] = useState(false);
   const [privateRepo, setPrivateRepo] = useState(false);
+  const [newKey, setNewKey] = useState<{ app: ApplicationDetail; publicKey: string; deploy: boolean } | null>(null);
   const [f, setF] = useState({
     name: "",
     git_repository: "",
@@ -101,15 +103,25 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
         body.azure_repo_id = azRepo.id;
         body.git_repository = azRepo.remote_url;
         delete body.git_token;
-      } else if (!privateRepo) {
+      } else if (!privateRepo || isSSHRepo(f.git_repository)) {
         delete body.git_token;
       }
       const app = await api.post<ApplicationDetail>("/applications", body);
+      if (kind === "git" && !useGH && !useAZ && isSSHRepo(f.git_repository)) {
+        // The deploy key exists only now: it goes into the repository before the first deployment.
+        const key = await api.post<{ public_key: string }>(`/applications/${app.id}/deploy-key`, {});
+        return { app, publicKey: key.public_key, deploy: !!deploy };
+      }
       if (deploy) await api.post(`/applications/${app.id}/deploy`);
-      return app;
+      return { app, publicKey: "", deploy: !!deploy };
     },
-    onSuccess: (a) => {
-      toast.success(f.deploy ? t("{name} created — first deployment queued", { name: a.name }) : t("{name} created", { name: a.name }));
+    onSuccess: ({ app: a, publicKey, deploy }) => {
+      if (publicKey) {
+        toast.success(t("{name} created", { name: a.name }));
+        setNewKey({ app: a, publicKey, deploy });
+        return;
+      }
+      toast.success(deploy ? t("{name} created — first deployment queued", { name: a.name }) : t("{name} created", { name: a.name }));
       onCreated(a);
     },
     onError: (e) => toast.error(e.message),
@@ -151,10 +163,11 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
 
   return (
     <div className="space-y-6">
+      {newKey && <NewDeployKey app={newKey.app} publicKey={newKey.publicKey} deploy={newKey.deploy} onDone={() => onCreated(newKey.app)} />}
       <Card
         title={t("Source")}
         description={
-          useGH ? t("Pick a repository from your connected GitHub accounts.") : useAZ ? t("Pick a repository from your connected Azure DevOps organizations.") : t("Clone from any Git host over HTTPS.")
+          useGH ? t("Pick a repository from your connected GitHub accounts.") : useAZ ? t("Pick a repository from your connected Azure DevOps organizations.") : t("Clone from any Git host, over HTTPS or SSH.")
         }
         actions={
           (hasGitHub || hasAzure) && (
@@ -277,7 +290,7 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
         ) : (
           <div className="grid gap-4 p-5 md:grid-cols-2">
             <Field label={t("Repository URL")} required className="md:col-span-2">
-              <Input required value={f.git_repository} onChange={(e) => set({ git_repository: e.target.value })} placeholder="https://gitlab.com/acme/web.git" />
+              <Input required value={f.git_repository} onChange={(e) => set({ git_repository: e.target.value })} placeholder="https://gitlab.com/acme/web.git · git@gitlab.corp:team/web.git" />
             </Field>
             <Field label={t("Branch")}>
               <Input value={f.git_branch} onChange={(e) => set({ git_branch: e.target.value })} />
@@ -286,8 +299,16 @@ export function AppForm({ kind, envId, serverId, onCreated }: { kind: "git" | "i
               <Input value={f.base_directory} onChange={(e) => set({ base_directory: e.target.value || "/" })} />
             </Field>
             <div className="space-y-3 md:col-span-2">
-              <Switch checked={privateRepo} onChange={setPrivateRepo} label={t("Private repository")} description={t("Authenticate with a personal access or deploy token.")} />
-              {privateRepo && <PasswordInput value={f.git_token} onChange={(e) => set({ git_token: e.target.value })} placeholder="glpat-… / ghp_…" />}
+              {isSSHRepo(f.git_repository) ? (
+                <p className="rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 text-xs text-muted">
+                  {t("Cloned over SSH: PortDock generates a deploy key for this application and shows it after you create it, to add to the repository.")}
+                </p>
+              ) : (
+                <>
+                  <Switch checked={privateRepo} onChange={setPrivateRepo} label={t("Private repository")} description={t("Authenticate with a personal access or deploy token.")} />
+                  {privateRepo && <PasswordInput value={f.git_token} onChange={(e) => set({ git_token: e.target.value })} placeholder="glpat-… / ghp_…" />}
+                </>
+              )}
             </div>
             {!hasGitHub && !hasAzure && (
               <div className="rounded-lg border border-border bg-surface-2/50 px-3 py-2.5 text-xs text-muted md:col-span-2">

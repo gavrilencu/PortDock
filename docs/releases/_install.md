@@ -33,3 +33,15 @@ Then open the dashboard, create the owner account, and start the proxy from **Se
 ## Update an existing installation
 
 In PortDock, click **Update available** at the bottom of the sidebar, or go to **Settings → Updates**. A backup is taken first, and the previous version comes back automatically if the new one doesn't start. Your applications keep running during the update.
+
+## Verify the image
+
+The image is signed by this repository's release workflow (Sigstore keyless) and carries an SBOM and a provenance attestation; the SBOM is also attached to this release. PortDock checks the signature itself before updating. To check it by hand:
+
+```bash
+cosign verify {{IMAGE}}:{{VERSION}} \
+  --certificate-identity-regexp '^https://github.com/{{REPO}}/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Image digest: `{{DIGEST}}`

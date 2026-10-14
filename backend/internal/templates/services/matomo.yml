@@ -1,0 +1,43 @@
+# Matomo: https://matomo.org
+x-portdock:
+  name: Matomo
+  description: "Web analytics that keeps the data on your servers (GDPR friendly), with MariaDB. The first visit runs the installer; the database is db, user matomo and the password of the Compose tab."
+  category: Analytics & BI
+  website: https://matomo.org
+  tags: [analytics, web, privacy]
+  service: matomo
+  port: 80
+services:
+  matomo:
+    image: matomo:5-apache
+    restart: unless-stopped
+    environment:
+      MATOMO_DATABASE_HOST: db
+      MATOMO_DATABASE_ADAPTER: mysql
+      MATOMO_DATABASE_TABLES_PREFIX: matomo_
+      MATOMO_DATABASE_USERNAME: matomo
+      MATOMO_DATABASE_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      MATOMO_DATABASE_DBNAME: matomo
+    volumes:
+      - matomo:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    command: --max-allowed-packet=64MB
+    environment:
+      MARIADB_DATABASE: matomo
+      MARIADB_USER: matomo
+      MARIADB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      MARIADB_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+volumes:
+  matomo:
+  db-data:

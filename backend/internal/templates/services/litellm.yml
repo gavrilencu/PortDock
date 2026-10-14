@@ -1,0 +1,38 @@
+# LiteLLM: https://www.litellm.ai
+x-portdock:
+  name: LiteLLM
+  description: "OpenAI-compatible LLM gateway with admin UI, backed by PostgreSQL. Log in as admin with UI_PASSWORD (see Compose tab)."
+  category: AI & Machine Learning
+  website: https://www.litellm.ai
+  tags: [ai, llm, gateway, openai]
+  service: litellm
+  port: 4000
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://litellm:${PORTDOCK_PASSWORD_DB}@postgres:5432/litellm
+      LITELLM_MASTER_KEY: sk-${PORTDOCK_SECRET_MASTER}
+      LITELLM_SALT_KEY: sk-${PORTDOCK_SECRET_SALT}
+      STORE_MODEL_IN_DB: "True"
+      UI_USERNAME: admin
+      UI_PASSWORD: ${PORTDOCK_PASSWORD_UI}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: litellm
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      retries: 10
+volumes:
+  pg-data:

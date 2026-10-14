@@ -58,6 +58,7 @@ type job struct {
 	routes  []proxy.DomainRoute // production domains, or preview domains for PRs
 	reg     *store.Registry     // push/pull registry (nil: images stay on the servers)
 	net     netcfg.Config       // corporate proxy and mirrors
+	single  bool                // the application runs on one server (canary deployments)
 }
 
 func (j *job) run(ctx context.Context, cmd string) error {
@@ -205,6 +206,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	for i, t := range targets {
 		tj := *j // per-server copy; build-time changes to j.app (e.g. static port) carry over
 		tj.x, tj.srv = t.x, t.srv
+		tj.single = len(targets) == 1
 		if len(targets) > 1 {
 			log.Step(fmt.Sprintf("Server %d/%d: %s", i+1, len(targets), t.srv.Name))
 		}
@@ -357,6 +359,17 @@ func (j *job) gitURL(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("the Azure DevOps connection of this application no longer exists: %w", err)
 		}
 		tok := j.e.box.MustDecrypt(conn.Token)
+		// Rows saved before the clone URL was taken from the organization may
+		// point elsewhere; the token goes only to the organization's own URL.
+		if !azuredevops.InOrganization(conn.URL, j.app.GitRepository) {
+			remote, err := azuredevops.New(conn.URL, tok).RemoteURL(ctx, j.app.AzureRepoID)
+			if err != nil {
+				return "", fmt.Errorf("Azure DevOps: %w", err)
+			}
+			if remote != azuredevops.CleanRemoteURL(j.app.GitRepository) {
+				return "", fmt.Errorf("the repository URL is not the one the Azure DevOps connection reports for this repository; select the repository again")
+			}
+		}
 		j.log.Mask(tok)
 		return azuredevops.CloneURL(j.app.GitRepository, tok), nil
 	}
@@ -401,6 +414,11 @@ func (j *job) checkout(ctx context.Context) error {
 		j.log.Mask(repo) // contains credentials
 	}
 	j.log.Printf("Repository: %s", app.GitRepository)
+	sshFlags, sshCleanup, err := j.gitSSH(ctx)
+	defer sshCleanup()
+	if err != nil {
+		return err
+	}
 
 	var steps []string
 	switch {
@@ -430,8 +448,12 @@ func (j *job) checkout(ctx context.Context) error {
 	default:
 		steps = []string{fmt.Sprintf("clone -q --depth 1 --branch %s --single-branch --recurse-submodules --shallow-submodules %s .", q(d.Branch), q(repo))}
 	}
-	script := "set -e; git config --global --add safe.directory '*'; git " + strings.Join(steps, "; git ") + "; git log -1 --format='%H%n%s'"
-	cmd := fmt.Sprintf("docker run --rm%s -v %s:/work -w /work/src --entrypoint sh %s -c %s", envFlags(buildProxyEnv(j.net)), q(j.workdir), gitImage, q(script))
+	// The credentials of the clone URL must not stay in .git/config: the build
+	// (and a build command of the repository) can read the checkout. Submodules
+	// with relative URLs inherit them, in .git/config and .git/modules.
+	steps = append(steps, "remote set-url origin "+q(app.GitRepository))
+	script := "set -e; git config --global --add safe.directory '*'; git " + strings.Join(steps, "; git ") + "; " + stripSubmoduleCredentials + "; git log -1 --format='%H%n%s'"
+	cmd := fmt.Sprintf("docker run --rm%s%s -v %s:/work -w /work/src --entrypoint sh %s -c %s", envFlags(buildProxyEnv(j.net)), sshFlags, q(j.workdir), gitImage, q(script))
 	j.log.Printf("$ git clone %s (branch %s)", app.GitRepository, d.Branch)
 	out, err := j.output(ctx, cmd)
 	if err != nil {
@@ -443,11 +465,19 @@ func (j *job) checkout(ctx context.Context) error {
 		d.CommitMessage = strings.TrimSpace(lines[n-1])
 	}
 	j.log.Printf("Checked out %s: %s", short(d.CommitSHA), d.CommitMessage)
+	if err := j.checkRepoPaths(ctx); err != nil {
+		return err
+	}
 	j.e.reportCommitStatus(app, *d, "pending", "Deployment in progress")
 	_, _ = j.e.db.ExecContext(ctx, "UPDATE deployments SET commit_sha = ?, commit_message = ? WHERE id = ?", d.CommitSHA, d.CommitMessage, d.ID)
 	j.e.hub.Event("deployment", d.ID, "running")
 	return nil
 }
+
+// stripSubmoduleCredentials removes user:token@ from the URLs of submodules.
+const stripSubmoduleCredentials = `strip() { printf '%s' "$1" | sed -E 's#://[^/@]+@#://#'; }; ` +
+	`git config --get-regexp '^submodule\..*\.url$' 2>/dev/null | while read -r k u; do git config "$k" "$(strip "$u")"; done; ` +
+	`git submodule foreach --quiet --recursive 'u=$(git remote get-url origin 2>/dev/null) && git remote set-url origin "$(printf "%s" "$u" | sed -E "s#://[^/@]+@#://#")" || true' >/dev/null 2>&1 || true`
 
 func maskErr(err error, secret string) string {
 	return strings.ReplaceAll(err.Error(), secret, "<repository>")
@@ -499,6 +529,10 @@ func (j *job) writeEnvFile(ctx context.Context) (string, error) {
 		if _, set := vars[k]; !set {
 			vars[k] = v
 		}
+	}
+	has := func(k string) bool { _, set := vars[k]; return set }
+	for k, v := range j.e.otelEnv(ctx, j.app, j.d, "", has) {
+		vars[k] = v
 	}
 	if err := executor.WriteFile(ctx, j.x, file, []byte(envFile(vars)), "0600"); err != nil {
 		return "", err
@@ -580,6 +614,9 @@ func (j *job) rollout(ctx context.Context, image string) error {
 		if app.MemoryLimit != "" {
 			b.WriteString(" --memory " + q(app.MemoryLimit))
 		}
+		// Load balancing: the replicas of the other servers are reached on
+		// their private address.
+		b.WriteString(e.lbPublish(ctx, app, j.srv, d.PRNumber))
 		if hostPorts {
 			mappings, err := store.NormalizePortMappings(app.PortsMapping)
 			if err != nil {
@@ -634,12 +671,33 @@ func (j *job) rollout(ctx context.Context, image string) error {
 		}
 	}
 
+	// A canary gets part of the traffic first, and is rolled back if it fails.
+	if j.canaryWanted(old) {
+		if err := j.runCanary(ctx, started, old); err != nil {
+			return err
+		}
+	}
+
 	// Switch traffic to the new containers only now that they are healthy.
 	routesFile := e.routesPath(app.UUID, d.PRNumber)
-	routes := proxy.RenderDynamic(proxy.AppRoutes{Name: j.routeName(), Upstreams: started, Domains: j.routes})
+	ar := proxy.AppRoutes{Name: j.routeName(), Upstreams: started, Domains: j.routes, Protection: e.protectionFor(ctx, app, j.srv)}
+	balanced := d.PRNumber == 0 && e.LoadBalanced(ctx, app)
+	if balanced && j.srv.ID == app.ServerID {
+		// The primary also routes to the replicas of the other servers.
+		ar.Upstreams, ar.HealthPath = append(append([]string{}, started...), e.lbEndpoints(ctx, app)...), app.HealthCheckPath
+	}
+	routes := proxy.RenderDynamic(ar)
 	if err := writeRoutes(ctx, j.x, routesFile, routes); err != nil {
 		j.removeContainers(started...)
 		return fmt.Errorf("update routing: %w", err)
+	}
+	if balanced && j.srv.ID != app.ServerID {
+		// The primary's proxy sends traffic to the new replicas too.
+		if err := e.writeLBRoutes(ctx, app); err != nil {
+			j.log.Printf("⚠️ Load balancing on the primary server: %v", err)
+		} else {
+			j.log.Printf("The primary server balances traffic to this server's new replicas.")
+		}
 	}
 	// Traffic has moved: from here on a cancellation must not leave the old
 	// and the new version running side by side, so the teardown finishes
@@ -662,6 +720,9 @@ func (j *job) rollout(ctx context.Context, image string) error {
 			}
 			j.log.Printf("Stopping %s", c.Name)
 			_ = j.x.Run(ctx, fmt.Sprintf("docker stop -t 30 %s >/dev/null 2>&1; docker rm -f %s >/dev/null 2>&1", q(c.Name), q(c.Name)), executor.RunOpts{})
+		}
+		if balanced && j.srv.ID != app.ServerID {
+			_ = e.writeLBRoutes(ctx, app) // without the replicas just stopped
 		}
 	}
 	for _, r := range j.routes {

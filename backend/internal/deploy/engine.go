@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,6 +102,9 @@ type Options struct {
 func (e *Engine) Enqueue(ctx context.Context, app store.Application, o Options) (store.Deployment, error) {
 	if o.Trigger == "" {
 		o.Trigger = "manual"
+	}
+	if err := CheckRef(o.Branch, o.CommitSHA); err != nil {
+		return store.Deployment{}, err
 	}
 	if o.Branch == "" {
 		o.Branch = app.GitBranch
@@ -350,10 +354,18 @@ func (e *Engine) process(parent context.Context, id int64) {
 			Title:   fmt.Sprintf("Deployment %s: %s", status, app.Name),
 			Success: status == "success",
 			URL:     fmt.Sprintf("%s/applications/%d/deployments/%d", e.PublicURL(bg), app.ID, d.ID),
-			Fields:  map[string]string{"Trigger": d.Trigger, "Branch": d.Branch, "Commit": short(d.CommitSHA)},
+			Fields:  map[string]string{"Trigger": d.Trigger, "Branch": d.Branch, "Commit": short(d.CommitSHA), "Duration": time.Since(start).Round(time.Second).String()},
+		}
+		if d.CommitMessage != "" {
+			ev.Fields["Change"] = d.CommitMessage
 		}
 		if d.PRNumber > 0 {
 			ev.Fields["Preview"] = fmt.Sprintf("PR #%d", d.PRNumber)
+		} else if status == "success" {
+			// Where the new version answers.
+			if routes, err := e.DomainRoutes(bg, app); err == nil && len(routes) > 0 {
+				ev.Fields["Address"] = urlOf(routes[0])
+			}
 		}
 		if runErr != nil {
 			ev.Message = runErr.Error()
@@ -586,4 +598,20 @@ func (l *logger) Close() {
 	l.mu.Lock()
 	l.flushLocked()
 	l.mu.Unlock()
+}
+
+var commitRe = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
+
+// CheckRef refuses a branch or commit that git could read as an option
+// ("--upload-pack=…") or that is not a ref at all. Both come from webhooks and
+// the deploy hook and end up as git arguments.
+func CheckRef(branch, commit string) error {
+	if commit != "" && !commitRe.MatchString(commit) {
+		return fmt.Errorf("invalid commit %q: expected a commit SHA", commit)
+	}
+	if branch != "" && (strings.HasPrefix(branch, "-") || strings.Contains(branch, "..") || len(branch) > 255 ||
+		strings.ContainsFunc(branch, func(r rune) bool { return r <= ' ' || r == 0x7f || strings.ContainsRune(`~^:?*[\`, r) })) {
+		return fmt.Errorf("invalid branch %q", branch)
+	}
+	return nil
 }

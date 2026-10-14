@@ -1,0 +1,21 @@
+# Vaultwarden: https://github.com/dani-garcia/vaultwarden
+x-portdock:
+  name: Vaultwarden
+  description: "Bitwarden-compatible password manager server."
+  category: Security & Identity
+  website: https://github.com/dani-garcia/vaultwarden
+  tags: [passwords, bitwarden, secrets]
+  service: vaultwarden
+  port: 80
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${PORTDOCK_URL}
+      ADMIN_TOKEN: ${PORTDOCK_SECRET_ADMIN}
+      SIGNUPS_ALLOWED: "true"
+    volumes:
+      - data:/data
+volumes:
+  data:

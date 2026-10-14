@@ -30,14 +30,97 @@ type DomainRoute struct {
 }
 
 // AppRoutes describes every route of one workload. Upstreams are container
-// names reachable on the proxy network; traffic only moves to a new version
-// once its routes file lists the new containers.
+// names reachable on the proxy network, or ip:port of replicas on other
+// servers (the private network); traffic only moves to a new version once its
+// routes file lists the new containers.
 type AppRoutes struct {
 	Name      string
 	Upstreams []string
+	// HealthPath makes Traefik check the upstreams, so a server that is down
+	// stops getting traffic (load balancing across servers).
+	HealthPath string
 	// Services holds the upstreams of each compose service, for domains with a Service.
 	Services map[string][]string
 	Domains  []DomainRoute
+	// Protection applies to every domain of the workload.
+	Protection Protection
+	// Canary sends Percent of the traffic of the main service to new
+	// containers while Upstreams (the current version) get the rest.
+	Canary *Canary
+}
+
+// Canary is a new version receiving part of the traffic. Tag (the
+// deployment) makes the names of its services unique, so Traefik's request
+// counters of one canary never mix with an earlier one's.
+type Canary struct {
+	Upstreams []string
+	Percent   int
+	Tag       string
+}
+
+// CanaryService names the services of a canary split: the weighted service
+// routers point to, and its stable and canary halves (Traefik metrics are
+// labelled with these names, suffixed with @file).
+func CanaryService(name string, port int, tag string) (weighted, stable, canary string) {
+	weighted = SafeName(name) + "-p" + strconv.Itoa(port)
+	return weighted, weighted + "-stable-" + tag, weighted + "-canary-" + tag
+}
+
+// Protection restricts who reaches a workload, in front of it in the proxy.
+type Protection struct {
+	// IPAllow lists the addresses or CIDR ranges allowed (empty: everyone).
+	IPAllow []string
+	// IPDepth reads the client address from X-Forwarded-For, this many proxies
+	// (a CDN, a load balancer) back; 0 uses the connection's address.
+	IPDepth int
+	// RateAverage requests per second per client address, with bursts of RateBurst (0: no limit).
+	RateAverage int
+	RateBurst   int
+	// BasicUsers are "user:bcrypt-hash" entries for a password prompt.
+	BasicUsers []string
+	// ForwardAuth is the address PortDock answers single sign-on checks on.
+	ForwardAuth string
+}
+
+// AuthResponseHeaders carry the signed-in user to the application.
+var AuthResponseHeaders = []string{"X-Forwarded-User", "X-Forwarded-Email", "X-Forwarded-Name"}
+
+// middlewares renders the protection of a workload named n, in the order the
+// proxy applies them: address, rate, then identity.
+func (p Protection) middlewares(n string) (map[string]any, []string) {
+	mws := map[string]any{}
+	var chain []string
+	add := func(name string, cfg any) {
+		mws[n+"-"+name] = cfg
+		chain = append(chain, n+"-"+name)
+	}
+	strategy := func() map[string]any {
+		if p.IPDepth > 0 {
+			return map[string]any{"ipStrategy": map[string]any{"depth": p.IPDepth}}
+		}
+		return map[string]any{}
+	}
+	if len(p.IPAllow) > 0 {
+		cfg := strategy()
+		cfg["sourceRange"] = p.IPAllow
+		add("ipallow", map[string]any{"ipAllowList": cfg})
+	}
+	if p.RateAverage > 0 {
+		cfg := map[string]any{"average": p.RateAverage, "burst": max(p.RateBurst, p.RateAverage), "period": "1s"}
+		// Traefik rejects the whole file for an empty sourceCriterion; without
+		// one it limits by the connection's address.
+		if p.IPDepth > 0 {
+			cfg["sourceCriterion"] = strategy()
+		}
+		add("ratelimit", map[string]any{"rateLimit": cfg})
+	}
+	switch {
+	case p.ForwardAuth != "":
+		add("sso", map[string]any{"forwardAuth": map[string]any{"address": p.ForwardAuth, "authResponseHeaders": AuthResponseHeaders}})
+	case len(p.BasicUsers) > 0:
+		add("auth", map[string]any{"basicAuth": map[string]any{"users": p.BasicUsers, "removeHeader": true}})
+	}
+	return mws, chain
 }
 
 func (r AppRoutes) upstreams(d DomainRoute) []string {
@@ -125,8 +208,24 @@ type server struct {
 
 type service struct {
 	LoadBalancer struct {
-		Servers []server `yaml:"servers"`
+		Servers     []server     `yaml:"servers"`
+		HealthCheck *healthCheck `yaml:"healthCheck,omitempty"`
 	} `yaml:"loadBalancer"`
+}
+
+type healthCheck struct {
+	Path     string `yaml:"path"`
+	Interval string `yaml:"interval"`
+	Timeout  string `yaml:"timeout"`
+}
+
+// upstreamURL is the address of a container (name) or of a replica on
+// another server (ip:port).
+func upstreamURL(u string, port int) string {
+	if strings.Contains(u, ":") {
+		return "http://" + u
+	}
+	return fmt.Sprintf("http://%s:%d", u, port)
 }
 
 // RenderDynamic returns the Traefik file-provider YAML for r, or nil when
@@ -137,11 +236,15 @@ func RenderDynamic(r AppRoutes) []byte {
 	}
 	n := SafeName(r.Name)
 	routers := map[string]router{}
-	services := map[string]service{}
+	services := map[string]any{}
 	mws := map[string]any{
 		n + "-https":   map[string]any{"redirectScheme": map[string]any{"scheme": "https", "permanent": true}},
 		n + "-gzip":    map[string]any{"compress": map[string]any{}},
 		n + "-noindex": map[string]any{"headers": map[string]any{"customResponseHeaders": map[string]string{"X-Robots-Tag": "noindex, nofollow"}}},
+	}
+	protMws, protChain := r.Protection.middlewares(n)
+	for k, v := range protMws {
+		mws[k] = v
 	}
 	for i, d := range r.Domains {
 		ups := append([]string{}, r.upstreams(d)...)
@@ -154,13 +257,32 @@ func RenderDynamic(r AppRoutes) []byte {
 			svc = n + "-" + SafeName(d.Service) + "-p" + strconv.Itoa(d.Port)
 		}
 		if _, ok := services[svc]; !ok {
-			var s service
-			for _, u := range ups {
-				s.LoadBalancer.Servers = append(s.LoadBalancer.Servers, server{URL: fmt.Sprintf("http://%s:%d", u, d.Port)})
+			lb := func(names []string) service {
+				var s service
+				remote := false
+				for _, u := range names {
+					s.LoadBalancer.Servers = append(s.LoadBalancer.Servers, server{URL: upstreamURL(u, d.Port)})
+					remote = remote || strings.Contains(u, ":")
+				}
+				if remote && r.HealthPath != "" && d.Service == "" {
+					s.LoadBalancer.HealthCheck = &healthCheck{Path: r.HealthPath, Interval: "10s", Timeout: "3s"}
+				}
+				return s
 			}
-			services[svc] = s
+			if c := r.Canary; c != nil && d.Service == "" && len(c.Upstreams) > 0 && c.Percent > 0 && c.Percent < 100 {
+				canary := append([]string{}, c.Upstreams...)
+				sort.Strings(canary)
+				_, stable, canaryName := CanaryService(r.Name, d.Port, c.Tag)
+				services[stable], services[canaryName] = lb(ups), lb(canary)
+				services[svc] = map[string]any{"weighted": map[string]any{"services": []map[string]any{
+					{"name": stable, "weight": 100 - c.Percent},
+					{"name": canaryName, "weight": c.Percent},
+				}}}
+			} else {
+				services[svc] = lb(ups)
+			}
 		}
-		var chain []string
+		chain := append([]string{}, protChain...)
 		if d.WWW == "to-www" || d.WWW == "to-apex" {
 			a := regexp.QuoteMeta(apex(d.Host))
 			from, to := `^(https?)://`+a+`(.*)$`, "${1}://www."+apex(d.Host)+"${2}"

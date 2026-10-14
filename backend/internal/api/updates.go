@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/updater"
 )
@@ -124,6 +125,7 @@ func (s *Server) updateStatus(ctx context.Context, admin bool) map[string]any {
 		"channel": firstNonEmpty(s.db.Setting(ctx, "update_channel"), "stable"), "auto": s.db.Setting(ctx, "update_auto") == "true",
 		"official_repo": DefaultUpdateRepo, "overridden": s.db.Setting(ctx, "update_repo") != "" || s.db.Setting(ctx, "update_image") != "",
 		"token_set": s.db.Setting(ctx, "update_token") != "",
+		"verify":    s.updateVerifyMode(ctx),
 	}
 	return res
 }
@@ -157,6 +159,7 @@ func (s *Server) updateUpdateSettings(w http.ResponseWriter, r *http.Request) er
 		Token   *string `json:"token"`
 		Channel *string `json:"channel"`
 		Auto    *bool   `json:"auto"`
+		Verify  *string `json:"verify"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
@@ -188,9 +191,52 @@ func (s *Server) updateUpdateSettings(w http.ResponseWriter, r *http.Request) er
 	if in.Auto != nil {
 		_ = s.db.SetSetting(ctx, "update_auto", fmt.Sprint(*in.Auto))
 	}
+	if in.Verify != nil {
+		switch *in.Verify {
+		case updater.VerifyRequired, updater.VerifyWarn, updater.VerifyOff:
+			_ = s.db.SetSetting(ctx, "update_verify", *in.Verify)
+		default:
+			return badRequest("verify must be required, warn or off")
+		}
+	}
 	s.activity(r, "update.settings", "")
 	s.checkUpdate(ctx, 0)
 	return ok(w, s.updateStatus(ctx, true))
+}
+
+// updateVerifyMode is how strictly the signature of release images is checked.
+func (s *Server) updateVerifyMode(ctx context.Context) string {
+	switch m := s.db.Setting(ctx, "update_verify"); m {
+	case updater.VerifyWarn, updater.VerifyOff:
+		return m
+	}
+	return updater.VerifyRequired
+}
+
+// verifyUpdateImage checks that the image to install was signed by the
+// release workflow of the update repository.
+func (s *Server) verifyUpdateImage(ctx context.Context) func(context.Context, string) (string, string, error) {
+	mode := s.updateVerifyMode(ctx)
+	if mode == updater.VerifyOff {
+		return func(context.Context, string) (string, string, error) {
+			return "", "⚠ Signature check turned off (Settings → Updates)", nil
+		}
+	}
+	policy := updater.ReleasePolicy(s.updateRepo(ctx))
+	cosign := firstNonEmpty(s.db.Setting(ctx, "cosign_image"), updater.DefaultCosignImage)
+	run := func(ctx context.Context, cmd string) (string, error) {
+		return executor.Output(ctx, executor.Local{}, cmd)
+	}
+	return func(ctx context.Context, image string) (string, string, error) {
+		v, err := updater.VerifySignature(ctx, run, cosign, image, policy)
+		if err != nil {
+			if mode == updater.VerifyWarn {
+				return "", "⚠ " + err.Error() + "; installing anyway (Settings → Updates)", nil
+			}
+			return "", "", fmt.Errorf("%w; nothing was changed (if this network cannot reach Sigstore, set the signature check to warn in Settings → Updates)", err)
+		}
+		return v.Pinned(image), "✓ Signature verified: " + v.Subject + " (" + v.Digest + ")", nil
+	}
 }
 
 // backupBeforeUpdate writes a consistent copy of the database and the secret key.
@@ -243,7 +289,8 @@ func (s *Server) startUpdate(ctx context.Context, tag string, force bool, by str
 	c.running = true
 	c.mu.Unlock()
 	plan := updater.Plan{DataDir: s.cfg.DataDir, From: Version, To: tag, Image: s.updateImage(ctx, tag),
-		RegistryPass: s.box.MustDecrypt(s.db.Setting(ctx, "update_token")), Backup: s.backupBeforeUpdate(tag)}
+		RegistryPass: s.box.MustDecrypt(s.db.Setting(ctx, "update_token")), Backup: s.backupBeforeUpdate(tag),
+		Verify: s.verifyUpdateImage(ctx)}
 	s.db.LogActivity(ctx, 0, "update.start", Version+" → "+tag+" ("+by+")")
 	go func() {
 		bg, cancel := context.WithTimeout(context.Background(), 30*time.Minute)

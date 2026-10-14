@@ -193,15 +193,22 @@ func (a *Auth) RevokeSessions(ctx context.Context, userID int64, keepHash string
 // SecureCookies reports whether cookies are marked Secure (HTTPS deployments).
 func (a *Auth) SecureCookies() bool { return a.secure }
 
-// CreateToken returns a new plaintext API token (shown once).
-func (a *Auth) CreateToken(ctx context.Context, userID int64, name string) (string, store.APIToken, error) {
+// CreateToken stores t (user, name, scope, projects, expiry, creator) with a
+// new secret and returns the plaintext token, which is shown once.
+func (a *Auth) CreateToken(ctx context.Context, t store.APIToken) (string, store.APIToken, error) {
 	plain := TokenPrefix + secrets.RandomToken(24)
-	t := store.APIToken{UserID: userID, Name: name, TokenHash: secrets.Hash(plain), CreatedAt: store.Now()}
+	t.TokenHash, t.CreatedAt = secrets.Hash(plain), store.Now()
+	if t.Scope == "" {
+		t.Scope = "full"
+	}
 	_, err := store.Insert(ctx, a.db, "api_tokens", &t)
 	return plain, t, err
 }
 
-var ErrUnauthorized = errors.New("unauthorized")
+var (
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrTokenExpired = errors.New("API token expired")
+)
 
 // Authenticate resolves the user from a Bearer token or session cookie.
 func (a *Auth) Authenticate(r *http.Request) (store.User, error) {
@@ -219,12 +226,15 @@ func (a *Auth) AuthenticateSession(r *http.Request) (store.User, store.Session, 
 		if err != nil {
 			return store.User{}, store.Session{}, ErrUnauthorized
 		}
+		if t.Expired() {
+			return store.User{}, store.Session{}, ErrTokenExpired
+		}
 		u, err := store.ByID[store.User](ctx, a.db, "users", t.UserID)
 		if err != nil || u.Disabled {
 			return store.User{}, store.Session{}, ErrUnauthorized
 		}
 		_, _ = a.db.ExecContext(ctx, "UPDATE api_tokens SET last_used_at = ? WHERE id = ?", store.Now(), t.ID)
-		return u, store.Session{UserID: u.ID, Method: "token"}, nil
+		return u, store.Session{UserID: u.ID, Method: "token", Token: &t}, nil
 	}
 	c, err := r.Cookie(CookieName)
 	if err != nil {
@@ -282,4 +292,24 @@ func WithSession(ctx context.Context, s store.Session) context.Context {
 func SessionFrom(ctx context.Context) store.Session {
 	s, _ := ctx.Value(sessionKey{}).(store.Session)
 	return s
+}
+
+// TokenFrom returns the API token of the request (nil for browser sessions).
+func TokenFrom(ctx context.Context) *store.APIToken { return SessionFrom(ctx).Token }
+
+// RealRoleFrom returns the organization role of the user. A limited token
+// (scope or projects) acts as a member everywhere outside its projects, so
+// UserFrom reports "member"; inside them the real role still applies.
+func RealRoleFrom(ctx context.Context) string {
+	if r, ok := ctx.Value(realRoleKey{}).(string); ok {
+		return r
+	}
+	return UserFrom(ctx).Role
+}
+
+type realRoleKey struct{}
+
+// WithRealRole records the user's organization role before a limited token lowered it.
+func WithRealRole(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, realRoleKey{}, role)
 }

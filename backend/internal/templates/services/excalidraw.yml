@@ -1,0 +1,13 @@
+# Excalidraw: https://excalidraw.com
+x-portdock:
+  name: Excalidraw
+  description: "Virtual whiteboard for hand-drawn-like diagrams and sketches. Drawings stay in the browser unless exported."
+  category: Collaboration & Productivity
+  website: https://excalidraw.com
+  tags: [whiteboard, diagrams, drawing]
+  service: excalidraw
+  port: 80
+services:
+  excalidraw:
+    image: excalidraw/excalidraw:latest
+    restart: unless-stopped

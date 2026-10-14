@@ -1,0 +1,24 @@
+# Gitea: https://gitea.com
+x-portdock:
+  name: Gitea
+  description: "Lightweight self-hosted Git service with Actions CI."
+  category: DevOps & CI/CD
+  website: https://gitea.com
+  tags: [git, ci, code]
+  service: gitea
+  port: 3000
+services:
+  gitea:
+    image: gitea/gitea:1
+    restart: unless-stopped
+    environment:
+      GITEA__server__ROOT_URL: ${PORTDOCK_URL}/
+      GITEA__server__DOMAIN: ${PORTDOCK_FQDN}
+      GITEA__security__SECRET_KEY: ${PORTDOCK_SECRET_KEY}
+      GITEA__database__DB_TYPE: sqlite3
+    volumes:
+      - data:/data
+    ports:
+      - "2222:22"
+volumes:
+  data:

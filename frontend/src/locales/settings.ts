@@ -27,7 +27,9 @@ export const ro: Record<string, string> = {
   Name: "Nume",
   Email: "Email",
   "Current password": "Parola curentă",
-  "Required to set a new password. Other sessions are signed out after a change.": "Necesară pentru a seta o parolă nouă. Celelalte sesiuni sunt deconectate după schimbare.",
+  "Required to change your e-mail or set a new password. Other sessions are signed out after a password change.":
+    "Necesară pentru a schimba e-mailul sau a seta o parolă nouă. Celelalte sesiuni sunt deconectate după schimbarea parolei.",
+  "Ask an administrator to change your e-mail address.": "Cere unui administrator să-ți schimbe adresa de e-mail.",
   Password: "Parolă",
   "You sign in with single sign-on. Set a password only if your administrator allows password sign-in.": "Te autentifici prin single sign-on. Setează o parolă doar dacă administratorul permite autentificarea cu parolă.",
   "Not set": "Nesetată",
@@ -345,7 +347,9 @@ export const ru: Record<string, string> = {
   Name: "Имя",
   Email: "Email",
   "Current password": "Текущий пароль",
-  "Required to set a new password. Other sessions are signed out after a change.": "Нужен для установки нового пароля. После смены остальные сеансы будут завершены.",
+  "Required to change your e-mail or set a new password. Other sessions are signed out after a password change.":
+    "Нужен для смены e-mail или установки нового пароля. После смены пароля остальные сеансы будут завершены.",
+  "Ask an administrator to change your e-mail address.": "Попросите администратора изменить ваш адрес e-mail.",
   Password: "Пароль",
   "You sign in with single sign-on. Set a password only if your administrator allows password sign-in.": "Вы входите через единый вход (SSO). Задавайте пароль, только если администратор разрешает вход по паролю.",
   "Not set": "Не задан",

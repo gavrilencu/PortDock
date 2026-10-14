@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/portdock/portdock/internal/catalogs"
+	"github.com/portdock/portdock/internal/composefile"
 	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/proxy"
@@ -40,6 +42,10 @@ type databaseDTO struct {
 	Access      Access            `json:"access"`
 	// PublicAddress is the host external clients connect to (see dbPublicFallback).
 	PublicAddress string `json:"public_address"`
+	// PrivateURL and PrivateAddress reach the database from the other servers
+	// (the private network).
+	PrivateURL     string `json:"private_url,omitempty"`
+	PrivateAddress string `json:"private_address,omitempty"`
 	// Recreated is set by an update that recreated the container to apply a new public port.
 	Recreated bool `json:"recreated,omitempty"`
 	// DNSStatus/DNSDetail are filled on GET ?dns=1 when a public host is set.
@@ -91,6 +97,7 @@ func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
 	dto := databaseDTO{Database: db, Password: s.box.MustDecrypt(db.Password), InternalURL: internal, PublicURL: public,
 		Hostname: db.UUID, Port: eng.Port, EngineName: eng.Name, ServerName: srv.Name,
 		PublicAddress: deploy.DatabasePublicHost(db, srv, fallback)}
+	dto.PrivateURL, dto.PrivateAddress = s.engine.DatabasePrivateURL(ctx, db, srv)
 	dto.Environment, _ = store.ByID[store.Environment](ctx, s.db, "environments", db.EnvironmentID)
 	dto.Project, _ = store.ByID[store.Project](ctx, s.db, "projects", dto.Environment.ProjectID)
 	dto.Access = s.resourceAccess(ctx, db.EnvironmentID)
@@ -99,6 +106,7 @@ func (s *Server) dbOut(ctx context.Context, db store.Database) databaseDTO {
 		if dto.Password != "" {
 			dto.InternalURL = strings.ReplaceAll(dto.InternalURL, dto.Password, "********")
 			dto.PublicURL = strings.ReplaceAll(dto.PublicURL, dto.Password, "********")
+			dto.PrivateURL = strings.ReplaceAll(dto.PrivateURL, dto.Password, "********")
 		}
 		dto.Password = ""
 	}
@@ -139,6 +147,16 @@ func normalizePublicHost(raw string) (string, error) {
 func (s *Server) validatePublicAccess(ctx context.Context, db *store.Database) error {
 	if db.PublicPort < 0 || db.PublicPort > 65535 {
 		return badRequest("invalid public port")
+	}
+	if db.OverlayPort < 0 || db.OverlayPort > 65535 {
+		return badRequest("invalid private port")
+	}
+	if db.OverlayPort > 0 {
+		var name string
+		if err := s.db.QueryRowContext(ctx, "SELECT name FROM databases WHERE server_id = ? AND overlay_port = ? AND id != ? LIMIT 1",
+			db.ServerID, db.OverlayPort, db.ID).Scan(&name); err == nil {
+			return errStatus(http.StatusConflict, "private port %d is already used by database %q on this server", db.OverlayPort, name)
+		}
 	}
 	// Extra server flags are quoted command arguments; they must at least parse.
 	if _, err := docker.CommandArgs(db.CustomArgs); err != nil {
@@ -246,6 +264,7 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.activity(r, "database.create", db.Name)
+	s.drains.Trigger()
 	if in.Start == nil || *in.Start {
 		go func() { _ = s.engine.StartDatabase(context.Background(), db, true) }()
 		db.Status = "starting"
@@ -305,6 +324,10 @@ func (s *Server) updateDatabase(w http.ResponseWriter, r *http.Request) error {
 	}
 	db.ID, db.UUID, db.Engine, db.ServerID, db.CreatedAt, db.Status, db.Password =
 		orig.ID, orig.UUID, orig.Engine, orig.ServerID, orig.CreatedAt, orig.Status, orig.Password
+	// Point-in-time recovery has its own endpoint (it recreates the container).
+	db.PITR, db.PITRSchedule, db.PITRRetention, db.PITRS3 = orig.PITR, orig.PITRSchedule, orig.PITRRetention, orig.PITRS3
+	db.PITRArchivedAt, db.PITRArchiveError, db.PITRSyncedAt = orig.PITRArchivedAt, orig.PITRArchiveError, orig.PITRSyncedAt
+	db.DataVolume, db.ReplicationPassword, db.FailoverAuto, db.FailoverAfter = orig.DataVolume, orig.ReplicationPassword, orig.FailoverAuto, orig.FailoverAfter
 	// Credentials are baked into the data volume at init time; changing them later has no effect.
 	db.Username, db.DatabaseName = orig.Username, orig.DatabaseName
 	if err := s.validatePublicAccess(r.Context(), &db); err != nil {
@@ -317,7 +340,7 @@ func (s *Server) updateDatabase(w http.ResponseWriter, r *http.Request) error {
 	// A new public port only takes effect in a new container. A stopped database
 	// picks it up on its next start (StartDatabase compares the published port).
 	recreated := false
-	if db.PublicPort != orig.PublicPort && orig.Status == "running" {
+	if (db.PublicPort != orig.PublicPort || db.OverlayPort != orig.OverlayPort) && orig.Status == "running" {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		if err := s.engine.StartDatabase(ctx, db, true); err != nil {
@@ -405,8 +428,8 @@ func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(r, &b); err != nil {
 		return err
 	}
-	if err := scheduler.Validate(b.Schedule); err != nil {
-		return badRequest("invalid cron schedule: %v", err)
+	if err := validateBackupSchedules(db, b); err != nil {
+		return err
 	}
 	b.ID, b.DatabaseID, b.CreatedAt, b.LastRunAt = 0, db.ID, store.Now(), ""
 	if _, err := store.Insert(r.Context(), s.db, "backups", &b); err != nil {
@@ -414,6 +437,23 @@ func (s *Server) createBackup(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.sched.Reload(r.Context())
 	return ok(w, b)
+}
+
+// validateBackupSchedules checks the backup and test restore schedules.
+func validateBackupSchedules(db store.Database, b store.Backup) error {
+	if err := scheduler.Validate(b.Schedule); err != nil {
+		return badRequest("invalid cron schedule: %v", err)
+	}
+	if b.VerifySchedule == "" {
+		return nil
+	}
+	if !templates.Engines[db.Engine].Verifiable() {
+		return badRequest("test restores of %s backups aren't supported", templates.Engines[db.Engine].Name)
+	}
+	if err := scheduler.Validate(b.VerifySchedule); err != nil {
+		return badRequest("invalid test restore schedule: %v", err)
+	}
+	return nil
 }
 
 func (s *Server) loadBackup(r *http.Request) (store.Backup, error) {
@@ -434,8 +474,12 @@ func (s *Server) updateBackup(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	b.ID, b.DatabaseID, b.CreatedAt, b.LastRunAt = orig.ID, orig.DatabaseID, orig.CreatedAt, orig.LastRunAt
-	if err := scheduler.Validate(b.Schedule); err != nil {
-		return badRequest("invalid cron schedule: %v", err)
+	db, err := store.ByID[store.Database](r.Context(), s.db, "databases", b.DatabaseID)
+	if err != nil {
+		return err
+	}
+	if err := validateBackupSchedules(db, b); err != nil {
+		return err
 	}
 	if err := store.Update(r.Context(), s.db, "backups", &b); err != nil {
 		return err
@@ -525,6 +569,20 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]bool{"queued": true})
 }
 
+// verifyBackup restores a backup into a temporary container to prove it can
+// be restored; the database itself is not touched.
+func (s *Server) verifyBackup(w http.ResponseWriter, r *http.Request) error {
+	run, db, err := s.loadRun(r)
+	if err != nil {
+		return err
+	}
+	if err := s.engine.EnqueueVerify(r.Context(), db, run); err != nil {
+		return badRequest("%v", err)
+	}
+	s.activity(r, "backup.verify", db.Name+": "+path.Base(run.File))
+	return ok(w, map[string]bool{"queued": true})
+}
+
 // backupRunsOf lists every backup of a database (scheduled, manual and safety
 // backups), newest first, with where they are stored.
 func (s *Server) backupRunsOf(w http.ResponseWriter, r *http.Request) error {
@@ -545,6 +603,7 @@ func (s *Server) backupRunsOf(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"runs": runs, "directory": s.engine.BackupDir(db), "server": srv.Name,
 		"supported": deploy.BackupSupported(db), "restore": eng.Restore, "format": eng.BackupExt,
+		"verify": eng.Verifiable(),
 	})
 }
 
@@ -601,10 +660,6 @@ func (s *Server) deleteBackupRun(w http.ResponseWriter, r *http.Request) error {
 }
 
 // ---- services ----
-
-func (s *Server) listServiceTemplates(w http.ResponseWriter, r *http.Request) error {
-	return ok(w, templates.ServiceList())
-}
 
 type serviceDTO struct {
 	store.Service
@@ -667,8 +722,8 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 		svc.Template = "custom"
 	}
 	if svc.Template != "custom" {
-		tpl, found := templates.Services[svc.Template]
-		if !found {
+		tpl, err := catalogs.Find(r.Context(), s.db, svc.Template)
+		if err != nil {
 			return badRequest("unknown template %q", svc.Template)
 		}
 		if svc.Name == "" {
@@ -685,12 +740,19 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 	if strings.TrimSpace(svc.Name) == "" {
 		return badRequest("name is required")
 	}
+	if err := validateHostAccess(r.Context(), svc.HostAccess, false); err != nil {
+		return err
+	}
+	if err := composefile.Check(svc.Compose, svc.HostAccess); err != nil {
+		return badRequest("%v", err)
+	}
 	svc.Compose = templates.Render(svc.Compose, firstDomain(svc.Domain))
 	svc.ID, svc.UUID, svc.Status, svc.CreatedAt = 0, secrets.RandomToken(8), "stopped", store.Now()
 	if _, err := store.Insert(r.Context(), s.db, "services", &svc); err != nil {
 		return err
 	}
 	s.activity(r, "service.create", svc.Name)
+	s.drains.Trigger()
 	if in.Deploy == nil || *in.Deploy {
 		go func() { _, _ = s.engine.DeployService(context.Background(), svc) }()
 		svc.Status = "deploying"
@@ -726,6 +788,17 @@ func (s *Server) updateService(w http.ResponseWriter, r *http.Request) error {
 	svc.ID, svc.UUID, svc.ServerID, svc.CreatedAt, svc.Status, svc.Template = orig.ID, orig.UUID, orig.ServerID, orig.CreatedAt, orig.Status, orig.Template
 	if strings.TrimSpace(svc.Compose) == "" {
 		return badRequest("compose content is required")
+	}
+	if err := validateHostAccess(r.Context(), svc.HostAccess, orig.HostAccess); err != nil {
+		return err
+	}
+	if err := composefile.Check(svc.Compose, svc.HostAccess); err != nil {
+		return badRequest("%v", err)
+	}
+	if svc.EnvironmentID != orig.EnvironmentID {
+		if err := s.requireEnv(r, svc.EnvironmentID, permWrite); err != nil {
+			return err
+		}
 	}
 	if err := store.Update(r.Context(), s.db, "services", &svc); err != nil {
 		return err

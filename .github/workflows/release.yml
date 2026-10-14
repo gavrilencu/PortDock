@@ -1,6 +1,10 @@
 # Publishes a PortDock release: push a tag like v1.4.0 and this workflow builds
 # the multi-arch image ghcr.io/<owner>/<repo>:v1.4.0 (+ :latest for stable tags)
 # and creates the GitHub release. Running instances show "Update available".
+#
+# The image carries a provenance attestation and an SBOM, and is signed with
+# Sigstore keyless signing (GitHub OIDC): the built-in updater installs it only
+# if the signature comes from this workflow, for a version tag.
 name: release
 
 on:
@@ -23,12 +27,21 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: cd frontend && npm ci && npx tsc -b
+      - run: cd frontend && npm ci && npx tsc -b && npm run i18n:check
       - run: cd backend && go vet ./... && go test ./...
+      - name: govulncheck
+        run: cd backend && go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   image:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # keyless signing
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
@@ -43,13 +56,18 @@ jobs:
           image="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           tags="$image:${GITHUB_REF_NAME}"
           case "$GITHUB_REF_NAME" in *-*) ;; *) tags="$tags,$image:latest" ;; esac
+          echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          # SLSA provenance and an SPDX SBOM, attached to the image in the registry.
+          provenance: mode=max
+          sbom: true
           build-args: |
             VERSION=${{ github.ref_name }}
             UPDATE_REPO=${{ github.repository }}
@@ -59,26 +77,79 @@ jobs:
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=Apache-2.0
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign the image (keyless)
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REF"
+      - name: SBOM file
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: portdock-${{ github.ref_name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest the SBOM
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: cosign attest --yes --type spdxjson --predicate "portdock-${GITHUB_REF_NAME}.spdx.json" "$REF"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: portdock-${{ github.ref_name }}.spdx.json
 
   release:
     needs: image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      # pdctl, the command-line client, for every common platform.
+      - name: Build pdctl
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            (cd backend && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "../pdctl-${os}-${arch}${ext}" ./cmd/pdctl)
+          done
+          sha256sum pdctl-* > pdctl-checksums.txt
+      # The Terraform provider, packaged for a filesystem mirror
+      # (terraform-provider-portdock_<version>_<os>_<arch>.zip).
+      - name: Build the Terraform provider
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os=${target%/*}; arch=${target#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            (cd terraform-provider-portdock && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -X main.version=${v}" -o "../tfp/terraform-provider-portdock_v${v}${ext}" .)
+            (cd tfp && zip -q "../terraform-provider-portdock_${v}_${os}_${arch}.zip" "terraform-provider-portdock_v${v}${ext}" && rm "terraform-provider-portdock_v${v}${ext}")
+          done
+          sha256sum terraform-provider-portdock_*.zip > "terraform-provider-portdock_${v}_SHA256SUMS"
       # The description comes from docs/releases/<tag>.md when it exists, followed
       # by the install instructions (docs/releases/_install.md) for this version;
       # GitHub appends the generated list of changes.
       - id: notes
         env:
           REPO: ${{ github.repository }}
+          DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           f="docs/releases/${GITHUB_REF_NAME}.md"
           if [ -f "$f" ]; then cp "$f" release-notes.md; else : > release-notes.md; fi
           image="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
           echo >> release-notes.md
-          sed -e "s#{{VERSION}}#${GITHUB_REF_NAME}#g" -e "s#{{IMAGE}}#${image}#g" -e "s#{{REPO}}#${REPO}#g" docs/releases/_install.md >> release-notes.md
+          sed -e "s#{{VERSION}}#${GITHUB_REF_NAME}#g" -e "s#{{IMAGE}}#${image}#g" -e "s#{{REPO}}#${REPO}#g" -e "s#{{DIGEST}}#${DIGEST}#g" docs/releases/_install.md >> release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            portdock-${{ github.ref_name }}.spdx.json
+            pdctl-*
+            pdctl-checksums.txt
+            terraform-provider-portdock_*

@@ -2,6 +2,8 @@ module github.com/portdock/portdock
 
 go 1.27.0
 
+toolchain go1.27.2
+
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
@@ -13,6 +15,7 @@ require (
 )
 
 require (
+	filippo.io/age v1.2.1 // indirect
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect

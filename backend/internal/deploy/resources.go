@@ -15,6 +15,7 @@ import (
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/overlay"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/store"
 	"github.com/portdock/portdock/internal/templates"
@@ -180,15 +181,19 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	if !ok {
 		return fmt.Errorf("unknown engine %q", db.Engine)
 	}
-	x, _, err := e.pool.ForID(ctx, db.ServerID)
+	x, srv, err := e.pool.ForID(ctx, db.ServerID)
 	if err != nil {
 		return err
 	}
 	if err := docker.EnsureNetwork(ctx, x, e.cfg.ProxyNetwork); err != nil {
 		return err
 	}
-	if !recreate && !publishedPortMatches(ctx, x, db) {
-		recreate = true // the public port changed while the container was stopped
+	privateIP := e.privateIP(ctx, srv)
+	if db.OverlayPort > 0 && privateIP == "" {
+		return errors.New("the database's server is not in the private network: add it in Settings → Network & proxy, or turn off the private port")
+	}
+	if !recreate && !publishedPortMatches(ctx, x, db, privateIP) {
+		recreate = true // a published port changed while the container was stopped
 	}
 	if !recreate {
 		if state, _, err := docker.State(ctx, x, db.UUID); err == nil {
@@ -202,10 +207,20 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 		}
 	}
 	pass := e.dbPassword(db)
+	pitr := db.PITR && db.Engine == "postgres"
+	if pitr {
+		if err := e.preparePITR(ctx, x, db); err != nil {
+			e.setDBStatus(ctx, db.ID, "failed")
+			return fmt.Errorf("prepare the WAL archive: %w", err)
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "(docker rm -f %s >/dev/null 2>&1 || true) && docker run -d --name %s --restart unless-stopped --network %s --network-alias %s",
 		q(db.UUID), q(db.UUID), q(e.cfg.ProxyNetwork), q(proxy.SafeName(db.Name)))
-	fmt.Fprintf(&b, " -v %s:%s", q("sy-"+db.UUID), eng.DataPath)
+	fmt.Fprintf(&b, " -v %s:%s", q(db.VolumeName()), eng.DataPath)
+	if pitr {
+		fmt.Fprintf(&b, " -v %s:/pitr", q(e.pitrDir(db)))
+	}
 	for k, v := range eng.Env(db.Username, pass, db.DatabaseName) {
 		b.WriteString(" -e " + q(k+"="+v))
 	}
@@ -221,6 +236,10 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 	if db.PublicPort > 0 {
 		fmt.Fprintf(&b, " -p %d:%d", db.PublicPort, eng.Port)
 	}
+	if db.OverlayPort > 0 {
+		// Only on the private network: the other servers' applications and replicas.
+		fmt.Fprintf(&b, " -p %s --label %s=true", q(fmt.Sprintf("%s:%d:%d", privateIP, db.OverlayPort, eng.Port)), overlay.LabelBind)
+	}
 	b.WriteString(" " + q(db.Image))
 	if cmd := eng.Command(pass); cmd != "" {
 		b.WriteString(" " + cmd)
@@ -232,6 +251,9 @@ func (e *Engine) StartDatabase(ctx context.Context, db store.Database, recreate 
 		return err
 	}
 	b.WriteString(args)
+	if pitr {
+		b.WriteString(pitrArgs())
+	}
 	if _, err := executor.Output(ctx, x, b.String()); err != nil {
 		e.setDBStatus(ctx, db.ID, "failed")
 		return err
@@ -261,25 +283,47 @@ func (e *Engine) initDatabase(ctx context.Context, x executor.Executor, db store
 // publishedPortMatches reports whether the existing container publishes exactly
 // db.PublicPort (or nothing when it is 0). A missing container counts as a match:
 // StartDatabase creates it with the current settings anyway.
-func publishedPortMatches(ctx context.Context, x executor.Executor, db store.Database) bool {
-	out, err := executor.Output(ctx, x, "docker inspect -f "+q(`{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostPort}} {{end}}{{end}}`)+" "+q(db.UUID))
+func publishedPortMatches(ctx context.Context, x executor.Executor, db store.Database, privateIP string) bool {
+	out, err := executor.Output(ctx, x, "docker inspect -f "+q(`{{range $p, $b := .HostConfig.PortBindings}}{{range $b}}{{.HostIp}}:{{.HostPort}} {{end}}{{end}}`)+" "+q(db.UUID))
 	if err != nil {
 		return true
 	}
-	want := ""
+	want := map[string]bool{}
 	if db.PublicPort > 0 {
-		want = strconv.Itoa(db.PublicPort)
+		want[":"+strconv.Itoa(db.PublicPort)] = true
+	}
+	if db.OverlayPort > 0 && privateIP != "" {
+		want[privateIP+":"+strconv.Itoa(db.OverlayPort)] = true
 	}
 	got := strings.Fields(strings.TrimSpace(out))
-	if want == "" {
-		return len(got) == 0
+	if len(got) != len(want) {
+		return false
 	}
-	for _, p := range got {
-		if p != want {
+	for _, g := range got {
+		if !want[strings.TrimPrefix(g, "0.0.0.0")] {
 			return false
 		}
 	}
-	return len(got) > 0
+	return true
+}
+
+// privateIP is the private network address of srv ("" when it is not in the network).
+func (e *Engine) privateIP(ctx context.Context, srv store.Server) string {
+	if !srv.OverlayJoin || srv.OverlayIP == "" || e.db.Setting(ctx, "overlay_enabled") != "true" {
+		return ""
+	}
+	return srv.OverlayIP
+}
+
+// DatabasePrivateURL is how the applications of other servers reach db on
+// the private network ("" without a private port).
+func (e *Engine) DatabasePrivateURL(ctx context.Context, db store.Database, srv store.Server) (url, address string) {
+	eng, ok := templates.Engines[db.Engine]
+	ip := e.privateIP(ctx, srv)
+	if !ok || db.OverlayPort == 0 || ip == "" {
+		return "", ""
+	}
+	return eng.URL(db.Username, e.dbPassword(db), ip, db.OverlayPort, db.DatabaseName), fmt.Sprintf("%s:%d", ip, db.OverlayPort)
 }
 
 func (e *Engine) setDBStatus(ctx context.Context, id int64, status string) {
@@ -307,40 +351,19 @@ func (e *Engine) DatabaseAction(ctx context.Context, db store.Database, action s
 }
 
 func (e *Engine) DeleteDatabase(ctx context.Context, db store.Database, volumes bool) error {
+	e.DeleteReplicas(ctx, db)
 	x, _, err := e.pool.ForID(ctx, db.ServerID)
 	if err != nil {
 		return err
 	}
 	cmd := "docker rm -f " + q(db.UUID) + " >/dev/null 2>&1; true"
 	if volumes {
-		cmd += "; docker volume rm -f " + q("sy-"+db.UUID) + " >/dev/null 2>&1; true"
+		cmd += "; docker volume rm -f " + q(db.VolumeName()) + " >/dev/null 2>&1; true"
 	}
 	return x.Run(ctx, cmd, executor.RunOpts{})
 }
 
 // ---- backups ----
-
-func (e *Engine) uploadS3(ctx context.Context, x executor.Executor, file, prefix string) error {
-	endpoint := e.db.Setting(ctx, "s3_endpoint")
-	bucket := e.db.Setting(ctx, "s3_bucket")
-	key := e.db.Setting(ctx, "s3_access_key")
-	secret := e.box.MustDecrypt(e.db.Setting(ctx, "s3_secret_key"))
-	region := e.db.Setting(ctx, "s3_region")
-	if bucket == "" || key == "" || secret == "" {
-		return errors.New("S3 storage is not configured (Settings → Backups)")
-	}
-	if region == "" {
-		region = "us-east-1"
-	}
-	dir, name := path.Split(file)
-	cmd := fmt.Sprintf("docker run --rm -v %s:/b:ro -e AWS_ACCESS_KEY_ID=%s -e AWS_SECRET_ACCESS_KEY=%s -e AWS_DEFAULT_REGION=%s amazon/aws-cli s3 cp /b/%s %s",
-		q(dir), q(key), q(secret), q(region), q(name), q("s3://"+bucket+"/portdock/"+prefix+"/"+name))
-	if endpoint != "" {
-		cmd += " --endpoint-url " + q(endpoint)
-	}
-	_, err := executor.Output(ctx, x, cmd)
-	return err
-}
 
 // StreamBackup writes a backup file's bytes to w.
 func (e *Engine) StreamBackup(ctx context.Context, db store.Database, run store.BackupRun, w io.Writer) error {
@@ -422,6 +445,7 @@ func (e *Engine) DeployService(ctx context.Context, svc store.Service) (string, 
 		net := e.Network(ctx) // the compose build is logged without its arguments
 		_, err = RunComposeUp(ctx, ComposeUp{
 			X: x, Project: composeProject(svc.UUID), Dir: dir, File: file, Domains: domains, HTTPS: true,
+			HostAccess: svc.HostAccess, Root: dir, Forbidden: []string{e.cfg.DataDir},
 			Env: env.Runtime, Kind: "service", Resource: svc.UUID, Network: e.cfg.ProxyNetwork, Timeout: 180, Log: log,
 			ProxyEnv: containerProxyEnv(net, ""), BuildArgs: buildProxyEnv(net),
 		})

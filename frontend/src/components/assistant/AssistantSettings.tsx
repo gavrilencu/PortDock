@@ -1,5 +1,6 @@
-// Settings → AI assistant (admins): the OpenRouter key and model, who may use
-// the assistant and extra instructions for its system prompt.
+// Settings → AI assistant (admins): where the model runs (OpenRouter, or an
+// OpenAI-compatible server such as Ollama), who may use the assistant and
+// extra instructions for its system prompt.
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ExternalLink, PlugZap, RotateCcw, Save, Search, ShieldAlert, Trash2 } from "lucide-react";
@@ -15,6 +16,8 @@ type Access = ChatSettings["access"];
 
 interface Form {
   enabled: boolean;
+  provider: "openrouter" | "openai";
+  base_url: string;
   model: string;
   access: Access;
   user_ids: number[];
@@ -42,6 +45,8 @@ const LIST_LIMIT = 100;
 
 const formFrom = (s: ChatSettings): Form => ({
   enabled: !!s.enabled,
+  provider: s.provider ?? "openrouter",
+  base_url: s.base_url ?? "",
   model: s.model ?? "",
   access: s.access ?? "all",
   user_ids: s.user_ids ?? [],
@@ -129,6 +134,8 @@ export function AssistantSettings() {
       const known = users.data ? new Set(users.data.map((u) => u.id)) : null;
       return api.put<ChatSettings>("/chat/settings", {
         enabled: form.enabled,
+        provider: form.provider,
+        base_url: form.base_url.trim(),
         model: form.model.trim(),
         access: form.access,
         user_ids: known ? form.user_ids.filter((id) => known.has(id)) : form.user_ids,
@@ -157,10 +164,15 @@ export function AssistantSettings() {
   const test = useMutation({
     mutationFn: (form: Form) =>
       api.post<TestResult>("/chat/test", {
+        provider: form.provider,
+        base_url: form.base_url.trim(),
         ...(form.api_key.trim() ? { api_key: form.api_key.trim() } : {}),
         ...(form.model.trim() ? { model: form.model.trim() } : {}),
       }),
-    onSuccess: (r) => toast.success(t("Connected — key {label}, model replied: {reply}", { label: r.label || "—", reply: clip(r.reply ?? "", 160) }), { description: usageText(r) }),
+    onSuccess: (r, form) =>
+      form.provider === "openai"
+        ? toast.success(t("Connected — the model replied: {reply}", { reply: clip(r.reply ?? "", 160) || "—" }))
+        : toast.success(t("Connected — key {label}, model replied: {reply}", { label: r.label || "—", reply: clip(r.reply ?? "", 160) }), { description: usageText(r) }),
     onError: (e) => toast.error(e.message),
   });
 
@@ -168,19 +180,23 @@ export function AssistantSettings() {
   if (q.error) return <ErrorBox error={q.error} title={t("The assistant settings could not be loaded")} />;
   if (!f || !q.data) return <Loading />;
   const s = q.data;
+  const local = f.provider === "openai";
+  const configured = (s.provider ?? "openrouter") === "openai" ? !!s.base_url : s.api_key_set;
   const dirty =
     !!f.api_key.trim() ||
+    f.provider !== (s.provider ?? "openrouter") ||
+    f.base_url.trim() !== (s.base_url ?? "") ||
     f.enabled !== !!s.enabled ||
     f.model.trim() !== (s.model ?? "") ||
     f.access !== (s.access ?? "all") ||
     f.instructions !== (s.instructions ?? "") ||
     !sameIds(f.user_ids, s.user_ids ?? []);
   const accessHint = ACCESS.find((a) => a.value === f.access)?.hint;
-  const canTest = !!f.api_key.trim() || s.api_key_set;
+  const canTest = local ? !!f.base_url.trim() : !!f.api_key.trim() || s.api_key_set;
 
   const removeKey = async () => {
     const ok = await confirm({
-      title: t("Remove the OpenRouter API key?"),
+      title: t("Remove the API key?"),
       description: t("The assistant stops answering until a new key is saved."),
       danger: true,
       confirmText: t("Remove key"),
@@ -192,8 +208,8 @@ export function AssistantSettings() {
     <div className="space-y-6">
       <Card
         title={t("AI assistant")}
-        description={t("Answers questions about PortDock, deployments, Docker and configuration with a model of your choice on OpenRouter. It only sees what users write in the chat.")}
-        actions={s.enabled ? s.api_key_set ? <Badge tone="success">{t("Enabled")}</Badge> : <Badge tone="warning">{t("Not configured")}</Badge> : <Badge>{t("Disabled")}</Badge>}
+        description={t("Answers questions about PortDock, deployments, Docker and configuration with a model of your choice, on OpenRouter or on a server of your own. It only sees what users write in the chat.")}
+        actions={s.enabled ? configured ? <Badge tone="success">{t("Enabled")}</Badge> : <Badge tone="warning">{t("Not configured")}</Badge> : <Badge>{t("Disabled")}</Badge>}
       >
         <div className="space-y-3 p-5">
           <Switch
@@ -202,18 +218,19 @@ export function AssistantSettings() {
             label={t("Enable the AI assistant")}
             description={t("Shows a chat assistant in the bottom-right corner for the users you choose.")}
           />
-          {f.enabled && !s.api_key_set && !f.api_key.trim() && <p className="pl-11 text-xs text-warning">{t("Add an OpenRouter API key below — the assistant stays hidden until one is saved.")}</p>}
+          {f.enabled && !local && !s.api_key_set && !f.api_key.trim() && <p className="pl-11 text-xs text-warning">{t("Add an OpenRouter API key below — the assistant stays hidden until one is saved.")}</p>}
+          {f.enabled && local && !f.base_url.trim() && <p className="pl-11 text-xs text-warning">{t("Enter the address of your AI server below.")}</p>}
         </div>
         <div className="flex gap-2.5 border-t border-border bg-info-soft px-5 py-3 text-xs leading-relaxed text-info">
           <ShieldAlert className="mt-px size-4 shrink-0" />
-          <span>{t("Messages are sent to OpenRouter and the provider of the selected model. Ask users not to paste secrets.")}</span>
+          <span>{local ? t("Messages go only to your AI server: nothing leaves your network unless that server forwards it.") : t("Messages are sent to OpenRouter and the provider of the selected model. Ask users not to paste secrets.")}</span>
         </div>
       </Card>
 
       <Card
         className="overflow-visible"
-        title="OpenRouter"
-        description={t("The assistant uses your OpenRouter account, so any model offered there can be used.")}
+        title={t("Model provider")}
+        description={local ? t("Any OpenAI-compatible server: Ollama, vLLM, LiteLLM, LocalAI or llama.cpp, running in your network.") : t("The assistant uses your OpenRouter account, so any model offered there can be used.")}
         actions={
           <Button size="sm" icon={<PlugZap />} loading={test.isPending} disabled={!canTest} onClick={() => test.mutate(f)}>
             {t("Test connection")}
@@ -221,10 +238,25 @@ export function AssistantSettings() {
         }
       >
         <div className="grid gap-5 p-5 md:grid-cols-2">
+          <div className="space-y-3 md:col-span-2">
+            <SegmentedControl
+              value={f.provider}
+              onChange={(provider) => setF({ ...f, provider: provider as Form["provider"] })}
+              options={[
+                { value: "openrouter", label: "OpenRouter" },
+                { value: "openai", label: t("Your own server (OpenAI-compatible)") },
+              ]}
+            />
+            {local && (
+              <Field label={t("Server address")} hint={t("The OpenAI-compatible API base, reachable from PortDock: Ollama http://ollama:11434/v1, vLLM http://vllm:8000/v1, LiteLLM http://litellm:4000/v1.")}>
+                <Input value={f.base_url} onChange={(e) => setF({ ...f, base_url: e.target.value })} placeholder="http://ollama:11434/v1" className="font-mono text-xs" spellCheck={false} />
+              </Field>
+            )}
+          </div>
           <Field
             label={
               <span className="flex flex-wrap items-center gap-2">
-                {t("API key")}
+                {local ? t("API key (optional)") : t("API key")}
                 {s.api_key_set && !f.api_key && (
                   <Badge tone="success">
                     <Check />
@@ -236,20 +268,20 @@ export function AssistantSettings() {
             hint={
               <>
                 {s.api_key_set && <span>{t("Type a new key to replace the saved one.")} </span>}
-                {tx("Get a key at {link}", {
+                {local ? t("Only if your server asks for one (vLLM --api-key, LiteLLM master key).") : tx("Get a key at {link}", {
                   link: (
                     <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-medium text-fg underline underline-offset-2">
                       openrouter.ai/keys
                       <ExternalLink className="size-3" />
                     </a>
                   ),
-                })}
+                }) as ReactNode}
               </>
             }
           >
             <div className="flex gap-2">
               <div className="min-w-0 flex-1">
-                <PasswordInput value={f.api_key} onChange={(e) => setF({ ...f, api_key: e.target.value })} placeholder="sk-or-v1-…" autoComplete="off" spellCheck={false} className="font-mono text-xs" />
+                <PasswordInput value={f.api_key} onChange={(e) => setF({ ...f, api_key: e.target.value })} placeholder={local ? "" : "sk-or-v1-…"} autoComplete="off" spellCheck={false} className="font-mono text-xs" />
               </div>
               {s.api_key_set && (
                 <Button variant="danger" icon={<Trash2 />} loading={clearKey.isPending} onClick={removeKey}>
@@ -262,7 +294,7 @@ export function AssistantSettings() {
             <label htmlFor="assistant-model" className="mb-1.5 block text-[13px] font-medium text-fg">
               {t("Model")}
             </label>
-            <ModelPicker id="assistant-model" value={f.model} onChange={(model) => setF({ ...f, model })} />
+            <ModelPicker id="assistant-model" value={f.model} onChange={(model) => setF({ ...f, model })} provider={f.provider} baseURL={local ? f.base_url.trim() : ""} />
           </div>
         </div>
       </Card>
@@ -317,8 +349,14 @@ export function AssistantSettings() {
 }
 
 /** Model id input with a searchable list of the OpenRouter catalog; any id can be typed. */
-function ModelPicker({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
-  const models = useQuery({ queryKey: ["chat-models"], queryFn: () => api.get<{ models: ChatModel[] }>("/chat/models"), staleTime: 10 * 60_000, retry: false });
+function ModelPicker({ id, value, onChange, provider, baseURL }: { id: string; value: string; onChange: (v: string) => void; provider: string; baseURL: string }) {
+  const models = useQuery({
+    queryKey: ["chat-models", provider, baseURL],
+    queryFn: () => api.get<{ models: ChatModel[] }>(`/chat/models?provider=${provider}&base_url=${encodeURIComponent(baseURL)}`),
+    staleTime: 10 * 60_000,
+    retry: false,
+    enabled: provider !== "openai" || !!baseURL,
+  });
   const all = useMemo(() => models.data?.models ?? [], [models.data]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

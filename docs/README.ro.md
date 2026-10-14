@@ -36,6 +36,30 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - **Aceeași aplicație pe mai multe servere**: deploy de tip rolling, server cu server. Dacă un server pică la health check, deploy-ul se oprește, iar mesajul arată pe câte servere rulează deja versiunea nouă.
 - **Fără registry**, imaginea e transmisă direct, prin SSH, de pe serverul de build pe celelalte (`docker save | docker load`, comprimat).
 - **Server de build dedicat**, ca build-urile să nu consume resursele serverelor de producție.
+- **Joburi programate (cron)** per aplicație (tab-ul Joburi): comenzi rulate după program într-un container nou din imaginea aplicației, cu variabilele și volumele ei, cu istoric, output, timeout și notificare la eșec.
+- **Protecția aplicațiilor** (tab-ul Domenii): single sign-on prin PortDock (cu SSO-ul companiei) înainte de a ajunge la aplicație, parolă (basic auth), listă de IP-uri permise și rate limit, aplicate de proxy pe toate domeniile și preview-urile, fără redeploy.
+- **Imagini semnate** (Sigstore keyless) cu SBOM și provenance; înainte de update, PortDock verifică semnătura cu cosign și instalează exact digest-ul verificat. CI rulează la fiecare push și PR (teste cu race detector, govulncheck, CodeQL, Dependabot).
+- **Token-uri API cu scope** (`read`, `deploy`, `write`, `full`), limitate la anumite proiecte și cu dată de expirare; **conturi de serviciu** pentru pipeline-uri, fără parolă, care acționează doar prin token-uri create de administratori.
+- **Observabilitate**: endpoint Prometheus (`/api/metrics`), log drains către Loki, Elasticsearch/OpenSearch, Graylog (GELF), Splunk, syslog sau HTTP, cu proiectul, mediul și aplicația pe fiecare linie, și variabilele OpenTelemetry (`OTEL_*`) puse automat în aplicații (*Setări → Observability*).
+- **Raport de conformitate** (*Setări → Compliance*), pentru auditori, pe o perioadă și pentru toate proiectele sau doar unul. Cuprinde:
+  - setările de securitate, conturile cu 2FA, token-urile API și mediile protejate;
+  - deploy-urile cu cine le-a cerut și cine le-a aprobat, plus scanările de securitate;
+  - backup-urile cu testele de restaurare și PITR, incidentele, alertele și audit log-ul.
+
+  Se poate deschide ca pagină tipăribilă (PDF) sau descărca ca ZIP cu HTML, JSON, CSV și `SHA256SUMS`.
+- **Variabile partajate**: la nivel de organizație (*Setări → Shared variables*), proiect sau mediu (butonul **Variables** din proiect). Nivelul cel mai îngust câștigă: aplicație > mediu > proiect > organizație. În tab-ul Environment al unei aplicații vezi variabilele moștenite. **Compare with another environment** arată diferențele efective, de exemplu staging față de producție, cu sursa fiecărei valori, și copiază variabilele alese.
+- **Secret managers** (*Setări → Secret managers*): o variabilă își poate lua valoarea din **HashiCorp Vault** (token sau AppRole, KV v1/v2, namespace) sau din **Azure Key Vault** (app registration sau managed identity), în loc s-o păstreze în PortDock.
+  - Valoarea e citită la pornirea fiecărui deploy sau job, e mascată în loguri și nu e salvată niciodată.
+  - Un store se poate limita la anumite proiecte și, pentru Vault, la un prefix de cale; acceptă un certificat CA intern și trece prin proxy-ul corporativ.
+  - În tab-ul Environment se alege **Secret manager**, apoi store-ul, calea și cheia (`vault-prod: shop/db#password`); **Check** afișează cheile căii, fără valori. În `portdock.yaml` se trec la `secret_refs`, din linia de comandă cu `pdctl env set APP KEY --from vault-prod:shop/db#password`, iar în Terraform cu `secret_ref` pe `portdock_env_var`.
+  - Dacă un secret nu poate fi citit, deploy-ul se oprește înainte de orice schimbare, cu motivul în log; versiunea care rulează rămâne pornită.
+- **Deploy canary** (Configuration → Deployment strategy): versiunea nouă primește întâi 5–50% din trafic. PortDock urmărește rata de erori 5xx față de versiunea curentă și restarturile containerelor, și o retrage automat dacă e mai slabă. După fereastra de observare, tot traficul trece pe ea; se poate și promova sau retrage manual. Notificarea `deployment.success` include durata și adresa aplicației.
+- **Git prin SSH** (GitLab, Bitbucket, Gitea on-premise): `git@host:grup/app.git` sau `ssh://git@host:7999/…`.
+  - Fiecare aplicație are propria cheie de deploy Ed25519, generată sau importată și păstrată criptat. Se adaugă în repozitoriu ca deploy key doar pentru citire.
+  - Cheia serverului Git se verifică la fiecare clonare: la prima utilizare, cu amprenta scrisă în log, sau doar din lista aprobată în *Setări → Git sources*. O cheie schimbată oprește deploy-ul.
+- **Server MCP** pentru agenți AI (Claude Code, VS Code, Cursor…): pot lista aplicațiile, face deploy și aștepta rezultatul, citi logurile și face rollback, cu un token API al cărui scope se aplică fiecărei unelte. Configurația pentru fiecare client e în *Setări → API tokens → AI agents*; clienții care pornesc o comandă locală folosesc `pdctl mcp`.
+- **Configurație ca cod**: fișierul `portdock.yaml` aplicat cu `pdctl apply` (cu `--dry-run`), clientul în linie de comandă `pdctl` (deploy cu așteptarea rezultatului, variabile, joburi, export), un **provider Terraform** și descrierea **OpenAPI 3.1** a API-ului (`/api/openapi.json`, vizibilă în *Setări → API tokens → Referință API*).
+- **Backup al instanței PortDock** (*Setări → Backup storage → Instance backup*): baza de date internă și cheia `secret.key`, programat, criptat cu o parolă (format age), păstrat pe server și opțional în S3. Pe un server nou, pagina de prima configurare are **Restaurează dintr-un backup**; există și `portdock -restore` în linia de comandă.
 - **Stocare persistentă** per aplicație (tab-ul *Stocare*): volume Docker păstrate între deploy-uri, volume separate pentru preview-uri, montare read-only; directoare de pe server doar pentru administratori. La ștergerea aplicației alegi dacă păstrezi sau ștergi datele.
 - Start/stop/restart, log-uri, terminal, rute Traefik, status și ștergerea funcționează pe toate serverele aplicației. Un server scos din listă e curățat automat de aplicație.
 
@@ -56,8 +80,30 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - Terminal SSH pe server (doar admin).
 
 **Resurse**
-- Baze de date: PostgreSQL 18, MySQL 8.4, MariaDB 11, Microsoft SQL Server 2022, MongoDB 8, Redis 8, Valkey 8, ClickHouse — parole generate, URL-uri de conexiune interne/publice, **backup programat (cron)**, retenție, **upload S3** (AWS, R2, B2, MinIO), download și **restore** din UI.
-- Servicii one-click: WordPress, n8n, Gitea, MinIO, Umami, Grafana, Vaultwarden, Ghost, Metabase, pgAdmin, NocoDB, Uptime Kuma, plus compose custom.
+- Baze de date: PostgreSQL 18, MySQL 8.4, MariaDB 11, Microsoft SQL Server 2022, MongoDB 8, Redis 8, Valkey 8, ClickHouse — parole generate, URL-uri de conexiune interne/publice, **backup programat (cron)**, retenție, **upload S3** (AWS, R2, B2, MinIO), download și **restore** din UI, plus **teste automate de restaurare**: ultimul backup e restaurat periodic (sau la cerere) într-un container temporar fără rețea, apoi PortDock numără tabelele, colecțiile sau cheile și trimite o alertă (`backup.verify_failed`) dacă restaurarea eșuează. Baza de date nu e atinsă.
+- **Recuperare la un moment dat (PITR) pentru PostgreSQL**: restaurezi baza de date exact cum era în orice secundă din fereastra de recuperare, de exemplu chiar înainte de o migrare greșită.
+  - Arhivare continuă a WAL (segmentele comprimate, cel mult un minut de modificări neacoperite).
+  - `pg_basebackup` programat, cu retenție și curățarea WAL-ului vechi, plus copie opțională în S3.
+  - La restaurare, datele actuale sunt păstrate și puse la loc automat dacă recuperarea eșuează.
+  - Restaurările se pot succeda, inclusiv la un moment anterior unei restaurări precedente (PortDock alege timeline-ul corect).
+- **Replici PostgreSQL și failover** (tab-ul Connection):
+  - Replici hot standby (doar citire), pe același server sau pe altul, cu slot de replicare și URL propriu de citire.
+  - Lag-ul e monitorizat în interfață și în Prometheus, iar o replică deconectată trimite notificare.
+  - **Promote** oprește întâi primarul, apoi promovează replica. Baza își păstrează numele și URL-urile, deci aplicațiile nu trebuie modificate.
+  - **Failover automat** opțional, când serverul primarului e inaccesibil; primarul vechi e oprit imediat ce serverul lui revine.
+- Servicii one-click: 31 încorporate (Keycloak, Nextcloud, n8n, Gitea, Grafana, Jenkins, Open WebUI cu Ollama, Directus, Wiki.js, BookStack, Matomo, Vaultwarden, MinIO…), plus compose custom.
+- **Import din Coolify, Heroku și Dokku** (*Setări → Import*): PortDock citește platforma, arată planul și creează ce bifezi.
+  - Coolify (adresa și un token API): proiecte și medii, aplicații din Git sau imagine, cu port, domenii, health check, limite, variabile, stocare și taskuri programate, baze de date și servicii one-click.
+  - Heroku (cheia API): aplicații cu config vars, domenii și numărul de dynos web, plus add-on-urile Postgres / MySQL / Redis.
+  - Dokku (serverul, adăugat prin SSH): aplicațiile din imaginile construite de Dokku, cu variabile, domenii, port, scale și stocare, plus datastore-urile pluginurilor.
+
+  Totul se creează oprit (dacă nu alegi deploy), iar bazele de date și volumele pornesc goale: datele se mută cu un dump. Fiecare element arată ce nu s-a putut prelua. În sursă nu se schimbă nimic.
+- **Cataloage de servicii** (*Setări → Service catalogs*):
+  - catalogul comunității PortDock, descărcat zilnic din repozitoriu, deci șabloanele noi apar fără update;
+  - șabloanele Coolify (peste 350), convertite automat din `service-templates.json`;
+  - un catalog propriu, dintr-un URL (inclusiv o oglindă internă) sau dintr-un fișier.
+
+  Un șablon din catalog rulează ca un compose custom, fără acces la server (dacă un administrator nu-l permite) și niciodată cu socket-ul Docker. Un șablon e un fișier compose cu un bloc `x-portdock` (ghid în `backend/internal/templates/services`); `pdctl template lint|bundle|convert` ajută la scrierea și publicarea lui.
 - Variabile de mediu criptate (AES-256-GCM), build-time/runtime, secrete, override-uri pentru preview, editor `.env` bulk.
 - Domenii multiple cu HTTPS automat, redirect HTTP→HTTPS, domenii wildcard per server.
 
@@ -150,6 +196,21 @@ Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/
 - Fiecare utilizator are **istoricul** conversațiilor lui (vizibil doar lui). Răspunsurile apar pe măsură ce sunt generate, cu Stop, copiere și formatare Markdown; fereastra se poate minimiza și mări.
 
 Mesajele sunt trimise la OpenRouter și la furnizorul modelului ales: nu lipi secrete în chat.
+
+**Modele locale (fără internet).** Alege **Your own server (OpenAI-compatible)** și mesajele rămân în rețeaua voastră.
+
+- Merge cu orice server cu API OpenAI: Ollama, vLLM, LiteLLM, LocalAI, llama.cpp.
+- Cheia API e opțională, iar lista de modele vine de la server.
+
+Exemplu cu Ollama în rețeaua PortDock:
+
+```sh
+docker run -d --name ollama --network portdock -v ollama:/root/.ollama ollama/ollama
+docker exec ollama ollama pull qwen2.5:7b
+# Setări → AI assistant: adresa http://ollama:11434/v1, modelul qwen2.5:7b
+```
+
+Adresa trebuie să fie accesibilă din containerul PortDock (aceeași rețea Docker sau un host/IP din rețeaua voastră).
 
 ## Domenii
 
@@ -245,6 +306,84 @@ Pentru ca GitHub să poată trimite webhook-uri, `PORTDOCK_PUBLIC_URL` trebuie s
 
 **API**: `curl -X POST $URL/api/applications/<id>/deploy -H "Authorization: Bearer pd_…"`
 
+## Observabilitate
+
+PortDock se conectează la stiva de monitorizare existentă (*Setări → Observability*).
+
+**Prometheus**: `GET /api/metrics` întoarce ultimele valori în formatul text Prometheus. Se citește cu un token API al unui cont de serviciu (scope `read`), în `authorization.credentials` din `scrape_configs`. Se exportă:
+
+- serverele;
+- aplicațiile, bazele de date și serviciile, cu etichetele `kind`, `project`, `environment`, `name` și `server`;
+- deploy-urile (număr pe status, ultimul rezultat, durata, momentul ultimului deploy reușit);
+- joburile, backup-urile bazelor de date și expirarea certificatelor;
+- monitoarele de uptime și alertele active.
+
+Un token limitat la anumite proiecte exportă doar acele proiecte.
+
+**Log drains**: logurile tuturor containerelor (aplicații, baze de date, servicii, joburi și, opțional, proxy-ul) ajung în:
+
+- Loki (cu etichetele `project`, `environment`, `app`, `kind`, `server`, `stream`);
+- Elasticsearch/OpenSearch (index `portdock-%Y.%m.%d`);
+- Graylog prin GELF (`udp://`, `tcp://`, `tls://`);
+- Splunk HEC;
+- syslog RFC 5424 (`udp://`, `tcp://`, `tls://`);
+- orice endpoint HTTP (JSON pe linii).
+
+Cum funcționează:
+
+- Pe fiecare server rulează un agent Vector (`timberio/vector:0.58.0-alpine`), cât timp există o destinație activă.
+- Agentul citește logurile din socket-ul Docker și adaugă proiectul, mediul, aplicația, serverul, containerul și deploy-ul.
+- Agentul păstrează până la 256 MB pe disc pentru fiecare destinație care nu răspunde.
+- Configurația e verificată de Vector înainte să o înlocuiască pe cea curentă și se aplică fără restart.
+- Pagina de setări arată câte linii a primit fiecare destinație și erorile de livrare. **Send a test line** trimite o linie prin toți agenții.
+- O destinație poate fi limitată la anumite proiecte.
+
+**OpenTelemetry**: cu un endpoint OTLP setat (headerele se salvează criptat), la fiecare deploy containerele primesc:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL` și `OTEL_EXPORTER_OTLP_HEADERS`;
+- `OTEL_SERVICE_NAME`;
+- `OTEL_RESOURCE_ATTRIBUTES`: proiectul, mediul, commit-ul și aplicația.
+
+O aplicație care își setează singură `OTEL_EXPORTER_OTLP_ENDPOINT` sau `OTEL_SDK_DISABLED` nu primește nimic, iar variabilele pe care le setează ea rămân neschimbate.
+
+## Configurație ca cod
+
+**pdctl** este clientul în linie de comandă: se află în imagine (`docker exec portdock pdctl …`) și e atașat la fiecare release pentru Linux, macOS și Windows.
+
+```sh
+pdctl login --url https://portdock.example.com --token pd_…   # sau PORTDOCK_URL / PORTDOCK_TOKEN
+pdctl deploy shop/web --wait              # iese cu eroare dacă deploy-ul eșuează
+pdctl env set shop/web LOG_LEVEL=debug
+pdctl run shop/web nightly-report --wait  # rulează acum un job programat
+pdctl export shop/web -o portdock.yaml    # fișierul unei aplicații existente
+pdctl apply -f portdock.yaml --dry-run
+```
+
+**portdock.yaml** descrie aplicațiile unui proiect și ale unui mediu (aplicații, build, domenii, variabile, volume, joburi, protecție), așa că configurația stă în repozitoriu și trece prin pull request-uri. Exemplul complet e în [README](../README.md#documentation) (secțiunea *Configuration as code*).
+
+- `pdctl apply` (sau `POST /api/gitops/apply`) creează ce lipsește și schimbă doar ce diferă; `--dry-run` arată schimbările fără să le facă. Cu `prune: true` se șterg domeniile, variabilele simple, volumele (datele rămân) și joburile care nu mai sunt în fișier.
+- Rulează cu drepturile token-ului: scope `write`, sau `full` dacă fișierul creează un mediu.
+- Valorile secrete nu intră în fișier: se trec doar numele lor la `secrets`, iar valorile se setează în PortDock (sau cu `pdctl env set APP CHEIE=VALOARE --secret`).
+
+**Terraform / OpenTofu**: [terraform-provider-portdock](../terraform-provider-portdock/) gestionează proiecte, medii, aplicații, domenii și variabile, cu detectarea modificărilor făcute în afara Terraform și `terraform import`. Pentru proiecte și medii token-ul are nevoie de scope `full`; pentru aplicații, domenii și variabile ajunge `write`.
+
+## Agenți AI (MCP)
+
+PortDock este un server [Model Context Protocol](https://modelcontextprotocol.io): endpoint-ul `POST /api/mcp` (Streamable HTTP, protocolul 2025-06-18) primește un token API.
+
+```sh
+# Claude Code
+claude mcp add --transport http portdock https://portdock.example.com/api/mcp \
+  --header "Authorization: Bearer pd_…"
+```
+
+Pentru clienții care pornesc o comandă locală (Claude Desktop, Cursor, Windsurf) se folosește `pdctl mcp` cu `PORTDOCK_URL` și `PORTDOCK_TOKEN` (sau autentificarea din `pdctl login`).
+
+- Unelte de citire (scope `read`): proiecte, aplicații, deploy-uri și logul lor, logurile aplicației, baze de date, servere, alerte.
+- `deploy_application` (cu `wait`) și `rollback_deployment` cer scope `deploy`; `restart_application` și `backup_database` cer `write`.
+- Fiecare unealtă apelează API-ul cu același token, deci scope-ul și proiectele lui se aplică la fiecare apel. Mediile protejate așteaptă în continuare aprobarea.
+- Sesiunile din browser nu sunt acceptate, doar token-uri API; fiecare acțiune a unui agent apare în audit log (`mcp.tool`).
+
 ## Arhitectură
 
 ```
@@ -269,11 +408,10 @@ Toate operațiile pe servere trec prin `Executor` (local sau SSH) și CLI-ul Doc
 
 ## Limitări cunoscute / următorii pași
 
-- Bazele de date și serviciile one-click rulează pe un singur server. Aplicațiile pot rula pe mai multe servere, dar echilibrarea traficului între ele se face prin DNS (mai multe înregistrări A) sau printr-un load balancer extern.
+- Bazele de date (în afară de replicile PostgreSQL) și serviciile one-click rulează pe un singur server. Aplicațiile pot rula pe mai multe servere, dar echilibrarea traficului între ele se face prin DNS (mai multe înregistrări A) sau printr-un load balancer extern.
 - Preview-urile pentru PR-uri rulează doar pe serverul principal.
 - Fără Docker Swarm/Kubernetes.
-- Repo-urile prin cheie SSH (`git@…`) nu sunt suportate — folosește HTTPS + token sau GitHub App.
-- Baze de date/servicii fără backup la nivel de volum (doar dump logic pentru DB-uri).
+- Recuperarea la un moment dat există pentru PostgreSQL; celelalte engine-uri au backup logic (dump), cu teste automate de restaurare.
 
 ## Licență
 

@@ -13,7 +13,7 @@ func TestRunOptions(t *testing.T) {
 		wantErr string
 	}{
 		{in: "", want: ""},
-		{in: "-v sy-app-1:/data --shm-size 1g", want: " -v sy-app-1:/data --shm-size 1g"},
+		{in: "-v app-1:/data --shm-size 1g", want: " -v app-1:/data --shm-size 1g"},
 		{in: `-e FOO="a b" --init`, want: ` -e 'FOO=a b' --init`},
 		{in: "--user=1000:1000 -w /app", want: " --user 1000:1000 -w /app"},
 		{in: "--mount type=volume,source=cache,target=/cache", want: " --mount type=volume,source=cache,target=/cache"},
@@ -62,6 +62,19 @@ func TestRunOptions(t *testing.T) {
 		{in: "--mount type=bind,source=/srv/x,target=/x", wantErr: "administrators"},
 		{in: "--mount type=bind,source=/srv/x,target=/x", trusted: true, want: " --mount type=bind,source=/srv/x,target=/x"},
 		{in: "--mount type=bind,src=/var/lib/docker,dst=/d", trusted: true, wantErr: "cannot be mounted"},
+		// Volume options of the local driver mount server paths, for anyone.
+		{in: "--mount type=volume,src=x,dst=/x,volume-opt=type=none,volume-opt=o=bind,volume-opt=device=/", wantErr: "not allowed"},
+		{in: "--mount type=volume,src=x,dst=/x,volume-opt=device=/", trusted: true, wantErr: "not allowed"},
+		{in: "--mount type=volume,src=x,dst=/x,volume-driver=local", trusted: true, wantErr: "not allowed"},
+		{in: `--mount "type=bind",src=/,dst=/h`, wantErr: "administrators"},
+		{in: "--mount type=volume,src=x,dst=/x,type=bind", wantErr: "repeated"},
+		// Volumes of other resources (databases, compose projects, managed volumes).
+		{in: "-v sy-0123456789abcdef:/db", wantErr: "another PortDock resource"},
+		{in: "-v sy-0123456789abcdef_data:/d", wantErr: "another PortDock resource"},
+		{in: "-v pd-0123456789abcdef_data:/d", wantErr: "another PortDock resource"},
+		{in: "--mount type=volume,src=sy-0123456789abcdef,dst=/db", wantErr: "another PortDock resource"},
+		{in: "-v sy-0123456789abcdef:/db", trusted: true, want: " -v sy-0123456789abcdef:/db"},
+		{in: "-v sy-web-1a2b3c-0:/data", wantErr: "another PortDock resource"},
 		{in: "--device /dev/dri:/dev/dri", wantErr: "administrator"},
 		{in: "--device /dev/dri:/dev/dri", trusted: true, want: " --device /dev/dri:/dev/dri"},
 	}

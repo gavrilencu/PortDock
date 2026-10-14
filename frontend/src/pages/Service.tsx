@@ -6,10 +6,12 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Container, ServiceDetail } from "../lib/types";
 import { useLogStream } from "../lib/sse";
-import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, StatusBadge, Tabs, Textarea, useConfirm } from "../components/ui";
+import { Button, Card, ErrorBox, Field, Input, Loading, PageHeader, StatusBadge, Switch, Tabs, Textarea, useConfirm } from "../components/ui";
+import { useUser } from "../components/Layout";
 import { ContainerTable } from "../components/ContainerTable";
 import { LogViewer } from "../components/LogViewer";
 import { EnvEditor } from "../components/EnvEditor";
+import { InheritedVariables } from "../components/sharedenv";
 import { domainURL, splitList } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { t, tk, tx } from "../lib/i18n";
@@ -130,6 +132,9 @@ export function ServicePage() {
         <div className="space-y-3">
           <p className="text-sm text-muted">{tx("Variables are available for compose interpolation ({example}) and injected into the exposed service.", { example: <code>${"{VAR}"}</code> })}</p>
           <EnvEditor owner={`/services/${id}`} />
+          <div className="mt-6">
+            <InheritedVariables owner={`/services/${id}`} />
+          </div>
         </div>
       )}
       {tab === "settings" && <ServiceSettings s={s} />}
@@ -175,7 +180,8 @@ function ServiceSettings({ s }: { s: ServiceDetail }) {
   const qc = useQueryClient();
   const nav = useNavigate();
   const confirm = useConfirm();
-  const [f, setF] = useState({ name: s.name, description: s.description, domain: s.domain });
+  const isAdmin = useUser().role !== "member";
+  const [f, setF] = useState({ name: s.name, description: s.description, domain: s.domain, host_access: s.host_access });
   const save = useMutation({
     mutationFn: () => api.patch<ServiceDetail>(`/services/${s.id}`, { ...s, ...f }),
     onSuccess: (d) => {
@@ -202,6 +208,19 @@ function ServiceSettings({ s }: { s: ServiceDetail }) {
           <Field label={t("Description")} className="md:col-span-2">
             <Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           </Field>
+          <div className="md:col-span-2">
+            <Switch
+              checked={f.host_access}
+              disabled={!isAdmin && !f.host_access}
+              onChange={(v) => setF({ ...f, host_access: v })}
+              label={t("Allow host access from the compose file")}
+              description={
+                isAdmin
+                  ? t("privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.")
+                  : t("Only an administrator can allow this.")
+              }
+            />
+          </div>
           <div className="flex justify-end md:col-span-2">
             <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>
               {t("Save")}

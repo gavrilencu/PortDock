@@ -1,0 +1,19 @@
+# code-server: https://coder.com/docs/code-server
+x-portdock:
+  name: code-server
+  description: "VS Code in the browser, on your server. Sign in with the PASSWORD of the Compose tab."
+  category: Developer Tools
+  website: https://coder.com/docs/code-server
+  tags: [ide, vscode, editor]
+  service: code-server
+  port: 8080
+services:
+  code-server:
+    image: codercom/code-server:latest
+    restart: unless-stopped
+    environment:
+      PASSWORD: ${PORTDOCK_PASSWORD_LOGIN}
+    volumes:
+      - home:/home/coder
+volumes:
+  home:

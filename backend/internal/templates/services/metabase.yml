@@ -1,0 +1,39 @@
+# Metabase: https://metabase.com
+x-portdock:
+  name: Metabase
+  description: "Business intelligence and dashboards for your data."
+  category: Analytics & BI
+  website: https://metabase.com
+  tags: [bi, dashboards, sql]
+  service: metabase
+  port: 3000
+services:
+  metabase:
+    image: metabase/metabase:latest
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: "5432"
+      MB_DB_USER: metabase
+      MB_DB_PASS: ${PORTDOCK_PASSWORD_DB}
+      MB_DB_HOST: postgres
+      MB_SITE_URL: ${PORTDOCK_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metabase
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: metabase
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabase -d metabase"]
+      interval: 5s
+      retries: 10
+volumes:
+  pg-data:

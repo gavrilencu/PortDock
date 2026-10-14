@@ -62,6 +62,9 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) error {
+	if t := auth.TokenFrom(r.Context()); t != nil && t.ProjectIDs != "" {
+		return errStatus(403, "this API token is limited to some projects and cannot create new ones")
+	}
 	var p store.Project
 	if err := readJSON(r, &p); err != nil {
 		return err
@@ -150,6 +153,8 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) error {
 	if err := store.Delete(r.Context(), s.db, "projects", id); err != nil {
 		return err
 	}
+	// Shared variables of the project and of its environments go with it.
+	_, _ = s.db.ExecContext(r.Context(), "DELETE FROM env_vars WHERE (owner_type = 'project' AND owner_id = ?) OR (owner_type = 'environment' AND owner_id NOT IN (SELECT id FROM environments))", id)
 	s.activity(r, "project.delete", "")
 	return ok(w, map[string]bool{"ok": true})
 }
@@ -194,6 +199,7 @@ func (s *Server) deleteEnvironment(w http.ResponseWriter, r *http.Request) error
 	if err := store.Delete(r.Context(), s.db, "environments", id); err != nil {
 		return err
 	}
+	_, _ = s.db.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = 'environment' AND owner_id = ?", id)
 	return ok(w, map[string]bool{"ok": true})
 }
 

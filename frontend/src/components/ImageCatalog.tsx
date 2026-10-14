@@ -155,8 +155,6 @@ export function ImageConfigure({ image, envId, serverId, onBack, onCreated, onMa
       const name = f.name || slugify(f.docker_image.split("/").pop()?.split(":")[0] ?? "app");
       const host = f.domains.split(",")[0]?.trim().replace(/^https?:\/\//, "").split("/")[0] ?? "";
       const url = host ? `${f.https ? "https" : "http"}://${host}` : "";
-      const suffix = randomHex(3);
-      const volumeOpts = volumes.filter((v) => v.trim()).map((v, i) => `-v sy-${name}-${suffix}-${i}:${v.trim()}`);
       const app = await api.post<ApplicationDetail>("/applications", {
         name,
         environment_id: envId,
@@ -166,10 +164,19 @@ export function ImageConfigure({ image, envId, serverId, onBack, onCreated, onMa
         docker_image: f.docker_image.trim(),
         port: f.port,
         start_command: f.command.trim(),
-        custom_docker_options: [...volumeOpts, f.options.trim()].filter(Boolean).join(" "),
+        custom_docker_options: f.options.trim(),
         domains: f.domains,
         https: f.https,
       });
+      // Persistent storage managed by PortDock (Storage tab), named after the last path segment.
+      const used = new Set<string>();
+      for (const path of volumes.map((v) => v.trim()).filter(Boolean)) {
+        const base = slugify(path.split("/").filter(Boolean).pop() ?? "data").slice(0, 50);
+        let volName = base;
+        for (let i = 2; used.has(volName); i++) volName = `${base}-${i}`;
+        used.add(volName);
+        await api.post(`/applications/${app.id}/volumes`, { name: volName, mount_path: path });
+      }
       for (const e of env.filter((e) => e.key.trim())) {
         await api.post(`/applications/${app.id}/envs`, {
           key: e.key.trim(),

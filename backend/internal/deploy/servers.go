@@ -275,10 +275,12 @@ func (e *Engine) reconcileServer(ctx context.Context, srv store.Server) (map[str
 	}
 	byRes := map[string][]docker.Container{}
 	for _, c := range cs {
-		if r := c.Labels[docker.LabelResource]; r != "" {
+		// Replicas have their own status (db_replicas): they don't make the database degraded.
+		if r := c.Labels[docker.LabelResource]; r != "" && c.Labels[LabelReplica] == "" {
 			byRes[r] = append(byRes[r], c)
 		}
 	}
+	e.fenceFormerPrimaries(ctx, x, srv, cs)
 	type row struct {
 		ID     int64  `db:"id"`
 		UUID   string `db:"uuid"`

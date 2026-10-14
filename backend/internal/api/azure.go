@@ -202,15 +202,23 @@ func (s *Server) validAzureSource(ctx context.Context, a *store.Application) err
 		a.AzureProjectID, a.AzureRepoID = "", ""
 		return nil
 	}
-	if _, err := store.ByID[store.AzureConnection](ctx, s.db, "azure_connections", a.AzureConnectionID); err != nil {
+	c, conn, err := s.azureClient(ctx, a.AzureConnectionID)
+	if err != nil {
 		return badRequest("Azure DevOps connection not found")
 	}
 	if a.AzureProjectID == "" || a.AzureRepoID == "" {
 		return badRequest("select an Azure DevOps repository")
 	}
+	// The connection's token goes into the clone URL: a URL outside the
+	// organization is replaced by the one the organization reports for the
+	// repository (Azure is asked only then, so saving works while it is down).
 	a.GitRepository = azuredevops.CleanRemoteURL(strings.TrimSpace(a.GitRepository))
-	if !strings.HasPrefix(a.GitRepository, "https://") && !strings.HasPrefix(a.GitRepository, "http://") {
-		return badRequest("invalid Azure DevOps repository URL")
+	if !azuredevops.InOrganization(conn.URL, a.GitRepository) {
+		remote, err := c.RemoteURL(ctx, a.AzureRepoID)
+		if err != nil {
+			return badRequest("Azure DevOps: %v", err)
+		}
+		a.GitRepository = remote
 	}
 	a.SourceType, a.GitToken = "git", ""
 	return nil
@@ -367,5 +375,5 @@ func (s *Server) azurePullRequest(ctx context.Context, w http.ResponseWriter, ap
 	default:
 		return accepted(w, webhookResult{Application: app.Name, Status: "ignored", Message: "pull request " + pr.Status})
 	}
-	return s.handlePullRequest(ctx, w, app, action, pr.PullRequestID, branch, sha, pr.Title)
+	return s.handlePullRequest(ctx, w, app, action, pr.PullRequestID, branch, sha, pr.Title, pr.ForkSource != nil)
 }

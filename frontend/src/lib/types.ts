@@ -14,6 +14,7 @@ export interface User {
   last_login_at: string;
   has_password: boolean;
   locale: string;
+  service_account?: boolean;
 }
 
 export interface UserIdentity {
@@ -160,6 +161,8 @@ export interface Application {
   git_branch: string;
   git_commit: string;
   has_git_token: boolean;
+  /** Public deploy key for repositories cloned over SSH ("" when none). */
+  git_ssh_public_key?: string;
   github_app_id: number;
   github_installation_id: number;
   git_full_name: string;
@@ -203,6 +206,9 @@ export interface Application {
   cpu_limit: string;
   memory_limit: string;
   replicas: number;
+  canary_percent?: number;
+  canary_minutes?: number;
+  canary_max_errors?: number;
   custom_labels: string;
   custom_docker_options: string;
   status: string;
@@ -262,6 +268,8 @@ export interface Deployment {
   application_id: number;
   status: DeploymentStatus;
   trigger: string;
+  canary_status?: "" | "observing" | "promoted" | "rolled_back";
+  canary_info?: string;
   commit_sha: string;
   commit_message: string;
   branch: string;
@@ -303,6 +311,48 @@ export interface EnvVar {
   is_preview: boolean;
   is_secret: boolean;
   created_at: string;
+  /** Secret store the value is read from when a deployment starts (0 = a value). */
+  ref_store_id: number;
+  ref_path: string;
+  ref_key: string;
+}
+
+export type SecretStoreType = "vault" | "azure_keyvault";
+
+/** An external secret manager (Settings → Secret managers). */
+export interface SecretStore {
+  id: number;
+  name: string;
+  type: SecretStoreType;
+  url: string;
+  path_prefix: string;
+  checked_at: string;
+  check_error: string;
+  created_at: string;
+  auth: string;
+  token_set: boolean;
+  role_id: string;
+  secret_id_set: boolean;
+  auth_mount: string;
+  namespace: string;
+  mount: string;
+  kv_version: number;
+  tenant_id: string;
+  client_id: string;
+  client_secret_set: boolean;
+  authority_host: string;
+  ca_cert: string;
+  project_ids: number[];
+  used_by: number;
+}
+
+/** What the variable editors know of a secret store. */
+export interface SecretStoreName {
+  id: number;
+  name: string;
+  type: SecretStoreType;
+  path_prefix: string;
+  project_ids: number[];
 }
 
 export interface Engine {
@@ -361,6 +411,8 @@ export interface Backup {
   enabled: boolean;
   last_run_at: string;
   created_at: string;
+  /** Cron schedule of the test restores ("" = never). */
+  verify_schedule: string;
 }
 
 export interface BackupRun {
@@ -378,6 +430,10 @@ export interface BackupRun {
   restore_status: "" | "pending" | "running" | "success" | "failed";
   restore_message: string;
   restored_at: string;
+  /** Test restore into a temporary container. */
+  verify_status: "" | "pending" | "running" | "success" | "failed";
+  verify_message: string;
+  verified_at: string;
 }
 
 export interface BackupRunsResponse {
@@ -389,15 +445,52 @@ export interface BackupRunsResponse {
   /** Whether PortDock can restore this engine's backups. */
   restore: boolean;
   format: string;
+  /** Whether backups can be test-restored into a temporary container. */
+  verify: boolean;
 }
 
 export interface ServiceTemplate {
+  /** What to create a service from: the slug, or catalog/slug. */
+  key: string;
   slug: string;
   name: string;
   description: string;
   category: string;
   website: string;
-  compose: string;
+  logo?: string;
+  tags?: string[];
+  /** The public service and its port (none: a service without a domain). */
+  service?: string;
+  port?: number;
+  /** The catalog it comes from (none: built in). */
+  source?: string;
+  /** It only deploys with host access, which an administrator grants. */
+  host_access?: boolean;
+  /** Variables to set before the service can start. */
+  required?: string[];
+  notes?: string[];
+  /** Only in the detail of one template. */
+  compose?: string;
+}
+
+export interface TemplateIssue {
+  error: boolean;
+  text: string;
+}
+
+/** A catalog of service templates (Settings → Service catalogs). */
+export interface TemplateCatalog {
+  id: number;
+  name: string;
+  url: string;
+  format: "auto" | "portdock" | "coolify";
+  enabled: boolean;
+  count: number;
+  fetched_at: string;
+  fetch_error: string;
+  created_at: string;
+  upload: boolean;
+  skipped: { slug: string; reason: string }[];
 }
 
 export interface Service {
@@ -411,6 +504,8 @@ export interface Service {
   compose: string;
   domain: string;
   status: string;
+  /** Lets the compose file use privileged mode, host paths and devices; granted by an administrator. */
+  host_access: boolean;
   created_at: string;
 }
 
@@ -522,11 +617,24 @@ export interface Dashboard {
   recent_deployments: Deployment[];
 }
 
+export type TokenScope = "read" | "deploy" | "write" | "full";
+
 export interface APIToken {
   id: number;
   name: string;
   last_used_at: string;
   created_at: string;
+  scope: TokenScope;
+  /** Comma-separated project ids; "" = every project of the account. */
+  project_ids: string;
+  /** "" = never. */
+  expires_at: string;
+  created_by: number;
+}
+
+/** An account for automation: no password, acts only through API tokens. */
+export interface ServiceAccount extends User {
+  tokens: APIToken[];
 }
 
 export interface NotificationChannel {
@@ -559,6 +667,10 @@ export interface Settings {
   s3_region: string;
   s3_access_key: string;
   s3_secret_key_set: boolean;
+  s3_access_key_set?: boolean;
+  otel_endpoint?: string;
+  otel_protocol?: string;
+  otel_headers_set?: boolean;
   trivy_image?: string;
   status_page_enabled?: string;
   status_page_title?: string;
@@ -906,6 +1018,9 @@ export interface ChatStatus {
 
 export interface ChatSettings {
   enabled: boolean;
+  /** openrouter, or openai: an OpenAI-compatible server at base_url (Ollama, vLLM…). */
+  provider?: "openrouter" | "openai";
+  base_url?: string;
   api_key_set: boolean;
   model: string;
   access: "all" | "admins" | "selected";
@@ -938,4 +1053,33 @@ export interface ChatMessage {
   model: string;
   created_at: string;
   error?: boolean;
+}
+
+export type LogDrainType = "loki" | "elasticsearch" | "gelf" | "splunk" | "syslog" | "http";
+
+export interface LogDrain {
+  id: number;
+  name: string;
+  type: LogDrainType;
+  url: string;
+  include_proxy: boolean;
+  enabled: boolean;
+  created_at: string;
+  username: string;
+  password_set: boolean;
+  token_set: boolean;
+  tenant: string;
+  index: string;
+  sourcetype: string;
+  header_names: string[];
+  skip_verify: boolean;
+  project_ids: number[];
+}
+
+export interface LogAgentStatus {
+  server_id: number;
+  server: string;
+  state: string;
+  error?: string;
+  destinations: Record<string, { sent: number; errors: number; discarded: number }>;
 }

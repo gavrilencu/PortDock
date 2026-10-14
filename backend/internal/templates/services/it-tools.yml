@@ -1,0 +1,13 @@
+# IT-Tools: https://it-tools.tech
+x-portdock:
+  name: IT-Tools
+  description: "Handy tools for developers and administrators in the browser: encoders, hashes, JWT, certificates, cron, network calculators. Nothing leaves the browser."
+  category: Developer Tools
+  website: https://it-tools.tech
+  tags: [tools, developer, utilities]
+  service: it-tools
+  port: 80
+services:
+  it-tools:
+    image: corentinth/it-tools:latest
+    restart: unless-stopped

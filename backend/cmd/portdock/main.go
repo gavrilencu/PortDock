@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -23,6 +24,9 @@ import (
 	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/github"
+	"github.com/portdock/portdock/internal/instancebackup"
+	"github.com/portdock/portdock/internal/logdrain"
+	"github.com/portdock/portdock/internal/overlay"
 	"github.com/portdock/portdock/internal/monitor"
 	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/notify"
@@ -36,9 +40,20 @@ import (
 )
 
 func main() {
+	// The agent of the private network, in its container on each server.
+	if len(os.Args) > 1 && os.Args[1] == "wg-agent" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := overlay.RunAgent(ctx, overlay.AgentDir); err != nil {
+			fmt.Fprintln(os.Stderr, "wg-agent:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	resetPassword := flag.String("reset-password", "", "reset the password of the user with this email and exit")
 	disable2FA := flag.String("disable-2fa", "", "turn off two-factor authentication for the user with this email and exit")
 	selfUpdate := flag.String("self-update", "", "internal: replace the given PortDock container with this image (run by the updater container)")
+	restore := flag.String("restore", "", "restore an instance backup (.tar.gz.age) into the data directory and exit; the passphrase is read from PORTDOCK_RESTORE_PASSPHRASE or standard input")
 	flag.Parse()
 	if *selfUpdate != "" {
 		dataDir := config.Load().DataDir
@@ -57,6 +72,14 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
+	if *restore != "" {
+		if err := restoreFromFile(*restore); err != nil {
+			fmt.Fprintln(os.Stderr, "restore failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(*resetPassword, *disable2FA); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -70,6 +93,13 @@ func run(resetPassword, disable2FA string) error {
 	}
 	if err := cfg.MigrateLegacyFiles(); err != nil {
 		return fmt.Errorf("migrate database file: %w", err)
+	}
+	// A restore staged from the interface (or -restore) replaces the data now,
+	// before the database is opened.
+	if applied, err := instancebackup.ApplyPending(cfg.DataDir, cfg.DBPath()); err != nil {
+		return fmt.Errorf("restore the instance backup: %w", err)
+	} else if applied {
+		slog.Info("instance backup restored", "data", cfg.DataDir)
 	}
 	db, err := store.Open(cfg.DBPath())
 	if err != nil {
@@ -109,6 +139,8 @@ func run(resetPassword, disable2FA string) error {
 	gh := github.New(db, box)
 	engine := deploy.New(cfg, db, box, pool, hub, notifier, gh)
 	sched := scheduler.New(db, engine, pool, notifier)
+	backups := instancebackup.New(cfg.DataDir, cfg.SecretKey, api.Version, db, box, engine, notifier)
+	sched.InstanceBackup = func(ctx context.Context) { _, _ = backups.Run(ctx, "scheduled") }
 
 	engine.Start(ctx)
 	sched.Start(ctx)
@@ -117,8 +149,13 @@ func run(resetPassword, disable2FA string) error {
 	auditStream := audit.New(db, box)
 	store.OnActivity = auditStream.Push
 	go auditStream.Run(ctx)
+	drains := logdrain.New(db, box, pool, cfg.ProxyNetwork, cfg.DataDir)
+	go drains.Run(ctx)
+	privateNet := overlay.New(db, box, pool, cfg.DataDir, api.Version)
+	go privateNet.Run(ctx)
 	engine.RecoverBackups(ctx) // jobs interrupted by the previous run
 	engine.RecoverScans(ctx)
+	engine.RecoverJobs(ctx)
 	netcfg.Install() // PortDock's own requests follow the corporate proxy setting
 	engine.ReloadNetwork(ctx)
 	go engine.Monitor(ctx, 30*time.Second)
@@ -137,8 +174,14 @@ func run(resetPassword, disable2FA string) error {
 	}
 	srv := api.New(api.Deps{
 		Config: cfg, DB: db, Box: box, Pool: pool, Hub: hub, Engine: engine, Scheduler: sched, Notifier: notifier, GitHub: gh, Monitor: mon, Audit: auditStream, Uptime: checker,
-		Auth: auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
-		UI:   web.FS(),
+		InstanceBackups: backups,
+		LogDrains:       drains,
+		Overlay:         privateNet,
+		// Exiting lets Docker start PortDock again (restart: unless-stopped),
+		// which applies a staged restore before opening the database.
+		Restart: stop,
+		Auth:    auth.New(db, strings.HasPrefix(cfg.PublicURL, "https://")),
+		UI:      web.FS(),
 	})
 	go srv.UpdateWatch(ctx)
 	httpSrv := &http.Server{
@@ -200,4 +243,36 @@ func migrateInstallation(db *store.DB, cfg *config.Config) {
 		db.LogActivity(ctx, 0, "system.data_dir_moved", prev+" → "+cfg.DataDir)
 	}
 	_ = db.SetSetting(ctx, "data_dir", cfg.DataDir)
+}
+
+// restoreFromFile restores an instance backup on a server where PortDock is
+// not running (or was just installed), then exits; start PortDock afterwards.
+func restoreFromFile(file string) error {
+	cfg := config.Load()
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return err
+	}
+	passphrase := os.Getenv("PORTDOCK_RESTORE_PASSPHRASE")
+	if passphrase == "" {
+		fmt.Fprint(os.Stderr, "Backup passphrase: ")
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			return errors.New("no passphrase: set PORTDOCK_RESTORE_PASSPHRASE or type it")
+		}
+		passphrase = strings.TrimRight(line, "\r\n")
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	m, err := instancebackup.Stage(f, passphrase, cfg.DataDir, cfg.SecretKey)
+	if err != nil {
+		return err
+	}
+	if _, err := instancebackup.ApplyPending(cfg.DataDir, cfg.DBPath()); err != nil {
+		return err
+	}
+	fmt.Printf("Restored the backup of %q made by PortDock %s on %s into %s. Start PortDock to use it.\n", m.Instance, m.Version, m.CreatedAt, cfg.DataDir)
+	return nil
 }

@@ -1,0 +1,21 @@
+# Mailpit: https://mailpit.axllent.org
+x-portdock:
+  name: Mailpit
+  description: "Catches the e-mail of test environments and shows it in a web inbox. Applications send to mailpit:1025 on the service's network (SMTP, no authentication); the inbox asks for the user and password of the Compose tab."
+  category: Developer Tools
+  website: https://mailpit.axllent.org
+  tags: [email, smtp, testing]
+  service: mailpit
+  port: 8025
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_UI_AUTH: admin:${PORTDOCK_PASSWORD_UI}
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - data:/data
+volumes:
+  data:

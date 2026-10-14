@@ -388,22 +388,44 @@ func (s *Server) containerEnv(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{"env": items, "revealed": reveal})
 }
 
-// stripEnv removes environment values from a docker inspect document.
+// stripEnv removes the values that can hold secrets from a docker inspect
+// document: environment values, and the command, arguments and health check,
+// which carry database passwords (e.g. `redis-server --requirepass …`).
 func stripEnv(raw []byte) []byte {
 	var list []map[string]any
 	if json.Unmarshal(raw, &list) != nil {
 		return []byte("[]")
 	}
+	hide := func(v any) any {
+		if l, ok := v.([]any); ok && len(l) > 0 {
+			return []any{"********"}
+		}
+		return v
+	}
 	for _, c := range list {
-		if cfg, ok := c["Config"].(map[string]any); ok {
-			if env, ok := cfg["Env"].([]any); ok {
-				for i, e := range env {
-					if s, ok := e.(string); ok {
-						k, _, _ := strings.Cut(s, "=")
-						env[i] = k + "=********"
-					}
+		if args, ok := c["Args"]; ok {
+			c["Args"] = hide(args)
+		}
+		cfg, ok := c["Config"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if env, ok := cfg["Env"].([]any); ok {
+			for i, e := range env {
+				if s, ok := e.(string); ok {
+					k, _, _ := strings.Cut(s, "=")
+					env[i] = k + "=********"
 				}
 			}
+		}
+		if cmd, ok := cfg["Cmd"]; ok {
+			cfg["Cmd"] = hide(cmd)
+		}
+		if hc, ok := cfg["Healthcheck"].(map[string]any); ok {
+			hc["Test"] = hide(hc["Test"])
+		}
+		if st, ok := c["State"].(map[string]any); ok {
+			delete(st, "Health")
 		}
 	}
 	b, _ := json.Marshal(list)

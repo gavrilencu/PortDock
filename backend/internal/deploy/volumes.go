@@ -48,7 +48,7 @@ func (j *job) volumeArgs(ctx context.Context) (string, error) {
 		}
 		if v.HostPath != "" {
 			if j.d.PRNumber > 0 {
-				j.log.Printf("Preview: server directory %s is not mounted at %s.", v.HostPath, v.MountPath)
+				j.logf("Preview: server directory %s is not mounted at %s.", v.HostPath, v.MountPath)
 				continue
 			}
 			if err := j.e.CheckHostPath(v.HostPath); err != nil {
@@ -57,18 +57,24 @@ func (j *job) volumeArgs(ctx context.Context) (string, error) {
 			args.WriteString(" -v " + q(v.HostPath+":"+v.MountPath+ro))
 			continue
 		}
+		// An existing volume is reused only if PortDock created it for this
+		// volume: one made beforehand under the same name (with driver options
+		// mounting a path of the server, say) is refused.
 		name := store.VolumeName(j.app.UUID, v.Name, j.d.PRNumber)
-		fmt.Fprintf(&create, "docker volume inspect %[1]s >/dev/null 2>&1 || docker volume create%[2]s %[1]s >/dev/null || exit 1; ",
-			q(name), volumeLabels(j.app.UUID, v.Name, j.d.PRNumber))
+		owner := fmt.Sprintf("%s/%s/%d", j.app.UUID, v.Name, j.d.PRNumber)
+		format := fmt.Sprintf(`{{index .Labels %q}}/{{index .Labels %q}}/{{index .Labels %q}}`, docker.LabelResource, docker.LabelVolume, docker.LabelPR)
+		fmt.Fprintf(&create, `if l=$(docker volume inspect -f %[3]s %[1]s 2>/dev/null); then [ "$l" = %[4]s ] || { echo "volume %[5]s exists but was not created by PortDock for this application" >&2; exit 1; }; `+
+			`else docker volume create%[2]s %[1]s >/dev/null || exit 1; fi; `,
+			q(name), volumeLabels(j.app.UUID, v.Name, j.d.PRNumber), q(format), q(owner), name)
 		args.WriteString(" -v " + q(name+":"+v.MountPath+ro))
 	}
 	if create.Len() > 0 {
-		if err := j.x.Run(ctx, create.String(), executor.RunOpts{Stdout: j.log}); err != nil {
+		if _, err := executor.Output(ctx, j.x, create.String()); err != nil {
 			return "", fmt.Errorf("create volumes: %w", err)
 		}
 	}
 	if len(vols) > 0 {
-		j.log.Printf("Persistent storage: %d volume(s).", len(vols))
+		j.logf("Persistent storage: %d volume(s).", len(vols))
 	}
 	return args.String(), nil
 }
@@ -137,4 +143,12 @@ func (e *Engine) RemoveVolumeData(ctx context.Context, app store.Application, na
 // containers must be gone already.
 func removeAppVolumes(ctx context.Context, x executor.Executor, appUUID string, filters ...string) error {
 	return x.Run(ctx, volumesCmd(appUUID, filters...)+" | xargs -r docker volume rm -f >/dev/null 2>&1; true", executor.RunOpts{})
+}
+
+// logf writes to the deployment log, if any (scheduled jobs reuse the
+// container setup of a deployment without having one).
+func (j *job) logf(format string, args ...any) {
+	if j.log != nil {
+		j.log.Printf(format, args...)
+	}
 }

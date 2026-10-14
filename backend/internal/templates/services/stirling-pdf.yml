@@ -1,0 +1,22 @@
+# Stirling-PDF: https://www.stirlingpdf.com
+x-portdock:
+  name: Stirling-PDF
+  description: "Merge, split, convert, sign, compress and OCR PDF files on your own server: documents never leave it."
+  category: Collaboration & Productivity
+  website: https://www.stirlingpdf.com
+  tags: [pdf, documents, ocr]
+  service: stirling-pdf
+  port: 8080
+services:
+  stirling-pdf:
+    image: stirlingtools/stirling-pdf:latest
+    restart: unless-stopped
+    environment:
+      DOCKER_ENABLE_SECURITY: "false"
+      SYSTEM_DEFAULTLOCALE: en-GB
+    volumes:
+      - tessdata:/usr/share/tessdata
+      - configs:/configs
+volumes:
+  tessdata:
+  configs:

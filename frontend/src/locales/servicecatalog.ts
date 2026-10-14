@@ -1,0 +1,115 @@
+// Translations for components/servicecatalog.tsx (service template picker,
+// Settings → Service catalogs).
+export const ro: Record<string, string> = {
+  "Service catalogs": "Cataloage de servicii",
+  "Search {n} services…": "Caută în {n} servicii…",
+  "All categories": "Toate categoriile",
+  "All catalogs": "Toate cataloagele",
+  "Built in": "Încorporate",
+  "No service matches": "Niciun serviciu găsit",
+  "Try another word, or write a custom compose file.": "Încearcă alt cuvânt sau scrie un fișier compose propriu.",
+  "Needs host access": "Necesită acces la server",
+  "{n} more: refine the search.": "Încă {n}: restrânge căutarea.",
+  "From the {source} catalog: review the compose file before deploying it.": "Din catalogul {source}: verifică fișierul compose înainte de deploy.",
+  "No public address: the service runs without a domain.": "Fără adresă publică: serviciul rulează fără domeniu.",
+  "The compose file needs host access (server paths, privileged mode, devices…), which only an administrator can allow. A template that mounts the Docker socket cannot be deployed.":
+    "Fișierul compose necesită acces la server (căi de pe server, mod privilegiat, dispozitive…), pe care doar un administrator îl poate permite. Un șablon care montează socket-ul Docker nu poate fi pus în funcțiune.",
+  "Set these variables in the service's Environment tab before deploying it: {names}. The service is created without starting.":
+    "Setează aceste variabile în tab-ul Environment al serviciului înainte de deploy: {names}. Serviciul e creat fără să pornească.",
+  "{name} is created": "{name} a fost creat",
+  "Set {names}, then deploy it.": "Setează {names}, apoi pornește-l.",
+  "Create service": "Creează serviciul",
+  "Add a service catalog": "Adaugă un catalog de servicii",
+  "A catalog brings more one-click services: the PortDock community catalog, Coolify's templates (converted automatically) or your own, from a URL or a file.":
+    "Un catalog aduce mai multe servicii cu un click: catalogul comunității PortDock, șabloanele Coolify (convertite automat) sau unul propriu, dintr-un URL sau un fișier.",
+  "Add catalog": "Adaugă catalogul",
+  "PortDock community catalog": "Catalogul comunității PortDock",
+  "Coolify templates": "Șabloanele Coolify",
+  "Prefixes the templates' keys, e.g. community/n8n.": "Prefixează cheile șabloanelor, de exemplu community/n8n.",
+  Format: "Format",
+  Detect: "Detectează",
+  Source: "Sursă",
+  "A URL, refreshed daily": "Un URL, reîmprospătat zilnic",
+  "An uploaded file": "Un fișier încărcat",
+  "Downloaded through the corporate proxy when one is set; an internal mirror (Nexus, Artifactory, Git server) works for networks without internet.":
+    "Se descarcă prin proxy-ul corporativ, dacă e setat; pentru rețele fără internet merge o oglindă internă (Nexus, Artifactory, server Git).",
+  "Catalog file": "Fișierul catalogului",
+  "A catalog (pdctl template bundle), a single template, or Coolify's service-templates.json.": "Un catalog (pdctl template bundle), un singur șablon sau service-templates.json de la Coolify.",
+  "Choose a file": "Alege un fișier",
+  "Templates are compose files written by others: they deploy like a custom compose file, without host access unless an administrator allows it, and the Docker socket is never mounted. Review a template before deploying it.":
+    "Șabloanele sunt fișiere compose scrise de alții: se pun în funcțiune ca un compose propriu, fără acces la server dacă un administrator nu-l permite, iar socket-ul Docker nu e montat niciodată. Verifică un șablon înainte de deploy.",
+  "{n} template from {name}|{n} templates from {name}": "{n} șablon din {name}|{n} șabloane din {name}|{n} de șabloane din {name}",
+  "{n} skipped": "sărite: {n}",
+  "Catalog removed": "Catalog șters",
+  "More one-click services on top of the built-in ones. Catalogs from a URL are refreshed every day, so new templates arrive without updating PortDock.":
+    "Mai multe servicii cu un click, pe lângă cele încorporate. Cataloagele dintr-un URL se reîmprospătează zilnic, deci șabloanele noi apar fără actualizarea PortDock.",
+  "No catalogs": "Niciun catalog",
+  "Add the PortDock community catalog, Coolify's 300+ templates or a catalog of your own.": "Adaugă catalogul comunității PortDock, cele peste 300 de șabloane Coolify sau un catalog propriu.",
+  Catalog: "Catalog",
+  Templates: "Șabloane",
+  "uploaded file": "fișier încărcat",
+  "Its templates leave the picker. Services already created from them keep running.": "Șabloanele lui dispar din listă. Serviciile deja create din ele continuă să ruleze.",
+  "Write a template": "Scrie un șablon",
+  "A template is a docker-compose file whose x-portdock block describes it and names the public service. Placeholders such as ${PORTDOCK_PASSWORD_DB} or ${PORTDOCK_URL} are filled in when a service is created.":
+    "Un șablon este un fișier docker-compose al cărui bloc x-portdock îl descrie și numește serviciul public. Valori precum ${PORTDOCK_PASSWORD_DB} sau ${PORTDOCK_URL} se completează la crearea serviciului.",
+  "Check it with pdctl template lint, bundle a directory into a catalog with pdctl template bundle, and propose it to the community catalog with a pull request (backend/internal/templates/services).":
+    "Verifică-l cu pdctl template lint, adună un director într-un catalog cu pdctl template bundle și propune-l catalogului comunității printr-un pull request (backend/internal/templates/services).",
+  "Skipped templates of {name}": "Șabloane sărite din {name}",
+};
+
+export const ru: Record<string, string> = {
+  "Service catalogs": "Каталоги сервисов",
+  "Search {n} services…": "Поиск среди {n} сервисов…",
+  "All categories": "Все категории",
+  "All catalogs": "Все каталоги",
+  "Built in": "Встроенные",
+  "No service matches": "Ничего не найдено",
+  "Try another word, or write a custom compose file.": "Попробуйте другое слово или напишите свой compose-файл.",
+  "Needs host access": "Нужен доступ к серверу",
+  "{n} more: refine the search.": "Ещё {n}: уточните поиск.",
+  "From the {source} catalog: review the compose file before deploying it.": "Из каталога {source}: проверьте compose-файл перед деплоем.",
+  "No public address: the service runs without a domain.": "Без публичного адреса: сервис работает без домена.",
+  "The compose file needs host access (server paths, privileged mode, devices…), which only an administrator can allow. A template that mounts the Docker socket cannot be deployed.":
+    "Compose-файлу нужен доступ к серверу (пути сервера, привилегированный режим, устройства…), разрешить его может только администратор. Шаблон, монтирующий сокет Docker, развернуть нельзя.",
+  "Set these variables in the service's Environment tab before deploying it: {names}. The service is created without starting.":
+    "Задайте эти переменные на вкладке Environment сервиса перед деплоем: {names}. Сервис создаётся без запуска.",
+  "{name} is created": "{name} создан",
+  "Set {names}, then deploy it.": "Задайте {names}, затем запустите.",
+  "Create service": "Создать сервис",
+  "Add a service catalog": "Добавить каталог сервисов",
+  "A catalog brings more one-click services: the PortDock community catalog, Coolify's templates (converted automatically) or your own, from a URL or a file.":
+    "Каталог добавляет сервисы в один клик: каталог сообщества PortDock, шаблоны Coolify (преобразуются автоматически) или собственный, по URL или из файла.",
+  "Add catalog": "Добавить каталог",
+  "PortDock community catalog": "Каталог сообщества PortDock",
+  "Coolify templates": "Шаблоны Coolify",
+  "Prefixes the templates' keys, e.g. community/n8n.": "Префикс ключей шаблонов, например community/n8n.",
+  Format: "Формат",
+  Detect: "Определить",
+  Source: "Источник",
+  "A URL, refreshed daily": "URL, обновляется ежедневно",
+  "An uploaded file": "Загруженный файл",
+  "Downloaded through the corporate proxy when one is set; an internal mirror (Nexus, Artifactory, Git server) works for networks without internet.":
+    "Загружается через корпоративный прокси, если он задан; для сетей без интернета подойдёт внутреннее зеркало (Nexus, Artifactory, Git-сервер).",
+  "Catalog file": "Файл каталога",
+  "A catalog (pdctl template bundle), a single template, or Coolify's service-templates.json.": "Каталог (pdctl template bundle), один шаблон или service-templates.json от Coolify.",
+  "Choose a file": "Выбрать файл",
+  "Templates are compose files written by others: they deploy like a custom compose file, without host access unless an administrator allows it, and the Docker socket is never mounted. Review a template before deploying it.":
+    "Шаблоны — это compose-файлы сторонних авторов: они разворачиваются как собственный compose, без доступа к серверу, если администратор его не разрешил, а сокет Docker не монтируется никогда. Проверяйте шаблон перед деплоем.",
+  "{n} template from {name}|{n} templates from {name}": "{n} шаблон из {name}|{n} шаблона из {name}|{n} шаблонов из {name}",
+  "{n} skipped": "пропущено: {n}",
+  "Catalog removed": "Каталог удалён",
+  "More one-click services on top of the built-in ones. Catalogs from a URL are refreshed every day, so new templates arrive without updating PortDock.":
+    "Дополнительные сервисы в один клик к встроенным. Каталоги по URL обновляются ежедневно, поэтому новые шаблоны появляются без обновления PortDock.",
+  "No catalogs": "Нет каталогов",
+  "Add the PortDock community catalog, Coolify's 300+ templates or a catalog of your own.": "Добавьте каталог сообщества PortDock, более 300 шаблонов Coolify или собственный каталог.",
+  Catalog: "Каталог",
+  Templates: "Шаблоны",
+  "uploaded file": "загруженный файл",
+  "Its templates leave the picker. Services already created from them keep running.": "Его шаблоны пропадут из списка. Уже созданные из них сервисы продолжат работать.",
+  "Write a template": "Написать шаблон",
+  "A template is a docker-compose file whose x-portdock block describes it and names the public service. Placeholders such as ${PORTDOCK_PASSWORD_DB} or ${PORTDOCK_URL} are filled in when a service is created.":
+    "Шаблон — это docker-compose-файл, блок x-portdock которого описывает его и называет публичный сервис. Подстановки вроде ${PORTDOCK_PASSWORD_DB} или ${PORTDOCK_URL} заполняются при создании сервиса.",
+  "Check it with pdctl template lint, bundle a directory into a catalog with pdctl template bundle, and propose it to the community catalog with a pull request (backend/internal/templates/services).":
+    "Проверьте его через pdctl template lint, соберите каталог из папки через pdctl template bundle и предложите в каталог сообщества пулл-реквестом (backend/internal/templates/services).",
+  "Skipped templates of {name}": "Пропущенные шаблоны {name}",
+};

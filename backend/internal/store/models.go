@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,10 @@ type User struct {
 	LastLoginAt string `db:"last_login_at" json:"last_login_at"`
 	// Locale is the interface language chosen by the user ("" = default, English).
 	Locale string `db:"locale" json:"locale"`
+	// ServiceAccount marks an account for automation (CI, scripts): it has no
+	// password, cannot sign in, and only acts through API tokens that
+	// administrators create for it.
+	ServiceAccount bool `db:"service_account" json:"service_account"`
 }
 
 func (u User) HasPassword() bool { return u.PasswordHash != "" }
@@ -39,6 +44,8 @@ type Session struct {
 	UserAgent  string `db:"user_agent" json:"user_agent"`
 	// Method is how the session was established: password, password+totp, password+recovery or sso:<slug>.
 	Method string `db:"method" json:"method"`
+	// Token is the API token of the request (Method "token").
+	Token *APIToken `db:"-" json:"-"`
 }
 
 // SSOProvider is an OpenID Connect identity provider (Entra ID, Okta, Google, Keycloak…).
@@ -84,7 +91,31 @@ type APIToken struct {
 	TokenHash  string `db:"token_hash" json:"-"`
 	LastUsedAt string `db:"last_used_at" json:"last_used_at"`
 	CreatedAt  string `db:"created_at" json:"created_at"`
+	// Scope caps what the token may do, within the rights of its user:
+	// read | deploy | write (no deletions, members or approvals) | full.
+	Scope string `db:"scope" json:"scope"`
+	// ProjectIDs limits the token to these projects (comma separated, "" = all).
+	ProjectIDs string `db:"project_ids" json:"project_ids"`
+	ExpiresAt  string `db:"expires_at" json:"expires_at"` // "" = never
+	CreatedBy  int64  `db:"created_by" json:"created_by"`
 }
+
+// Projects returns the projects the token is limited to (nil = all).
+func (t APIToken) Projects() []int64 {
+	var ids []int64
+	for _, s := range SplitList(t.ProjectIDs) {
+		if id, err := strconv.ParseInt(s, 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// Expired reports whether the token is past its expiry date.
+func (t APIToken) Expired() bool { return t.ExpiresAt != "" && t.ExpiresAt <= Now() }
+
+// Limited reports whether the token has less than its user's full rights.
+func (t APIToken) Limited() bool { return t.Scope != "full" || t.ProjectIDs != "" }
 
 type SSHKey struct {
 	ID         int64  `db:"id" json:"id"`
@@ -110,7 +141,14 @@ type Server struct {
 	ProxyStatus    string `db:"proxy_status" json:"proxy_status"`
 	WildcardDomain string `db:"wildcard_domain" json:"wildcard_domain"`
 	LastCheckAt    string `db:"last_check_at" json:"last_check_at"`
-	CreatedAt      string `db:"created_at" json:"created_at"`
+	// The private network (overlay package): whether the server joins it,
+	// its address and WireGuard keys, and how the others reach it.
+	OverlayJoin       bool   `db:"overlay_join" json:"overlay_join"`
+	OverlayIP         string `db:"overlay_ip" json:"overlay_ip"`
+	OverlayPublicKey  string `db:"overlay_public_key" json:"overlay_public_key"`
+	OverlayPrivateKey string `db:"overlay_private_key" json:"-"`
+	OverlayEndpoint   string `db:"overlay_endpoint" json:"overlay_endpoint"`
+	CreatedAt         string `db:"created_at" json:"created_at"`
 }
 
 type Project struct {
@@ -145,17 +183,21 @@ type ProjectMember struct {
 }
 
 type Application struct {
-	ID                 int64  `db:"id" json:"id"`
-	UUID               string `db:"uuid" json:"uuid"`
-	EnvironmentID      int64  `db:"environment_id" json:"environment_id"`
-	ServerID           int64  `db:"server_id" json:"server_id"`
-	Name               string `db:"name" json:"name"`
-	Description        string `db:"description" json:"description"`
-	SourceType         string `db:"source_type" json:"source_type"`
-	GitRepository      string `db:"git_repository" json:"git_repository"`
-	GitBranch          string `db:"git_branch" json:"git_branch"`
-	GitCommit          string `db:"git_commit" json:"git_commit"`
-	GitToken           string `db:"git_token" json:"-"`
+	ID            int64  `db:"id" json:"id"`
+	UUID          string `db:"uuid" json:"uuid"`
+	EnvironmentID int64  `db:"environment_id" json:"environment_id"`
+	ServerID      int64  `db:"server_id" json:"server_id"`
+	Name          string `db:"name" json:"name"`
+	Description   string `db:"description" json:"description"`
+	SourceType    string `db:"source_type" json:"source_type"`
+	GitRepository string `db:"git_repository" json:"git_repository"`
+	GitBranch     string `db:"git_branch" json:"git_branch"`
+	GitCommit     string `db:"git_commit" json:"git_commit"`
+	GitToken      string `db:"git_token" json:"-"`
+	// GitSSHKey (encrypted) is the application's deploy key for SSH repositories;
+	// GitSSHPublicKey is what to add to the repository's deploy keys.
+	GitSSHKey          string `db:"git_ssh_key" json:"-"`
+	GitSSHPublicKey    string `db:"git_ssh_public_key" json:"git_ssh_public_key"`
 	GitHubAppID        int64  `db:"github_app_id" json:"github_app_id"`
 	GitHubInstallation int64  `db:"github_installation_id" json:"github_installation_id"`
 	GitFullName        string `db:"git_full_name" json:"git_full_name"`
@@ -181,37 +223,46 @@ type Application struct {
 	DastTarget   string `db:"dast_target" json:"dast_target"` // URL to scan; empty: the application itself
 	// ComposeHostAccess lets the compose file use privileged mode, host paths,
 	// devices and capabilities. Only administrators can grant it.
-	ComposeHostAccess   bool   `db:"compose_host_access" json:"compose_host_access"`
-	BuildPack           string `db:"build_pack" json:"build_pack"`
-	BaseDirectory       string `db:"base_directory" json:"base_directory"`
-	DockerfilePath      string `db:"dockerfile_path" json:"dockerfile_path"`
-	ComposePath         string `db:"compose_path" json:"compose_path"`
-	ComposeService      string `db:"compose_service" json:"compose_service"`
-	DockerImage         string `db:"docker_image" json:"docker_image"`
-	InstallCommand      string `db:"install_command" json:"install_command"`
-	BuildCommand        string `db:"build_command" json:"build_command"`
-	StartCommand        string `db:"start_command" json:"start_command"`
-	PublishDirectory    string `db:"publish_directory" json:"publish_directory"`
-	Port                int    `db:"port" json:"port"`
-	PortsMapping        string `db:"ports_mapping" json:"ports_mapping"`
-	Domains             string `db:"domains" json:"domains"`
-	HTTPS               bool   `db:"https" json:"https"`
-	HealthCheckPath     string `db:"health_check_path" json:"health_check_path"`
-	HealthCheckTimeout  int    `db:"health_check_timeout" json:"health_check_timeout"`
-	PreDeployCommand    string `db:"pre_deploy_command" json:"pre_deploy_command"`
-	PostDeployCommand   string `db:"post_deploy_command" json:"post_deploy_command"`
-	WatchPaths          string `db:"watch_paths" json:"watch_paths"`
-	AutoDeploy          bool   `db:"auto_deploy" json:"auto_deploy"`
-	PreviewEnabled      bool   `db:"preview_enabled" json:"preview_enabled"`
-	PreviewDomain       string `db:"preview_domain" json:"preview_domain"`
-	WebhookSecret       string `db:"webhook_secret" json:"-"` // encrypted; shown only to writers
-	CPULimit            string `db:"cpu_limit" json:"cpu_limit"`
-	MemoryLimit         string `db:"memory_limit" json:"memory_limit"`
-	Replicas            int    `db:"replicas" json:"replicas"`
-	CustomLabels        string `db:"custom_labels" json:"custom_labels"`
-	CustomDockerOptions string `db:"custom_docker_options" json:"custom_docker_options"`
-	Status              string `db:"status" json:"status"`
-	CurrentImage        string `db:"current_image" json:"current_image"`
+	ComposeHostAccess  bool   `db:"compose_host_access" json:"compose_host_access"`
+	BuildPack          string `db:"build_pack" json:"build_pack"`
+	BaseDirectory      string `db:"base_directory" json:"base_directory"`
+	DockerfilePath     string `db:"dockerfile_path" json:"dockerfile_path"`
+	ComposePath        string `db:"compose_path" json:"compose_path"`
+	ComposeService     string `db:"compose_service" json:"compose_service"`
+	DockerImage        string `db:"docker_image" json:"docker_image"`
+	InstallCommand     string `db:"install_command" json:"install_command"`
+	BuildCommand       string `db:"build_command" json:"build_command"`
+	StartCommand       string `db:"start_command" json:"start_command"`
+	PublishDirectory   string `db:"publish_directory" json:"publish_directory"`
+	Port               int    `db:"port" json:"port"`
+	PortsMapping       string `db:"ports_mapping" json:"ports_mapping"`
+	Domains            string `db:"domains" json:"domains"`
+	HTTPS              bool   `db:"https" json:"https"`
+	HealthCheckPath    string `db:"health_check_path" json:"health_check_path"`
+	HealthCheckTimeout int    `db:"health_check_timeout" json:"health_check_timeout"`
+	PreDeployCommand   string `db:"pre_deploy_command" json:"pre_deploy_command"`
+	PostDeployCommand  string `db:"post_deploy_command" json:"post_deploy_command"`
+	WatchPaths         string `db:"watch_paths" json:"watch_paths"`
+	AutoDeploy         bool   `db:"auto_deploy" json:"auto_deploy"`
+	PreviewEnabled     bool   `db:"preview_enabled" json:"preview_enabled"`
+	PreviewDomain      string `db:"preview_domain" json:"preview_domain"`
+	WebhookSecret      string `db:"webhook_secret" json:"-"` // encrypted; shown only to writers
+	CPULimit           string `db:"cpu_limit" json:"cpu_limit"`
+	MemoryLimit        string `db:"memory_limit" json:"memory_limit"`
+	Replicas           int    `db:"replicas" json:"replicas"`
+	// LoadBalance sends the traffic of every server's replicas through the
+	// primary server's proxy, over the private network.
+	LoadBalance bool `db:"load_balance" json:"load_balance"`
+	// Canary deployments: CanaryPercent of the traffic goes to the new version
+	// for CanaryMinutes; it is rolled back when more than CanaryMaxErrors percent
+	// of its responses are server errors (0: deploy everything at once).
+	CanaryPercent       int     `db:"canary_percent" json:"canary_percent"`
+	CanaryMinutes       int     `db:"canary_minutes" json:"canary_minutes"`
+	CanaryMaxErrors     float64 `db:"canary_max_errors" json:"canary_max_errors"`
+	CustomLabels        string  `db:"custom_labels" json:"custom_labels"`
+	CustomDockerOptions string  `db:"custom_docker_options" json:"custom_docker_options"`
+	Status              string  `db:"status" json:"status"`
+	CurrentImage        string  `db:"current_image" json:"current_image"`
 	// RegistryID pushes built images to (and pulls private images from) this registry.
 	RegistryID int64 `db:"registry_id" json:"registry_id"`
 	// RegistryImage overrides the repository path (default: <namespace>/<app name>).
@@ -250,11 +301,16 @@ type EnvVar struct {
 	IsPreview bool   `db:"is_preview" json:"is_preview"`
 	IsSecret  bool   `db:"is_secret" json:"is_secret"`
 	CreatedAt string `db:"created_at" json:"created_at"`
+	// RefStoreID points the variable at a secret of an external secret store
+	// (RefPath, RefKey), read when a deployment starts; Value stays empty.
+	RefStoreID int64  `db:"ref_store_id" json:"ref_store_id"`
+	RefPath    string `db:"ref_path" json:"ref_path"`
+	RefKey     string `db:"ref_key" json:"ref_key"`
 }
 
 // DeploymentCols lists the columns of a deployment except its log, which can
 // be megabytes: every list and status check reads these only.
-const DeploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at, requested_by, reviewed_by, reviewed_at, review_comment, version_id"
+const DeploymentCols = "id, uuid, application_id, status, trigger, commit_sha, commit_message, branch, pr_number, image, rollback_of, force_rebuild, started_at, finished_at, created_at, requested_by, reviewed_by, reviewed_at, review_comment, version_id, canary_status, canary_info"
 
 // DeploymentByID loads a deployment without its log.
 func DeploymentByID(ctx context.Context, db *DB, id int64) (Deployment, error) {
@@ -285,6 +341,9 @@ type Deployment struct {
 	ReviewComment string `db:"review_comment" json:"review_comment"`
 	// VersionID is the version a production deployment created or deployed.
 	VersionID int64 `db:"version_id" json:"version_id"`
+	// Canary: "" | observing | promoted | rolled_back, and its live numbers (JSON).
+	CanaryStatus string `db:"canary_status" json:"canary_status"`
+	CanaryInfo   string `db:"canary_info" json:"canary_info"`
 }
 
 // AppVersion is a deployable version of an application (see app_versions).
@@ -316,12 +375,93 @@ type Database struct {
 	Password      string `db:"password" json:"-"`
 	DatabaseName  string `db:"database_name" json:"database_name"`
 	PublicPort    int    `db:"public_port" json:"public_port"`
-	PublicHost    string `db:"public_host" json:"public_host"` // domain external clients connect to; "" = server host/IP
-	CPULimit      string `db:"cpu_limit" json:"cpu_limit"`
-	MemoryLimit   string `db:"memory_limit" json:"memory_limit"`
-	CustomArgs    string `db:"custom_args" json:"custom_args"`
-	Status        string `db:"status" json:"status"`
-	CreatedAt     string `db:"created_at" json:"created_at"`
+	PublicHost    string `db:"public_host" json:"public_host"`
+	// OverlayPort publishes the database on its server's private address,
+	// for the applications and replicas of the other servers.
+	OverlayPort int    `db:"overlay_port" json:"overlay_port"` // domain external clients connect to; "" = server host/IP
+	CPULimit    string `db:"cpu_limit" json:"cpu_limit"`
+	MemoryLimit string `db:"memory_limit" json:"memory_limit"`
+	CustomArgs  string `db:"custom_args" json:"custom_args"`
+	Status      string `db:"status" json:"status"`
+	CreatedAt   string `db:"created_at" json:"created_at"`
+	// Point-in-time recovery (PostgreSQL): continuous WAL archiving and base
+	// backups on a schedule, keeping the last PITRRetention base backups.
+	PITR          bool   `db:"pitr" json:"pitr"`
+	PITRSchedule  string `db:"pitr_schedule" json:"pitr_schedule"`
+	PITRRetention int    `db:"pitr_retention" json:"pitr_retention"`
+	PITRS3        bool   `db:"pitr_s3" json:"pitr_s3"`
+	// Last state of the WAL archiver, read every minute.
+	PITRArchivedAt   string `db:"pitr_archived_at" json:"pitr_archived_at"`
+	PITRArchiveError string `db:"pitr_archive_error" json:"pitr_archive_error"`
+	PITRSyncedAt     string `db:"pitr_synced_at" json:"pitr_synced_at"`
+	// DataVolume is the Docker volume of the data ("" = sy-<uuid>); a
+	// failover moves the database onto the volume of its promoted replica.
+	DataVolume string `db:"data_volume" json:"-"`
+	// ReplicationPassword (encrypted) is the password of the portdock_replica role.
+	ReplicationPassword string `db:"replication_password" json:"-"`
+	// FailoverAuto promotes a replica on another server when the primary's
+	// server has been unreachable for FailoverAfter seconds.
+	FailoverAuto  bool `db:"failover_auto" json:"failover_auto"`
+	FailoverAfter int  `db:"failover_after" json:"failover_after"`
+}
+
+// VolumeName is the Docker volume holding the database's data.
+func (d Database) VolumeName() string {
+	if d.DataVolume != "" {
+		return d.DataVolume
+	}
+	return "sy-" + d.UUID
+}
+
+// DBReplica is a streaming replica (hot standby, read-only) of a PostgreSQL database.
+type DBReplica struct {
+	ID         int64  `db:"id" json:"id"`
+	DatabaseID int64  `db:"database_id" json:"database_id"`
+	UUID       string `db:"uuid" json:"uuid"`
+	ServerID   int64  `db:"server_id" json:"server_id"`
+	PublicPort int    `db:"public_port" json:"public_port"`
+	// Status: creating | streaming | lagging | disconnected | failed | promoting.
+	Status  string `db:"status" json:"status"`
+	Message string `db:"message" json:"message"`
+	// Lag measured on the primary (bytes of WAL not replayed yet, seconds).
+	LagBytes   int64   `db:"lag_bytes" json:"lag_bytes"`
+	LagSeconds float64 `db:"lag_seconds" json:"lag_seconds"`
+	CheckedAt  string  `db:"checked_at" json:"checked_at"`
+	CreatedAt  string  `db:"created_at" json:"created_at"`
+}
+
+// Slot is the replication slot the replica streams from.
+func (r DBReplica) Slot() string { return "portdock_" + r.UUID }
+
+// PITRBackup is a base backup (pg_basebackup) of a database with point-in-time recovery.
+type PITRBackup struct {
+	ID         int64  `db:"id" json:"id"`
+	DatabaseID int64  `db:"database_id" json:"database_id"`
+	Status     string `db:"status" json:"status"` // running | success | failed
+	File       string `db:"file" json:"file"`
+	Size       int64  `db:"size" json:"size"`
+	// StartWAL is the first WAL segment the backup needs.
+	StartWAL   string `db:"start_wal" json:"start_wal"`
+	Message    string `db:"message" json:"message"`
+	StartedAt  string `db:"started_at" json:"started_at"`
+	FinishedAt string `db:"finished_at" json:"finished_at"`
+}
+
+// PITRRestore is a restore of a database to a point in time.
+type PITRRestore struct {
+	ID         int64  `db:"id" json:"id"`
+	DatabaseID int64  `db:"database_id" json:"database_id"`
+	TargetTime string `db:"target_time" json:"target_time"`
+	Status     string `db:"status" json:"status"` // pending | running | success | failed
+	Message    string `db:"message" json:"message"`
+	BaseFile   string `db:"base_file" json:"base_file"`
+	// ReplacedDir keeps the data the restore replaced (inside the data volume).
+	ReplacedDir string `db:"replaced_dir" json:"replaced_dir"`
+	// Timeline is the PostgreSQL timeline the restore started.
+	Timeline   int    `db:"timeline" json:"timeline"`
+	CreatedBy  int64  `db:"created_by" json:"created_by"`
+	StartedAt  string `db:"started_at" json:"started_at"`
+	FinishedAt string `db:"finished_at" json:"finished_at"`
 }
 
 type Service struct {
@@ -335,7 +475,10 @@ type Service struct {
 	Compose       string `db:"compose" json:"compose"`
 	Domain        string `db:"domain" json:"domain"`
 	Status        string `db:"status" json:"status"`
-	CreatedAt     string `db:"created_at" json:"created_at"`
+	// HostAccess lets the compose file use privileged mode, host paths,
+	// devices and capabilities. Only administrators can grant it.
+	HostAccess bool   `db:"host_access" json:"host_access"`
+	CreatedAt  string `db:"created_at" json:"created_at"`
 }
 
 type Backup struct {
@@ -347,6 +490,9 @@ type Backup struct {
 	Enabled    bool   `db:"enabled" json:"enabled"`
 	LastRunAt  string `db:"last_run_at" json:"last_run_at"`
 	CreatedAt  string `db:"created_at" json:"created_at"`
+	// VerifySchedule test-restores the latest backup of the schedule into a
+	// temporary container (cron, "" = never).
+	VerifySchedule string `db:"verify_schedule" json:"verify_schedule"`
 }
 
 type BackupRun struct {
@@ -365,6 +511,10 @@ type BackupRun struct {
 	RestoreStatus  string `db:"restore_status" json:"restore_status"`
 	RestoreMessage string `db:"restore_message" json:"restore_message"`
 	RestoredAt     string `db:"restored_at" json:"restored_at"`
+	// Test restore into a temporary container: "" | pending | running | success | failed.
+	VerifyStatus  string `db:"verify_status" json:"verify_status"`
+	VerifyMessage string `db:"verify_message" json:"verify_message"`
+	VerifiedAt    string `db:"verified_at" json:"verified_at"`
 }
 
 type NotificationChannel struct {

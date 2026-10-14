@@ -1,0 +1,21 @@
+# Grafana: https://grafana.com
+x-portdock:
+  name: Grafana
+  description: "Dashboards and observability for metrics, logs and traces."
+  category: Monitoring & Observability
+  website: https://grafana.com
+  tags: [dashboards, metrics, monitoring]
+  service: grafana
+  port: 3000
+services:
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: ${PORTDOCK_URL}
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+    volumes:
+      - data:/var/lib/grafana
+volumes:
+  data:

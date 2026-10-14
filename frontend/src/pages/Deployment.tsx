@@ -11,6 +11,7 @@ import { LogViewer } from "../components/LogViewer";
 import { DeploymentReports } from "../components/scans";
 import { DeploymentsTable } from "../components/shared";
 import { useApp } from "./Application";
+import { CanaryPanel } from "../components/canary";
 import { duration, shortSha, timeAgo } from "../lib/utils";
 import { t } from "../lib/i18n";
 
@@ -129,6 +130,7 @@ export function DeploymentPage() {
           </>
         }
       />
+      <CanaryPanel deployment={d} canDeploy={a.access.can_deploy} />
       {(pending || status === "rejected" || d.reviewed_by > 0) && (
         <div className={`mb-4 rounded-xl border p-4 ${pending ? "border-warning/40 bg-warning-soft" : status === "rejected" ? "border-danger/30 bg-danger-soft" : "border-border bg-surface"}`}>
           <div className="flex flex-wrap items-start gap-3">

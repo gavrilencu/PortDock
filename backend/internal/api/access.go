@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/portdock/portdock/internal/auth"
@@ -55,7 +56,16 @@ func validProjectRole(r string, allowNone bool) bool {
 }
 
 // projectRole returns the effective role of u in a project ("none" = no access).
+// An API token limited to some projects sees no other project.
 func (s *Server) projectRole(ctx context.Context, u store.User, projectID int64) string {
+	if t := auth.TokenFrom(ctx); t != nil && u.ID == auth.UserFrom(ctx).ID {
+		if ids := t.Projects(); ids != nil && !slices.Contains(ids, projectID) {
+			return "none"
+		}
+		if r := auth.RealRoleFrom(ctx); r == "owner" || r == "admin" {
+			return "admin"
+		}
+	}
 	if u.IsAdmin() {
 		return "admin"
 	}
@@ -142,6 +152,9 @@ func (s *Server) authorizeEnv(ctx context.Context, envID int64, p perm) (store.E
 	if roleRank(role) == 0 {
 		return env, role, errNoAccess // hide projects the user can't see
 	}
+	if !tokenAllows(ctx, p) {
+		return env, role, tokenDenied(ctx)
+	}
 	if !allowedIn(role, env, p) {
 		return env, role, denied(p, env)
 	}
@@ -158,7 +171,10 @@ func (s *Server) envOf(ctx context.Context, kind string, id int64) (int64, error
 		"deployment":  "SELECT a.environment_id FROM deployments d JOIN applications a ON a.id = d.application_id WHERE d.id = ?",
 		"domain":      "SELECT a.environment_id FROM app_domains x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
 		"volume":      "SELECT a.environment_id FROM app_volumes x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
+		"job":         "SELECT a.environment_id FROM app_jobs x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
+		"job_run":     "SELECT a.environment_id FROM job_runs x JOIN applications a ON a.id = x.application_id WHERE x.id = ?",
 		"backup":      "SELECT d.environment_id FROM backups b JOIN databases d ON d.id = b.database_id WHERE b.id = ?",
+		"replica":     "SELECT d.environment_id FROM db_replicas x JOIN databases d ON d.id = x.database_id WHERE x.id = ?",
 		"backup_run":  "SELECT d.environment_id FROM backup_runs r JOIN backups b ON b.id = r.backup_id JOIN databases d ON d.id = b.database_id WHERE r.id = ?",
 		"env_var": `SELECT COALESCE(
 			(SELECT environment_id FROM applications WHERE v.owner_type = 'application' AND id = v.owner_id),
@@ -186,7 +202,7 @@ func (s *Server) guard(kind string, p perm, h handlerFunc) handlerFunc {
 		k := kind
 		if k == "owner" {
 			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-			k = map[string]string{"applications": "application", "databases": "database", "services": "service"}[parts[1]]
+			k = map[string]string{"applications": "application", "databases": "database", "services": "service", "environments": "environment"}[parts[1]]
 		}
 		envID, err := s.envOf(r.Context(), k, id)
 		if err != nil {
@@ -209,6 +225,9 @@ func (s *Server) guardProject(p perm, h handlerFunc) handlerFunc {
 		role := s.projectRole(r.Context(), auth.UserFrom(r.Context()), id)
 		if roleRank(role) == 0 {
 			return errNoAccess
+		}
+		if !tokenAllows(r.Context(), p) {
+			return tokenDenied(r.Context())
 		}
 		if !allowedIn(role, store.Environment{}, p) {
 			return denied(p, store.Environment{})
@@ -297,7 +316,11 @@ func (s *Server) authorizeContainer(r *http.Request, x executor.Executor, cid st
 // resourceAccess computes the Access block for a resource DTO.
 func (s *Server) resourceAccess(ctx context.Context, envID int64) Access {
 	env, _ := store.ByID[store.Environment](ctx, s.db, "environments", envID)
-	return accessFor(s.projectRole(ctx, auth.UserFrom(ctx), env.ProjectID), env)
+	a := accessFor(s.projectRole(ctx, auth.UserFrom(ctx), env.ProjectID), env)
+	a.CanDeploy = a.CanDeploy && tokenAllows(ctx, permDeploy)
+	a.CanWrite = a.CanWrite && tokenAllows(ctx, permWrite)
+	a.CanManage = a.CanManage && tokenAllows(ctx, permManage)
+	return a
 }
 
 // visibleProjectIDs lists the projects the current user can see.

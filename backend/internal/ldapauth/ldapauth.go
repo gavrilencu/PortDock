@@ -287,7 +287,7 @@ func (c Config) identity(e *ldap.Entry, typed string) Identity {
 // memberOf a search over groupOfNames / groupOfUniqueNames / posixGroup.
 func (c Config) groups(conn *ldap.Conn, e *ldap.Entry, username string) []string {
 	seen := map[string]bool{}
-	var out []string
+	out := []string{} // sent as JSON: never null
 	add := func(dn string) {
 		key := strings.ToLower(dn)
 		if dn != "" && !seen[key] {

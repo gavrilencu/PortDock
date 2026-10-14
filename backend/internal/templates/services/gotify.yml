@@ -1,0 +1,21 @@
+# Gotify: https://gotify.net
+x-portdock:
+  name: Gotify
+  description: "Self-hosted push notifications with a REST API, web interface and Android app. Sign in as admin with the GOTIFY_DEFAULTUSER_PASS of the Compose tab."
+  category: Messaging & Streaming
+  website: https://gotify.net
+  tags: [notifications, push, alerts]
+  service: gotify
+  port: 80
+services:
+  gotify:
+    image: gotify/server:latest
+    restart: unless-stopped
+    environment:
+      GOTIFY_DEFAULTUSER_NAME: admin
+      GOTIFY_DEFAULTUSER_PASS: ${PORTDOCK_PASSWORD_ADMIN}
+      TZ: UTC
+    volumes:
+      - data:/app/data
+volumes:
+  data:

@@ -161,7 +161,13 @@ func TestAzureDevOpsPushToDeploy(t *testing.T) {
 	}
 	e.expect(c, "POST", "/api/applications", appIn, 400) // no repository selected
 	appIn["azure_repo_id"] = "r1"
+	// The clone URL receives the connection's token: it always comes from the
+	// organization, whatever the request says.
+	appIn["git_repository"] = "https://evil.example.com/steal.git"
 	app := e.expect(c, "POST", "/api/applications", appIn, 200)
+	if app["git_repository"] != rs[0].RemoteURL {
+		t.Fatalf("clone URL taken from the request: %v", app["git_repository"])
+	}
 	id, uuid, secret := int64(app["id"].(float64)), app["uuid"].(string), app["webhook_secret"].(string)
 	if app["azure_hook_id"] != "hook-1,hook-2,hook-3" || app["azure_hook_error"] != "" {
 		t.Fatalf("hooks not created: %v", app)

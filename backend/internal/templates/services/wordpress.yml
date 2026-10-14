@@ -1,0 +1,40 @@
+# WordPress: https://wordpress.org
+x-portdock:
+  name: WordPress
+  description: "The world's most popular CMS, with MariaDB."
+  category: CMS & Websites
+  website: https://wordpress.org
+  tags: [cms, blog, websites]
+  service: wordpress
+  port: 80
+services:
+  wordpress:
+    image: wordpress:6-php8.3-apache
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp-data:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      MARIADB_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 10
+volumes:
+  wp-data:
+  db-data:

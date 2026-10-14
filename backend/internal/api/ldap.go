@@ -79,6 +79,9 @@ func (s *Server) ldapResolveUser(ctx context.Context, d store.LDAPDirectory, id 
 	if u.Disabled {
 		return store.User{}, fmt.Errorf("this account has been disabled; contact an administrator")
 	}
+	if u.ServiceAccount {
+		return store.User{}, fmt.Errorf("a service account cannot sign in; it acts through API tokens")
+	}
 	if admins := splitCSV(d.AdminGroups); len(admins) > 0 && u.Role != "owner" {
 		role := "member"
 		if d.DefaultRole == "admin" || ldapauth.GroupMatches(id.Groups, admins) {

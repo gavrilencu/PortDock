@@ -27,6 +27,7 @@ import {
   Network,
   History,
   HardDrive,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
@@ -68,9 +69,13 @@ import { ResourceTopology } from "../components/resourceTopology";
 import { VersionsBoard } from "../components/versions";
 import { SecurityTab } from "../components/scans";
 import { VolumesTab, useVolumes } from "../components/Volumes";
+import { JobsTab } from "../components/jobs";
+import { DeployKeyField, isSSHRepo } from "../components/gitssh";
+import { CanaryStrategy } from "../components/canary";
+import { CompareVariables, InheritedVariables } from "../components/sharedenv";
 import { t, tx } from "../lib/i18n";
 
-type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "storage" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks" | "security";
+type Tab = "overview" | "topology" | "metrics" | "config" | "domains" | "storage" | "jobs" | "env" | "versions" | "deployments" | "logs" | "terminal" | "previews" | "webhooks" | "security";
 
 export function useApp(id: number) {
   return useQuery({ queryKey: ["application", id], queryFn: () => api.get<ApplicationDetail>(`/applications/${id}`) });
@@ -184,6 +189,7 @@ export function ApplicationPage() {
           { id: "config", label: t("Configuration"), icon: <Settings2 /> },
           { id: "domains", label: t("Domains"), icon: <Globe /> },
           { id: "storage", label: t("Storage"), icon: <HardDrive />, hidden: a.build_pack === "compose" },
+          { id: "jobs", label: t("Jobs"), icon: <CalendarClock /> },
           { id: "env", label: t("Environment"), icon: <KeyRound />, hidden: !a.access.can_write },
           { id: "versions", label: t("Versions"), icon: <History /> },
           { id: "deployments", label: t("Deployments"), icon: <Rocket /> },
@@ -206,7 +212,14 @@ export function ApplicationPage() {
       {tab === "config" && <Configuration app={a} />}
       {tab === "domains" && <DomainsTab app={a} />}
       {tab === "storage" && <VolumesTab app={a} />}
-      {tab === "env" && <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} app={a} />}
+      {tab === "jobs" && <JobsTab app={a} />}
+      {tab === "env" && (
+        <div className="space-y-6">
+          <EnvEditor owner={`/applications/${id}`} supportsBuild supportsPreview={a.source_type === "git"} app={a} />
+          <InheritedVariables owner={`/applications/${id}`} projectId={a.project.id} />
+          <CompareVariables app={a} />
+        </div>
+      )}
       {tab === "versions" && <VersionsBoard app={a} />}
       {tab === "deployments" && <DeploymentsList appId={id} />}
       {tab === "logs" && <AppLogs app={a} />}
@@ -405,6 +418,9 @@ function Configuration({ app }: { app: ApplicationDetail }) {
             <Field label={t("Pinned commit")} hint={t("Optional: always deploy this SHA.")}>
               <Input value={f.git_commit} onChange={(e) => set("git_commit", e.target.value)} placeholder="HEAD" />
             </Field>
+            {isSSHRepo(f.git_repository) ? (
+              <DeployKeyField app={app} />
+            ) : (
             <Field label={t("Access token")} hint={app.has_git_token ? t("A token is stored. Type a new one to replace it.") : t("Required for private repositories.")}>
               <div className="flex gap-2">
                 <div className="flex-1">
@@ -421,6 +437,7 @@ function Configuration({ app }: { app: ApplicationDetail }) {
                 )}
               </div>
             </Field>
+            )}
           </Section>
         ) : (
           <Section title={t("Image")}>
@@ -464,6 +481,9 @@ function Configuration({ app }: { app: ApplicationDetail }) {
           <Field label={t("Post-deploy command")} hint={t("Runs inside the new container.")}>
             <Input value={f.post_deploy_command} onChange={(e) => set("post_deploy_command", e.target.value)} />
           </Field>
+        </Section>
+        <Section title={t("Deployment strategy")} description={t("How a new version takes over the traffic.")}>
+          <CanaryStrategy f={f} set={set} />
         </Section>
         <Section title={t("Resources & scaling")}>
           <Field label={t("CPU limit")} hint={t("e.g. 0.5, 2")}>

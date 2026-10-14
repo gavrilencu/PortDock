@@ -20,7 +20,7 @@ export type UpdateInfo = {
   state?: UpdateState;
   supported?: boolean;
   unsupported_reason?: string;
-  settings?: { repo: string; image: string; default_image: string; channel: string; auto: boolean; token_set: boolean; official_repo: string; overridden: boolean };
+  settings?: { repo: string; image: string; default_image: string; channel: string; auto: boolean; token_set: boolean; official_repo: string; overridden: boolean; verify: "required" | "warn" | "off" };
 };
 
 // Checked every time PortDock is opened or its tab regains focus (the server
@@ -235,11 +235,11 @@ export function SidebarUpdate({ collapsed }: { collapsed: boolean }) {
 export function UpdateSettings() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["system-update"], queryFn: () => api.get<UpdateInfo>("/system/update") });
-  const [f, setF] = useState({ repo: "", image: "", token: "", channel: "stable", auto: false });
+  const [f, setF] = useState({ repo: "", image: "", token: "", channel: "stable", auto: false, verify: "required" });
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const s = q.data?.settings;
-    if (s) setF({ repo: s.overridden ? s.repo : "", image: s.image, token: "", channel: s.channel, auto: s.auto });
+    if (s) setF({ repo: s.overridden ? s.repo : "", image: s.image, token: "", channel: s.channel, auto: s.auto, verify: s.verify ?? "required" });
   }, [q.data]);
   const save = useMutation({
     mutationFn: () => api.put<UpdateInfo>("/system/update/settings", { ...f, repo: f.repo === q.data?.settings?.official_repo ? "" : f.repo }),
@@ -327,6 +327,23 @@ export function UpdateSettings() {
           <div className="pt-1">
             <Switch checked={f.auto} onChange={(v) => setF({ ...f, auto: v })} label={t("Install stable updates automatically")} description={t("Between 02:00 and 05:00 in the instance time zone, and never while deployments are running.")} />
           </div>
+          <Field
+            label={t("Image signature")}
+            className="md:col-span-2"
+            hint={
+              f.verify === "required"
+                ? t("Before installing, cosign checks that the image was signed by the release workflow of the source repository; an unsigned or foreign image is not installed.")
+                : f.verify === "warn"
+                  ? t("The signature is checked, but an update proceeds when it cannot be verified (for networks without access to Sigstore). The update log says so.")
+                  : t("The signature is not checked. Use only with a trusted private mirror.")
+            }
+          >
+            <Select value={f.verify} onChange={(e) => setF({ ...f, verify: e.target.value })}>
+              <option value="required">{t("Required (recommended)")}</option>
+              <option value="warn">{t("Check, but install anyway")}</option>
+              <option value="off">{t("Off")}</option>
+            </Select>
+          </Field>
         </div>
         <details className="group border-t border-border">
           <summary className="cursor-pointer select-none px-5 py-3 text-xs font-medium text-muted hover:text-fg">{t("Advanced: custom release source (forks, private mirrors)")}</summary>

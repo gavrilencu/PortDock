@@ -1,0 +1,24 @@
+# MinIO: https://min.io
+x-portdock:
+  name: MinIO
+  description: "S3-compatible object storage (console exposed on the domain, API on :9000)."
+  category: Storage & Files
+  website: https://min.io
+  tags: [s3, object-storage]
+  service: minio
+  port: 9001
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${PORTDOCK_USER_ADMIN}
+      MINIO_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+      MINIO_BROWSER_REDIRECT_URL: ${PORTDOCK_URL}
+    volumes:
+      - data:/data
+    ports:
+      - "9000:9000"
+volumes:
+  data:

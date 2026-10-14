@@ -170,6 +170,20 @@ func (c *Client) Repositories(ctx context.Context) ([]Repository, error) {
 	return out, nil
 }
 
+// RemoteURL returns the clone URL of a repository as the organization reports it.
+func (c *Client) RemoteURL(ctx context.Context, repoID string) (string, error) {
+	rs, err := c.Repositories(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, r := range rs {
+		if strings.EqualFold(r.ID, repoID) {
+			return r.RemoteURL, nil
+		}
+	}
+	return "", fmt.Errorf("repository %s not found in %s", repoID, c.Base)
+}
+
 // CleanRemoteURL drops the user name Azure DevOps puts in clone URLs (https://org@dev.azure.com/…).
 func CleanRemoteURL(raw string) string {
 	u, err := url.Parse(raw)
@@ -366,6 +380,10 @@ type Event struct {
 		LastMergeSourceCommit struct {
 			CommitID string `json:"commitId"`
 		} `json:"lastMergeSourceCommit"`
+		// ForkSource is set for pull requests from a fork.
+		ForkSource *struct {
+			Name string `json:"name"`
+		} `json:"forkSource"`
 	} `json:"resource"`
 }
 
@@ -389,4 +407,36 @@ func (c *Client) ChangedFiles(ctx context.Context, project, repo, commit string)
 		}
 	}
 	return out, nil
+}
+
+// InOrganization reports whether a clone URL belongs to the organization (or
+// on-premises collection) of a connection. The connection's token is put into
+// the clone URL, so a URL pointing anywhere else would hand it to that server.
+func InOrganization(base, remote string) bool {
+	b, err1 := url.Parse(base)
+	r, err2 := url.Parse(remote)
+	if err1 != nil || err2 != nil || r.Scheme != b.Scheme || r.Host == "" {
+		return false
+	}
+	bh, rh := strings.ToLower(b.Host), strings.ToLower(r.Host)
+	first := func(p string) string {
+		seg, _, _ := strings.Cut(strings.Trim(p, "/"), "/")
+		seg, _ = url.PathUnescape(seg)
+		return strings.ToLower(seg)
+	}
+	org := ""
+	switch {
+	case bh == "dev.azure.com":
+		org = first(b.Path)
+	case strings.HasSuffix(bh, ".visualstudio.com"):
+		org = strings.TrimSuffix(bh, ".visualstudio.com")
+	default: // Azure DevOps Server: same host, under the collection path
+		bp := strings.TrimRight(strings.ToLower(b.Path), "/")
+		rp := strings.ToLower(r.Path)
+		return rh == bh && (bp == "" || rp == bp || strings.HasPrefix(rp, bp+"/"))
+	}
+	if org == "" {
+		return false
+	}
+	return (rh == "dev.azure.com" && first(r.Path) == org) || rh == org+".visualstudio.com"
 }
