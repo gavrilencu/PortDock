@@ -1,0 +1,20 @@
+# pgAdmin: https://pgadmin.org
+x-portdock:
+  name: pgAdmin
+  description: "Web administration tool for PostgreSQL."
+  category: Developer Tools
+  website: https://pgadmin.org
+  tags: [postgresql, database, admin]
+  service: pgadmin
+  port: 80
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+    volumes:
+      - data:/var/lib/pgadmin
+volumes:
+  data:

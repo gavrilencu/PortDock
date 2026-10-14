@@ -1,0 +1,76 @@
+// Translations for components/protection.tsx (access protection of applications).
+export const ro: Record<string, string> = {
+  "Access protection saved": "Protecția accesului a fost salvată",
+  "The proxy applies it within seconds — no redeploy needed.": "Proxy-ul o aplică în câteva secunde — nu e nevoie de redeploy.",
+  "Access protection": "Protecția accesului",
+  "Restrict who reaches this application, on all its domains and previews. Applied by the proxy before any request reaches the application.":
+    "Restrânge cine ajunge la această aplicație, pe toate domeniile și preview-urile ei. Se aplică în proxy, înainte ca vreo cerere să ajungă la aplicație.",
+  "Sign-in": "Autentificare",
+  "Visitors sign in with PortDock (and your single sign-on provider, when configured). The application receives X-Forwarded-User, X-Forwarded-Email and X-Forwarded-Name; /_portdock/logout signs out.":
+    "Vizitatorii se autentifică prin PortDock (și prin furnizorul de single sign-on, dacă e configurat). Aplicația primește X-Forwarded-User, X-Forwarded-Email și X-Forwarded-Name; /_portdock/logout deconectează.",
+  "Browsers ask for a user name and password (HTTP basic authentication). Use HTTPS.": "Browserele cer un nume de utilizator și o parolă (autentificare HTTP basic). Folosește HTTPS.",
+  "Anyone who knows the address can open the application.": "Oricine știe adresa poate deschide aplicația.",
+  "Single sign-on with PortDock": "Single sign-on prin PortDock",
+  "Password (basic authentication)": "Parolă (autentificare basic)",
+  "Who may sign in": "Cine se poate autentifica",
+  "People with access to the project": "Persoanele cu acces la proiect",
+  "Every PortDock user": "Orice utilizator PortDock",
+  "Only these e-mails (optional)": "Doar aceste e-mailuri (opțional)",
+  "One per line: an address or a whole domain, e.g. @company.com.": "Câte unul pe linie: o adresă sau un domeniu întreg, de ex. @companie.ro.",
+  "user name": "nume utilizator",
+  unchanged: "neschimbată",
+  "password (8+ characters)": "parolă (minim 8 caractere)",
+  "Add user": "Adaugă utilizator",
+  "Allowed addresses": "Adrese permise",
+  "One IP address or CIDR range per line, e.g. 10.0.0.0/8 for the office VPN. Empty: every address.":
+    "O adresă IP sau un interval CIDR pe linie, de ex. 10.0.0.0/8 pentru VPN-ul biroului. Gol: orice adresă.",
+  "Client address": "Adresa vizitatorului",
+  "Behind a CDN or load balancer, the visitor's address comes from X-Forwarded-For.": "În spatele unui CDN sau load balancer, adresa vizitatorului vine din X-Forwarded-For.",
+  "The connection (direct traffic)": "Conexiunea (trafic direct)",
+  "Behind one proxy or CDN": "În spatele unui proxy sau CDN",
+  "Behind two proxies": "În spatele a două proxy-uri",
+  "Rate limit": "Limită de rată",
+  "Requests per second per visitor address; 0 turns it off. Excess requests get 429 Too Many Requests.":
+    "Cereri pe secundă per adresă de vizitator; 0 o dezactivează. Cererile în plus primesc 429 Too Many Requests.",
+  Burst: "Vârf",
+  "Requests allowed at once above the rate (at least the rate).": "Cereri permise deodată peste rată (cel puțin cât rata).",
+  "add at least one user for the password prompt": "adaugă cel puțin un utilizator pentru autentificarea cu parolă",
+};
+
+export const ru: Record<string, string> = {
+  "Access protection saved": "Защита доступа сохранена",
+  "The proxy applies it within seconds — no redeploy needed.": "Прокси применит её за несколько секунд — повторный деплой не нужен.",
+  "Access protection": "Защита доступа",
+  "Restrict who reaches this application, on all its domains and previews. Applied by the proxy before any request reaches the application.":
+    "Ограничьте, кто может открыть приложение, на всех его доменах и превью. Применяется прокси до того, как запрос дойдёт до приложения.",
+  "Sign-in": "Вход",
+  "Visitors sign in with PortDock (and your single sign-on provider, when configured). The application receives X-Forwarded-User, X-Forwarded-Email and X-Forwarded-Name; /_portdock/logout signs out.":
+    "Посетители входят через PortDock (и ваш провайдер единого входа, если он настроен). Приложение получает X-Forwarded-User, X-Forwarded-Email и X-Forwarded-Name; /_portdock/logout выполняет выход.",
+  "Browsers ask for a user name and password (HTTP basic authentication). Use HTTPS.": "Браузер запрашивает имя пользователя и пароль (HTTP basic). Используйте HTTPS.",
+  "Anyone who knows the address can open the application.": "Любой, кто знает адрес, может открыть приложение.",
+  "Single sign-on with PortDock": "Единый вход через PortDock",
+  "Password (basic authentication)": "Пароль (basic-аутентификация)",
+  "Who may sign in": "Кто может войти",
+  "People with access to the project": "Люди с доступом к проекту",
+  "Every PortDock user": "Любой пользователь PortDock",
+  "Only these e-mails (optional)": "Только эти e-mail (необязательно)",
+  "One per line: an address or a whole domain, e.g. @company.com.": "По одному в строке: адрес или целый домен, например @company.com.",
+  "user name": "имя пользователя",
+  unchanged: "без изменений",
+  "password (8+ characters)": "пароль (от 8 символов)",
+  "Add user": "Добавить пользователя",
+  "Allowed addresses": "Разрешённые адреса",
+  "One IP address or CIDR range per line, e.g. 10.0.0.0/8 for the office VPN. Empty: every address.":
+    "Один IP-адрес или диапазон CIDR в строке, например 10.0.0.0/8 для офисного VPN. Пусто: любой адрес.",
+  "Client address": "Адрес посетителя",
+  "Behind a CDN or load balancer, the visitor's address comes from X-Forwarded-For.": "За CDN или балансировщиком адрес посетителя берётся из X-Forwarded-For.",
+  "The connection (direct traffic)": "Соединение (прямой трафик)",
+  "Behind one proxy or CDN": "За одним прокси или CDN",
+  "Behind two proxies": "За двумя прокси",
+  "Rate limit": "Ограничение частоты",
+  "Requests per second per visitor address; 0 turns it off. Excess requests get 429 Too Many Requests.":
+    "Запросов в секунду на адрес посетителя; 0 отключает. Лишние запросы получают 429 Too Many Requests.",
+  Burst: "Всплеск",
+  "Requests allowed at once above the rate (at least the rate).": "Сколько запросов разрешено сразу сверх частоты (не меньше частоты).",
+  "add at least one user for the password prompt": "добавьте хотя бы одного пользователя для входа по паролю",
+};

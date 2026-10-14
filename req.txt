@@ -1,0 +1,43 @@
+Lipsuri critice (de încredere și siguranță)
+
+1. Backup și recuperare pentru PortDock însuși. Aceasta e, după mine, cea mai gravă lipsă. Bazele de date ale utilizatorilor au backup excelent, dar platforma în sine nu are. Toată configurația stă într-un singur fișier SQLite, iar secretele sunt criptate cu secret.key. Singurul backup al acestora este o copie locală făcută înainte de update. Dacă serverul PortDock moare, pierzi toate proiectele, domeniile, variabilele și conexiunile. Ar trebui adăugat un backup programat, criptat, al bazei interne și al cheii în S3, plus o procedură „restaurează instanța pe un server nou”.
+
+2. Token-uri API fără permisiuni limitate și fără expirare. Tabela api_tokens are doar nume, hash și data ultimei utilizări. Un token are deci toate drepturile utilizatorului, pe toate proiectele, pentru totdeauna. Dacă un token dintr-un pipeline CI se scurge, atacatorul controlează tot. Ar avea nevoie de scope-uri (doar deploy, doar citire), restricție pe proiect, dată de expirare și conturi de serviciu separate de oameni.
+
+3. Securitatea lanțului de livrare al propriului produs. Pentru o platformă care se vinde prin scanări de securitate, e ironic că imaginea PortDock nu e semnată (cosign) și nu are SBOM. Nu există nici Dependabot/Renovate, nici govulncheck sau CodeQL în CI. Updater-ul cu un click descarcă imaginea de pe GHCR, iar fără semnătură verificată, un cont GitHub compromis înseamnă cod arbitrar pe toate instalările. Ar fi nevoie de semnarea imaginilor, verificarea semnăturii în updater, CI pe fiecare PR și commit-uri semnate.
+
+Funcționalități care ar aduce cea mai mare valoare
+
+4. Protejarea aplicațiilor prin SSO, IP sau parolă. În cod, middleware-urile Traefik generate sunt doar gzip și redirect HTTPS. Nu există forward-auth (aplicația să ceară login prin Entra ID sau Keycloak înainte de acces), basic auth, listă de IP-uri permise sau rate limiting. Pentru firme ar fi poate cel mai apreciat plus: pui un panou de admin, un Grafana sau un tool intern în spatele SSO-ului companiei cu o bifă. SSO-ul există deja pentru PortDock, iar extinderea lui la aplicații e un pas natural.
+
+5. Cron jobs pentru aplicații. Scheduler-ul rulează doar backup-uri de baze de date și curățenie internă. Aproape orice aplicație reală are nevoie de sarcini programate, cum ar fi rapoarte nocturne, curățare sau sincronizări. Coolify are asta.
+
+6. Configurație ca și cod (GitOps), CLI și documentație API. Cele 255 de endpoint-uri nu au specificație OpenAPI. Nu există un fișier gen portdock.yaml în repository care să descrie aplicația (domenii, resurse, variabile, volume). Nu există nici CLI sau provider Terraform. Fără acestea, configurația trăiește doar în interfață, nu poate fi revizuită în pull request-uri și nu poate fi recreată automat. Pentru echipe mature DevOps, asta e adesea criteriu de excludere.
+
+7. Observabilitate exportabilă. Metricile există în interfață, dar nu sunt expuse în format Prometheus. Nu am găsit log drains către Loki, Elastic sau Graylog pentru logurile aplicațiilor (SIEM există doar pentru audit), nici căutare în loguri istorice sau OpenTelemetry. Organizațiile au deja stive de monitorizare, iar PortDock ar trebui să se conecteze la ele, nu să le înlocuiască.
+
+8. Baze de date de nivel producție. README-ul recunoaște că backup-urile sunt doar dump-uri logice. Lipsesc point-in-time recovery (WAL-G sau pgBackRest pentru PostgreSQL), replicile cu failover și testarea automată a restaurării. Ultima ar însemna restaurarea periodică a backup-ului într-un container temporar, ca să se verifice că funcționează. Pentru o bancă, „am backup de la ora 3 noaptea” nu ajunge.
+
+9. Git prin SSH. Este trecut la limitări cunoscute. În rețelele corporative, GitLab sau Bitbucket on-premise folosesc foarte des SSH. Implementarea e relativ simplă și elimină un blocaj real.
+
+Lipsuri de nivel mediu
+Strategii de deploy avansate. Lipsesc canary cu procent de trafic și rollback automat dacă rata de erori crește după deploy. Traefik suportă deja ponderi, deci baza tehnică există.
+Rețea privată între servere. Bazele de date rulează pe un singur server, iar aplicațiile pe mai multe servere au nevoie de un load balancer extern. Un overlay WireGuard între servere și un load balancer integrat ar face multi-server cu adevărat utilizabil.
+Secret managers externi. Integrarea cu HashiCorp Vault sau Azure Key Vault e cerută des în mediile reglementate.
+Variabile partajate și promovare între medii. N-am găsit variabile comune la nivel de proiect sau organizație, nici o comparație de variabile între staging și producție.
+Notificare pentru deploy reușit. Evenimentele din cod acoperă eșecuri, anulări și aprobări, dar n-am găsit unul pentru deploy finalizat cu succes.
+Catalog de servicii. Are 13 servicii cu un click, față de câteva sute la Coolify. Un format deschis pentru șabloane, la care să contribuie comunitatea, ar crește rapid catalogul.
+Migrare de pe alte platforme. Un import din Coolify, Dokku sau Heroku ar reduce mult bariera de adopție.
+Idei care l-ar diferenția clar
+
+Server MCP pentru PortDock. Ar permite agenților AI (Claude, Cursor etc.) să facă deploy, să citească loguri sau să facă rollback direct, cu permisiunile utilizatorului. Asistentul AI există deja, dar un server MCP l-ar transforma din chat în instrument operațional real.
+
+Suport oficial pentru modele AI locale. Variabila PORTDOCK_OPENROUTER_URL e configurabilă, deci probabil merge deja cu un endpoint compatibil OpenAI (Ollama, vLLM, LiteLLM). Asta ar trebui documentat și testat explicit. Altfel, promisiunea „funcționează fără internet” nu se aplică asistentului.
+
+Pachet de conformitate. Un raport exportabil pentru auditori, care să adune audit log-ul, scanările, aprobările și backup-urile pe o perioadă, ar fi un argument puternic în fața băncilor și instituțiilor publice. Toate datele există deja, doar nu sunt agregate.
+
+Concluzie: primele 5 priorități
+
+Dacă aș fi în locul autorului, aș începe cu: backup și restaurare pentru instanța PortDock, token-uri API cu scope-uri și expirare, imagini semnate cu CI și Dependabot, protecția aplicațiilor prin SSO sau IP, apoi configurație ca și cod cu OpenAPI și CLI. Primele trei sunt despre a putea avea încredere în platformă. Ultimele două sunt funcționalitățile care ar face PortDock să iasă în evidență față de Coolify, mai ales pentru organizațiile cărora le promite deja că e potrivit pentru ele.
+
+Dacă vrei, pot transforma aceste puncte într-un set de GitHub issues bine formulate, pe care să le trimiți autorului sau să le folosești ca roadmap.

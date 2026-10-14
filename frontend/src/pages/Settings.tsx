@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, FileKey2, Cloud, GitBranch, Link2, Link2Off, Network, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users } from "lucide-react";
+import { Activity, ArrowUpCircle, Ban, Bell, Bot, Boxes, Braces, FileCheck, FileKey2, Cloud, Gauge, GitBranch, Link2, Link2Off, Network, Eye, Info, EyeOff, KeyRound, LockKeyhole, LogOut, MoreHorizontal, Plus, RefreshCw, Save, Send, Settings2, ShieldCheck, ShieldOff, Terminal as TerminalIcon, Trash2, User as UserIcon, Users, Vault, Library, Import } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { APIToken, DNSStatus, LoginProviders, NotificationChannel, Settings, SSHKey, User, UserIdentity } from "../lib/types";
@@ -9,7 +9,8 @@ import { DNSBadge } from "../components/Domains";
 import { useUser } from "../components/Layout";
 import { GitSourcesSettings } from "../components/github";
 import { AzureDevOpsSettings } from "../components/azure";
-import { Badge, Button, Card, CopyField, Empty, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
+import { GitHostKeys } from "../components/gitssh";
+import { Badge, Button, Card, CopyField, Empty, ErrorBox, Field, Input, Loading, Menu, MenuItem, MenuSeparator, Modal, PageHeader, PasswordInput, Select, Switch, Table, useConfirm } from "../components/ui";
 import { SecuritySettings } from "../components/security";
 import { AuthenticationSettings } from "../components/sso";
 import { RegistriesSettings } from "../components/registries";
@@ -18,19 +19,28 @@ import { CertificatesSettings } from "../components/certificates";
 import { UpdateSettings } from "../components/updates";
 import { AssistantSettings } from "../components/assistant/AssistantSettings";
 import { AboutPage } from "../components/about";
+import { InstanceBackupCard } from "../components/instanceBackup";
+import { CreateToken, ServiceAccountsCard, TokenTable } from "../components/tokens";
 import { NetworkSettings } from "../components/network";
+import { ObservabilitySettings } from "../components/observability";
+import { OrganizationVariables } from "../components/sharedenv";
+import { ComplianceReport } from "../components/compliance";
+import { McpCard } from "../components/mcp";
+import { SecretStoresSettings } from "../components/secretstores";
+import { CatalogsSettings } from "../components/servicecatalog";
+import { ImportSettings } from "../components/migrate";
 import { timeAgo } from "../lib/utils";
 import { isLocale, LOCALES, t, tk, useLocale } from "../lib/i18n";
 import { useChangeLocale } from "../components/LanguagePicker";
 
-type Tab = "about" | "general" | "profile" | "security" | "auth" | "assistant" | "registries" | "network" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "storage" | "activity";
+type Tab = "about" | "general" | "profile" | "security" | "auth" | "assistant" | "registries" | "network" | "certificates" | "updates" | "users" | "git" | "keys" | "tokens" | "notifications" | "observability" | "variables" | "secrets" | "catalogs" | "import" | "storage" | "activity" | "compliance";
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const user0 = useUser();
-  const tab = (params.get("tab") as Tab) || (user0.role !== "member" ? "general" : "profile");
   const user = useUser();
   const admin = user.role !== "member";
+  const requested = (params.get("tab") as Tab) || (user0.role !== "member" ? "general" : "profile");
   const groups: { label: string; items: { id: Tab; label: string; icon: React.ReactNode; hidden?: boolean }[] }[] = [
     {
       label: t("Account"),
@@ -53,6 +63,11 @@ export function SettingsPage() {
         { id: "certificates", label: t("Certificates"), icon: <FileKey2 />, hidden: !admin },
         { id: "updates", label: t("Updates"), icon: <ArrowUpCircle />, hidden: !admin },
         { id: "notifications", label: t("Notifications"), icon: <Bell />, hidden: !admin },
+        { id: "observability", label: t("Observability"), icon: <Gauge />, hidden: !admin },
+        { id: "variables", label: t("Shared variables"), icon: <Braces />, hidden: !admin },
+        { id: "secrets", label: t("Secret managers"), icon: <Vault />, hidden: !admin },
+        { id: "catalogs", label: t("Service catalogs"), icon: <Library />, hidden: !admin },
+        { id: "import", label: t("Import"), icon: <Import />, hidden: !admin },
         { id: "storage", label: t("Backup storage"), icon: <Cloud />, hidden: !admin },
       ],
     },
@@ -61,6 +76,7 @@ export function SettingsPage() {
       items: [
         { id: "keys", label: t("SSH keys"), icon: <KeyRound /> },
         { id: "activity", label: t("Audit log"), icon: <Activity /> },
+        { id: "compliance", label: t("Compliance"), icon: <FileCheck />, hidden: !admin },
       ],
     },
     {
@@ -68,6 +84,8 @@ export function SettingsPage() {
       items: [{ id: "about", label: t("About"), icon: <Info /> }],
     },
   ];
+  // Organization tabs read admin-only endpoints: a member opening one by URL gets the profile.
+  const tab: Tab = groups.some((g) => g.items.some((i) => i.id === requested && !i.hidden)) ? requested : "profile";
   return (
     <>
       <PageHeader title={t("Settings")} subtitle={t("Manage your account, organization and security preferences.")} />
@@ -109,13 +127,20 @@ export function SettingsPage() {
             <div className="space-y-6">
               <GitSourcesSettings />
               <AzureDevOpsSettings />
+              <GitHostKeys />
             </div>
           )}
           {tab === "keys" && <Keys />}
           {tab === "tokens" && <Tokens />}
           {tab === "notifications" && <Notifications />}
+          {tab === "observability" && <ObservabilitySettings />}
+          {tab === "variables" && <OrganizationVariables />}
+          {tab === "secrets" && <SecretStoresSettings />}
+          {tab === "catalogs" && <CatalogsSettings />}
+          {tab === "import" && <ImportSettings />}
           {tab === "storage" && <Storage />}
           {tab === "activity" && <AuditLog />}
+          {tab === "compliance" && <ComplianceReport />}
         </div>
       </div>
     </>
@@ -146,11 +171,11 @@ function Profile() {
           <Field label={t("Name")}>
             <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
           </Field>
-          <Field label={t("Email")}>
-            <Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+          <Field label={t("Email")} hint={user.role === "member" ? t("Ask an administrator to change your e-mail address.") : undefined}>
+            <Input value={f.email} disabled={user.role === "member"} onChange={(e) => setF({ ...f, email: e.target.value })} />
           </Field>
           {user.has_password ? (
-            <Field label={t("Current password")} hint={t("Required to set a new password. Other sessions are signed out after a change.")}>
+            <Field label={t("Current password")} hint={t("Required to change your e-mail or set a new password. Other sessions are signed out after a password change.")}>
               <PasswordInput value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} />
             </Field>
           ) : (
@@ -451,7 +476,9 @@ function Team() {
     onError: (e) => toast.error(e.message),
   });
   if (users.isLoading) return <Loading />;
+  if (users.error) return <ErrorBox error={users.error} />;
   return (
+    <div className="space-y-6">
     <Card
       title={t("Team members")}
       description={t("Admins manage servers, settings and users. Members manage projects and resources.")}
@@ -472,7 +499,7 @@ function Team() {
           </tr>
         </thead>
         <tbody>
-          {users.data!.map((u) => (
+          {users.data!.filter((u) => !u.service_account).map((u) => (
             <tr key={u.id}>
               <td className={u.disabled ? "opacity-60" : undefined}>
                 <div className="font-medium">
@@ -628,6 +655,8 @@ function Team() {
         )}
       </Modal>
     </Card>
+    <ServiceAccountsCard />
+    </div>
   );
 }
 
@@ -716,80 +745,39 @@ function Keys() {
 
 function Tokens() {
   const qc = useQueryClient();
-  const confirm = useConfirm();
   const tokens = useQuery({ queryKey: ["tokens"], queryFn: () => api.get<APIToken[]>("/tokens") });
-  const [name, setName] = useState("");
-  const [created, setCreated] = useState<string | null>(null);
-  const create = useMutation({
-    mutationFn: () => api.post<{ token: string }>("/tokens", { name }),
-    onSuccess: (r) => {
-      setCreated(r.token);
-      setName("");
-      qc.invalidateQueries({ queryKey: ["tokens"] });
-    },
-    onError: (e) => toast.error(e.message),
-  });
   const del = useMutation({
     mutationFn: (id: number) => api.del(`/tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tokens"] }),
+    onError: (e) => toast.error(e.message),
   });
   if (tokens.isLoading) return <Loading />;
+  if (tokens.error) return <ErrorBox error={tokens.error} />;
   return (
     <div className="space-y-6">
-      <Card title={t("API tokens")} description={t("Use with Authorization: Bearer <token> to automate PortDock from scripts or CI.")}>
-        <form
-          className="flex gap-2 border-b border-border p-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name) create.mutate();
-          }}
-        >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("Token name, e.g. github-actions")} className="max-w-sm" />
-          <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={create.isPending} disabled={!name}>
-            {t("Create")}
-          </Button>
-        </form>
-        {created && (
-          <div className="border-b border-border bg-success/5 p-5">
-            <p className="mb-2 text-sm font-medium text-success">{t("Copy your token now — it won't be shown again.")}</p>
-            <CopyField value={created} />
-          </div>
-        )}
-        {tokens.data!.length === 0 ? (
-          <p className="p-5 text-sm text-muted">{t("No tokens.")}</p>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <th>{t("Name")}</th>
-                <th>{t("Created")}</th>
-                <th>{t("Last used")}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {tokens.data!.map((tok) => (
-                <tr key={tok.id}>
-                  <td className="font-medium">{tok.name}</td>
-                  <td className="text-xs text-muted">{timeAgo(tok.created_at)}</td>
-                  <td className="text-xs text-muted">{timeAgo(tok.last_used_at)}</td>
-                  <td className="text-right">
-                    <Button size="icon" variant="ghost" onClick={async () => (await confirm({ title: t("Revoke {name}?", { name: tok.name }), danger: true, confirmText: t("Revoke") })) && del.mutate(tok.id)}>
-                      <Trash2 className="size-4 text-danger" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
+      <Card
+        title={t("API tokens")}
+        description={t("Use with Authorization: Bearer <token> to automate PortDock from scripts or CI. A token acts with your rights, capped by its scope and projects; for pipelines, prefer a service account (Team).")}
+      >
+        <div className="border-b border-border p-5">
+          <CreateToken path="/tokens" onCreated={() => qc.invalidateQueries({ queryKey: ["tokens"] })} />
+        </div>
+        <TokenTable tokens={tokens.data ?? []} onRevoke={(tok) => del.mutate(tok.id)} />
       </Card>
-      <Card title={t("Example")}>
+      <Card
+        title={t("Example")}
+        actions={
+          <Link to="/api-docs" className="text-xs text-muted underline-offset-2 hover:text-fg hover:underline">
+            {t("API reference →")}
+          </Link>
+        }
+      >
         <pre className="overflow-x-auto p-5 font-mono text-xs text-muted">{`curl -X POST ${location.origin}/api/applications/<id>/deploy \\
-  -H "Authorization: Bearer sy_…" \\
+  -H "Authorization: Bearer pd_…" \\
   -H "Content-Type: application/json" \\
   -d '{"force_rebuild": false}'`}</pre>
       </Card>
+      <McpCard />
     </div>
   );
 }
@@ -826,7 +814,7 @@ const channelFields: Record<NotificationChannel["type"], { key: string; label: s
 
 const channelTypeLabels: Record<string, string> = { teams: "Microsoft Teams", webhook: tk("webhook"), email: tk("email") };
 
-const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed", "security.vulnerabilities", "monitor.down", "monitor.up", "monitor.ssl_expiring"];
+const allEvents = ["deployment.success", "deployment.failed", "deployment.approval_required", "backup.failed", "backup.verify_failed", "backup.restore_failed", "database.failed", "database.failover", "job.failed", "server.unreachable", "server.reachable", "alert.firing", "alert.resolved", "certificate.expiring", "certificate.failed", "certificate.renewed", "security.vulnerabilities", "monitor.down", "monitor.up", "monitor.ssl_expiring"];
 
 function Notifications() {
   const qc = useQueryClient();
@@ -971,7 +959,8 @@ function Storage() {
   const { data, isLoading } = useSettings();
   const [f, setF] = useState({ s3_endpoint: "", s3_bucket: "", s3_region: "", s3_access_key: "", s3_secret_key: "" });
   useEffect(() => {
-    if (data) setF({ s3_endpoint: data.s3_endpoint, s3_bucket: data.s3_bucket, s3_region: data.s3_region, s3_access_key: data.s3_access_key, s3_secret_key: "" });
+    // Both credentials are stored encrypted and never sent back: empty keeps them.
+    if (data) setF({ s3_endpoint: data.s3_endpoint, s3_bucket: data.s3_bucket, s3_region: data.s3_region, s3_access_key: "", s3_secret_key: "" });
   }, [data]);
   const save = useMutation({
     mutationFn: () => api.patch<Settings>("/settings", f),
@@ -984,6 +973,7 @@ function Storage() {
   if (isLoading) return <Loading />;
   return (
     <div className="space-y-6">
+    <InstanceBackupCard />
     <BackupAll />
     <Card title={t("S3 backup destination")} description={t("AWS S3, Cloudflare R2, Backblaze B2, MinIO or any S3-compatible storage. Enable 'Upload to S3' per backup schedule.")}>
       <div className="grid gap-4 p-5 md:grid-cols-2">
@@ -996,8 +986,8 @@ function Storage() {
         <Field label={t("Region")}>
           <Input value={f.s3_region} onChange={(e) => setF({ ...f, s3_region: e.target.value })} placeholder="us-east-1 / auto" />
         </Field>
-        <Field label={t("Access key ID")}>
-          <Input value={f.s3_access_key} onChange={(e) => setF({ ...f, s3_access_key: e.target.value })} />
+        <Field label={t("Access key ID")} hint={data!.s3_access_key_set ? t("A key is stored; enter a new one to replace it.") : undefined}>
+          <Input value={f.s3_access_key} onChange={(e) => setF({ ...f, s3_access_key: e.target.value })} placeholder={data!.s3_access_key_set ? "••••••••" : ""} />
         </Field>
         <Field label={t("Secret access key")} hint={data!.s3_secret_key_set ? t("A secret is stored; enter a new one to replace it.") : undefined}>
           <PasswordInput value={f.s3_secret_key} onChange={(e) => setF({ ...f, s3_secret_key: e.target.value })} placeholder={data!.s3_secret_key_set ? "••••••••" : ""} />

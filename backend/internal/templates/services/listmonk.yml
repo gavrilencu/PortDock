@@ -1,0 +1,45 @@
+# listmonk: https://listmonk.app
+x-portdock:
+  name: listmonk
+  description: "Newsletter and mailing list manager with PostgreSQL. The first visit creates the administrator; set the SMTP server in Settings."
+  category: Collaboration & Productivity
+  website: https://listmonk.app
+  tags: [newsletter, email, mailing-list]
+  service: listmonk
+  port: 9000
+services:
+  listmonk:
+    image: listmonk/listmonk:latest
+    restart: unless-stopped
+    command: [sh, -c, "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_app__root_url: ${PORTDOCK_URL}
+      LISTMONK_db__host: postgres
+      LISTMONK_db__port: "5432"
+      LISTMONK_db__user: listmonk
+      LISTMONK_db__password: ${PORTDOCK_PASSWORD_DB}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__ssl_mode: disable
+      TZ: UTC
+    volumes:
+      - uploads:/listmonk/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listmonk
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: listmonk
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listmonk -d listmonk"]
+      interval: 5s
+      retries: 10
+volumes:
+  uploads:
+  pg-data:

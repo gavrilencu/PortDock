@@ -4,7 +4,10 @@ import "testing"
 
 func TestSubPath(t *testing.T) {
 	root := "/data/portdock/builds/u/d/src"
-	cases := []struct{ rels []string; want string }{
+	cases := []struct {
+		rels []string
+		want string
+	}{
 		{[]string{"/"}, root},
 		{[]string{""}, root},
 		{[]string{"apps/web"}, root + "/apps/web"},

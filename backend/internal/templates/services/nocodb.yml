@@ -1,0 +1,38 @@
+# NocoDB: https://nocodb.com
+x-portdock:
+  name: NocoDB
+  description: "Open-source Airtable alternative on top of PostgreSQL."
+  category: Collaboration & Productivity
+  website: https://nocodb.com
+  tags: [database, spreadsheet, no-code]
+  service: nocodb
+  port: 8080
+services:
+  nocodb:
+    image: nocodb/nocodb:latest
+    restart: unless-stopped
+    environment:
+      NC_DB: pg://postgres:5432?u=nocodb&p=${PORTDOCK_PASSWORD_DB}&d=nocodb
+      NC_PUBLIC_URL: ${PORTDOCK_URL}
+      NC_AUTH_JWT_SECRET: ${PORTDOCK_SECRET_JWT}
+    volumes:
+      - data:/usr/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nocodb
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: nocodb
+    volumes:
+      - pg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nocodb -d nocodb"]
+      interval: 5s
+      retries: 10
+volumes:
+  data:
+  pg-data:

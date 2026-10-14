@@ -89,7 +89,7 @@ const navGroups = [
   {
     label: tk("Organization"),
     items: [
-      { to: "/settings?tab=users", label: tk("Team"), icon: Users, match: "tab=users" },
+      { to: "/settings?tab=users", label: tk("Team"), icon: Users, match: "tab=users", adminOnly: true },
       { to: "/settings", label: tk("Settings"), icon: Settings, exclude: "tab=users" },
     ],
   },
@@ -143,7 +143,7 @@ function Sidebar({ user, collapsed, onToggle, onNavigate, theme, setTheme, onLog
           <div key={g.label} className="mt-5">
             {!collapsed ? <div className="mb-1 px-2 text-2xs font-medium uppercase tracking-wider text-faint">{t(g.label)}</div> : <div className="mx-2 mb-2 h-px bg-border" />}
             <div className="space-y-px">
-              {g.items.map((n) => {
+              {g.items.filter((n) => user.role !== "member" || !(n as { adminOnly?: boolean }).adminOnly).map((n) => {
                 const it = n as typeof n & { match?: string; exclude?: string; end?: boolean };
                 return (
                   <NavLink

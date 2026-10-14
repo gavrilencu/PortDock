@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { ApplicationDetail, AppDomain, ComposeService, DNSRecord, DNSStatus, DomainsResponse, WWWRedirect, CertMode } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
 import { intlLocale, t, tk, tx } from "../lib/i18n";
+import { ProtectionCard } from "./protection";
 import { Badge, Button, Card, CopyButton, Empty, Field, Input, Loading, Menu, MenuItem, Modal, Select, Switch, Table, useConfirm } from "./ui";
 
 const dnsTone: Record<DNSStatus, { label: string; tone: "success" | "warning" | "danger" | "info" | "neutral" }> = {
@@ -352,6 +353,8 @@ export function DomainsTab({ app }: { app: ApplicationDetail }) {
           </button>
         </div>
       )}
+
+      <ProtectionCard app={app} />
 
       <DomainModal form={form} onChange={setForm} onSave={() => form && save.mutate(form)} saving={save.isPending} appPort={app.port} compose={compose ? { services, main: app.compose_service } : null} />
       <DNSRecordsModal appId={app.id} open={showRecords} onClose={() => setShowRecords(false)} />

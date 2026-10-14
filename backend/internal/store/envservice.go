@@ -32,6 +32,9 @@ func migrateEnvService(ctx context.Context, db *sql.DB) error {
   is_preview  INTEGER NOT NULL DEFAULT 0,
   is_secret   INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT '',
+  ref_store_id INTEGER NOT NULL DEFAULT 0,
+  ref_path    TEXT NOT NULL DEFAULT '',
+  ref_key     TEXT NOT NULL DEFAULT '',
   UNIQUE(owner_type, owner_id, service, key, is_preview)
 )`,
 		`INSERT INTO env_vars_new (id, owner_type, owner_id, key, value, is_build, is_preview, is_secret, created_at)

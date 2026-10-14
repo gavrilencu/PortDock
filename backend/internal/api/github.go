@@ -441,11 +441,13 @@ func (s *Server) githubAppWebhook(w http.ResponseWriter, r *http.Request) error 
 				PullRequest struct {
 					Title string `json:"title"`
 					Head  struct {
-						Ref string `json:"ref"`
-						SHA string `json:"sha"`
+						Ref  string    `json:"ref"`
+						SHA  string    `json:"sha"`
+						Repo *repoName `json:"repo"`
 					} `json:"head"`
 					Base struct {
-						Ref string `json:"ref"`
+						Ref  string    `json:"ref"`
+						Repo *repoName `json:"repo"`
 					} `json:"base"`
 				} `json:"pull_request"`
 			}
@@ -453,7 +455,9 @@ func (s *Server) githubAppWebhook(w http.ResponseWriter, r *http.Request) error 
 				results = append(results, webhookResult{Application: a.Name, Status: "ignored", Message: "PR does not target " + a.GitBranch})
 				continue
 			}
-			res, err = s.pullRequestOutcome(ctx, a, p.Action, p.Number, p.PullRequest.Head.Ref, p.PullRequest.Head.SHA, p.PullRequest.Title)
+			head, base := p.PullRequest.Head.Repo, p.PullRequest.Base.Repo
+			fork := head == nil || base == nil || !strings.EqualFold(head.FullName, base.FullName)
+			res, err = s.pullRequestOutcome(ctx, a, p.Action, p.Number, p.PullRequest.Head.Ref, p.PullRequest.Head.SHA, p.PullRequest.Title, fork)
 		}
 		if err != nil {
 			res = webhookResult{Application: a.Name, Status: "error", Message: err.Error()}

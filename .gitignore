@@ -6,3 +6,8 @@ frontend/dist/
 # The embedded UI is generated at build time; keep only the placeholder.
 backend/web/dist/*
 !backend/web/dist/index.html
+# Terraform provider builds and local Terraform state
+terraform-provider-portdock/terraform-provider-portdock*
+.terraform/
+*.tfstate
+*.tfstate.*

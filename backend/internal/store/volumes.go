@@ -28,11 +28,12 @@ func (db *DB) Volumes(ctx context.Context, appID int64) ([]AppVolume, error) {
 // VolumeName is the Docker volume holding v's data for the production
 // deployment (pr == 0) or a pull request preview, which gets its own empty
 // volume. The application UUID comes first so that the volume can be traced
-// back to its application (UUIDs are hex, the name cannot contain "_").
+// back to its application. Names cannot contain "_", so neither the UUID (hex)
+// nor a production volume (e.g. "data-pr1") can be mistaken for a preview's.
 func VolumeName(appUUID, name string, pr int) string {
 	n := "pd-" + appUUID + "_" + name
 	if pr > 0 {
-		n += fmt.Sprintf("-pr%d", pr)
+		n += fmt.Sprintf("_pr%d", pr)
 	}
 	return n
 }

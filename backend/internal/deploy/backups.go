@@ -215,7 +215,7 @@ func (e *Engine) pruneBackups(ctx context.Context, b store.Backup, db store.Data
 		return
 	}
 	old, err := store.Select[store.BackupRun](ctx, e.db,
-		"SELECT * FROM backup_runs WHERE backup_id = ? AND kind = ? AND status = 'success' AND restore_status NOT IN ('pending', 'running') ORDER BY id DESC LIMIT -1 OFFSET ?",
+		"SELECT * FROM backup_runs WHERE backup_id = ? AND kind = ? AND status = 'success' AND restore_status NOT IN ('pending', 'running') AND verify_status NOT IN ('pending', 'running') ORDER BY id DESC LIMIT -1 OFFSET ?",
 		b.ID, kind, keep)
 	if err != nil || len(old) == 0 {
 		return
@@ -307,7 +307,7 @@ func (e *Engine) restore(ctx context.Context, db store.Database, run store.Backu
 
 // DeleteBackupRun removes a finished backup and its file.
 func (e *Engine) DeleteBackupRun(ctx context.Context, db store.Database, run store.BackupRun) error {
-	if run.Status == "pending" || run.Status == "running" || run.RestoreStatus == "pending" || run.RestoreStatus == "running" {
+	if run.Status == "pending" || run.Status == "running" || run.RestoreStatus == "pending" || run.RestoreStatus == "running" || run.VerifyStatus == "pending" || run.VerifyStatus == "running" {
 		return errors.New("this backup is in use; wait until it finishes")
 	}
 	if run.File != "" {
@@ -328,7 +328,7 @@ func (e *Engine) DeleteBackupRun(ctx context.Context, db store.Database, run sto
 // RecoverBackups marks jobs that a restart of PortDock interrupted as failed
 // and removes their unfinished files.
 func (e *Engine) RecoverBackups(ctx context.Context) {
-	runs, err := store.Select[store.BackupRun](ctx, e.db, "SELECT * FROM backup_runs WHERE status IN ('pending', 'running') OR restore_status IN ('pending', 'running')")
+	runs, err := store.Select[store.BackupRun](ctx, e.db, "SELECT * FROM backup_runs WHERE status IN ('pending', 'running') OR restore_status IN ('pending', 'running') OR verify_status IN ('pending', 'running')")
 	if err != nil {
 		return
 	}
@@ -347,6 +347,16 @@ func (e *Engine) RecoverBackups(ctx context.Context) {
 		}
 		if r.RestoreStatus == "pending" || r.RestoreStatus == "running" {
 			r.RestoreStatus, r.RestoreMessage, r.RestoredAt = "failed", "interrupted: PortDock restarted; check the database and restore again", store.Now()
+		}
+		if r.VerifyStatus == "pending" || r.VerifyStatus == "running" {
+			r.VerifyStatus, r.VerifyMessage, r.VerifiedAt = "failed", "interrupted: PortDock restarted", store.Now()
+			if b, err := store.ByID[store.Backup](ctx, e.db, "backups", r.BackupID); err == nil {
+				if db, err := store.ByID[store.Database](ctx, e.db, "databases", b.DatabaseID); err == nil {
+					if x, _, err := e.pool.ForID(ctx, db.ServerID); err == nil {
+						_ = x.Run(ctx, fmt.Sprintf("docker rm -f -v %s-verify-%d >/dev/null 2>&1 || true", db.UUID, r.ID), executor.RunOpts{})
+					}
+				}
+			}
 		}
 		_ = store.Update(ctx, e.db, "backup_runs", &r)
 	}

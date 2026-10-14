@@ -1,14 +1,16 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Boxes, Container, Database as DatabaseIcon, FileCode, GitBranch, Search } from "lucide-react";
+import { ArrowLeft, Boxes, Container, Database as DatabaseIcon, ExternalLink, FileCode, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { DatabaseDetail, Engine, Project, ServiceDetail, ServiceTemplate } from "../lib/types";
-import { Badge, Button, Card, Field, Input, Loading, PageHeader, PasswordInput, Select, Textarea } from "../components/ui";
+import { Badge, Button, Card, Field, Input, Loading, PageHeader, PasswordInput, Select, Switch, Textarea } from "../components/ui";
+import { useUser } from "../components/Layout";
 import { useServers } from "../components/shared";
 import { AppForm } from "./AppForm";
 import { ImageCatalogBrowser, ImageConfigure } from "../components/ImageCatalog";
+import { TemplateLogo, TemplateNotes, TemplatePicker, useTemplateDetail } from "../components/servicecatalog";
 import type { CatalogImage } from "../lib/types";
 import { cn } from "../lib/utils";
 import { t, tk } from "../lib/i18n";
@@ -20,7 +22,7 @@ const kinds: { id: Kind; title: string; text: string; icon: ReactNode }[] = [
   { id: "image", title: tk("Docker image"), text: tk("Browse 120+ popular images — databases, CMS, AI, monitoring, DevOps — or bring your own."), icon: <Container /> },
   { id: "compose", title: "Docker Compose", text: tk("Deploy a multi-container stack from a compose file in Git."), icon: <FileCode /> },
   { id: "database", title: tk("Database"), text: "PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Valkey, ClickHouse.", icon: <DatabaseIcon /> },
-  { id: "service", title: tk("One-click service"), text: tk("WordPress, n8n, Gitea, MinIO, Grafana, Umami and more."), icon: <Boxes /> },
+  { id: "service", title: tk("One-click service"), text: tk("Keycloak, Nextcloud, n8n, Gitea, Grafana and 30 more, plus the catalogs your administrators add."), icon: <Boxes /> },
 ];
 
 export function NewResourcePage() {
@@ -96,7 +98,7 @@ export function NewResourcePage() {
               <ImageCatalogBrowser onSelect={setCatalogImage} />
             ))}
           {kind === "database" && <DatabaseForm envId={envId!} serverId={server} initialEngine={engine} onCreated={(d) => nav(`/databases/${d.id}`)} />}
-          {kind === "service" && <ServiceForm envId={envId!} serverId={server} onCreated={(s) => nav(`/services/${s.id}`)} />}
+          {kind === "service" && <ServiceForm envId={envId!} serverId={server} onCreated={(s, tab) => nav(`/services/${s.id}${tab ? `?tab=${tab}` : ""}`)} />}
         </div>
       )}
     </>
@@ -168,32 +170,40 @@ function DatabaseForm({ envId, serverId, onCreated, initialEngine }: { envId: nu
   );
 }
 
-function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: number; onCreated: (s: ServiceDetail) => void }) {
-  const tpls = useQuery({ queryKey: ["service-templates"], queryFn: () => api.get<ServiceTemplate[]>("/service-templates") });
-  const [q, setQ] = useState("");
+function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: number; onCreated: (s: ServiceDetail, tab?: string) => void }) {
   const [tpl, setTpl] = useState<ServiceTemplate | null>(null);
   const [custom, setCustom] = useState(false);
-  const [f, setF] = useState({ name: "", domain: "", compose: "" });
-  const list = useMemo(() => (tpls.data ?? []).filter((t) => `${t.name} ${t.category} ${t.description}`.toLowerCase().includes(q.toLowerCase())), [tpls.data, q]);
+  const [f, setF] = useState({ name: "", domain: "", compose: "", host_access: false });
+  const isAdmin = useUser().role !== "member";
+  const detail = useTemplateDetail(tpl?.key);
+  const full = detail.data?.template;
+  // Variables the template needs first: create the service, then set them.
+  const needsEnv = !custom && (full?.required ?? []).length > 0;
 
   const create = useMutation({
     mutationFn: () =>
       api.post<ServiceDetail>("/services", {
         environment_id: envId,
         server_id: serverId,
-        template: custom ? "custom" : tpl!.slug,
+        template: custom ? "custom" : tpl!.key,
         name: f.name || (custom ? "stack" : tpl!.name),
         domain: f.domain,
         compose: custom ? f.compose : undefined,
+        host_access: (custom || !!tpl?.host_access) && f.host_access,
+        deploy: !needsEnv,
       }),
     onSuccess: (s) => {
+      if (needsEnv) {
+        toast.success(t("{name} is created", { name: s.name }), { description: t("Set {names}, then deploy it.", { names: full!.required!.join(", ") }) });
+        onCreated(s, "env");
+        return;
+      }
       toast.success(t("{name} is deploying", { name: s.name }));
       onCreated(s);
     },
     onError: (e) => toast.error(e.message),
   });
 
-  if (tpls.isLoading) return <Loading />;
   if (!tpl && !custom)
     return (
       <Card
@@ -205,33 +215,38 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
         }
       >
         <div className="p-5">
-          <div className="relative mb-4 max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <Input className="pl-9" placeholder={t("Search services…")} value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {list.map((t) => (
-              <button key={t.slug} onClick={() => setTpl(t)} className="flex flex-col items-stretch rounded-lg border border-border bg-surface p-4 text-left transition-colors hover:border-border-strong hover:bg-surface-2/50">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{t.name}</span>
-                  <Badge>{t.category}</Badge>
-                </div>
-                <p className="mt-1.5 text-sm text-muted">{t.description}</p>
-              </button>
-            ))}
-          </div>
+          <TemplatePicker onPick={(x) => (setTpl(x), setF({ name: "", domain: "", compose: "", host_access: false }))} />
         </div>
       </Card>
     );
 
+  const hostSwitch = isAdmin && (custom || !!tpl?.host_access);
   return (
     <Card
-      title={custom ? t("Custom Docker Compose") : tpl!.name}
+      title={
+        custom ? (
+          t("Custom Docker Compose")
+        ) : (
+          <span className="flex items-center gap-2.5">
+            <TemplateLogo tpl={tpl!} size="size-7" />
+            {tpl!.name}
+            {tpl!.source && <Badge tone="info">{tpl!.source}</Badge>}
+          </span>
+        )
+      }
       description={custom ? t("Add {code} to choose which service receives the domain.", { code: "`x-portdock: {service, port}`" }) : tpl!.description}
       actions={
-        <Button size="sm" variant="ghost" onClick={() => (setTpl(null), setCustom(false))}>
-          {t("Change")}
-        </Button>
+        <div className="flex items-center gap-1">
+          {!custom && tpl!.website && (
+            <a href={tpl!.website} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-surface-2 hover:text-fg">
+              <ExternalLink className="size-3.5" />
+              {t("Website")}
+            </a>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => (setTpl(null), setCustom(false))}>
+            {t("Change")}
+          </Button>
+        </div>
       }
     >
       <form
@@ -244,21 +259,36 @@ function ServiceForm({ envId, serverId, onCreated }: { envId: number; serverId: 
         <Field label={t("Name")}>
           <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={custom ? "stack" : tpl!.name} />
         </Field>
-        <Field label={t("Domain")} hint={t("Credentials and URLs in the template are generated for this domain.")}>
-          <Input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} placeholder="service.example.com" />
-        </Field>
+        {(custom || tpl!.service) && (
+          <Field label={t("Domain")} hint={t("Credentials and URLs in the template are generated for this domain.")}>
+            <Input value={f.domain} onChange={(e) => setF({ ...f, domain: e.target.value })} placeholder="service.example.com" />
+          </Field>
+        )}
+        {!custom && full && <TemplateNotes tpl={full} issues={detail.data!.issues} />}
         <div className="md:col-span-2">
           <Field label="docker-compose.yml">
             {custom ? (
               <Textarea rows={16} value={f.compose} onChange={(e) => setF({ ...f, compose: e.target.value })} placeholder={"x-portdock:\n  service: web\n  port: 80\nservices:\n  web:\n    image: nginx:alpine"} />
+            ) : detail.isLoading ? (
+              <Loading rows={4} />
             ) : (
-              <Textarea rows={14} value={tpl!.compose} readOnly className="opacity-80" />
+              <Textarea rows={14} value={full?.compose ?? ""} readOnly className="font-mono text-xs opacity-80" />
             )}
           </Field>
         </div>
+        {hostSwitch && (
+          <div className="md:col-span-2">
+            <Switch
+              checked={f.host_access}
+              onChange={(v) => setF({ ...f, host_access: v })}
+              label={t("Allow host access from the compose file")}
+              description={t("privileged mode, host namespaces, capabilities, devices and bind mounts of server paths (never the Docker socket or the root). Off, the deploy refuses such a compose file.")}
+            />
+          </div>
+        )}
         <div className="md:col-span-2 flex justify-end border-t border-border pt-5">
-          <Button type="submit" variant="primary" loading={create.isPending}>
-            {t("Deploy service")}
+          <Button type="submit" variant="primary" loading={create.isPending} disabled={!custom && !full}>
+            {needsEnv ? t("Create service") : t("Deploy service")}
           </Button>
         </div>
       </form>

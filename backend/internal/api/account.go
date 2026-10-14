@@ -144,7 +144,18 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) error {
 		if err := validateCredentials(&c); err != nil {
 			return err
 		}
-		u.Email = c.Email
+		if c.Email != u.Email {
+			// Single sign-on and LDAP link a member's first sign-in to the
+			// account with the same e-mail: a member who could pick any
+			// address would take over the account of whoever signs in next.
+			if u.Role == "member" {
+				return errStatus(403, "ask an administrator to change your e-mail address")
+			}
+			if !u.HasPassword() || !auth.CheckPassword(u.PasswordHash, in.CurrentPassword) {
+				return badRequest("enter your current password to change your e-mail address")
+			}
+			u.Email = c.Email
+		}
 	}
 	passwordChanged := in.NewPassword != ""
 	if passwordChanged {
@@ -318,61 +329,23 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]bool{"ok": true})
 }
 
-// ---- API tokens ----
-
-func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) error {
-	ts, err := store.Select[store.APIToken](r.Context(), s.db, "SELECT * FROM api_tokens WHERE user_id = ? ORDER BY id DESC", auth.UserFrom(r.Context()).ID)
-	if err != nil {
-		return err
-	}
-	return ok(w, ts)
-}
-
-func (s *Server) createToken(w http.ResponseWriter, r *http.Request) error {
-	var in struct {
-		Name string `json:"name"`
-	}
-	if err := readJSON(r, &in); err != nil {
-		return err
-	}
-	if strings.TrimSpace(in.Name) == "" {
-		return badRequest("name is required")
-	}
-	plain, t, err := s.auth.CreateToken(r.Context(), auth.UserFrom(r.Context()).ID, in.Name)
-	if err != nil {
-		return err
-	}
-	s.activity(r, "token.create", in.Name)
-	return ok(w, map[string]any{"token": plain, "api_token": t})
-}
-
-func (s *Server) deleteToken(w http.ResponseWriter, r *http.Request) error {
-	id, err := pathID(r, "id")
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(r.Context(), "DELETE FROM api_tokens WHERE id = ? AND user_id = ?", id, auth.UserFrom(r.Context()).ID)
-	if err != nil {
-		return err
-	}
-	return ok(w, map[string]bool{"ok": true})
-}
-
 // ---- instance settings ----
 
 var settingKeys = []string{
 	"instance_name", "instance_url", "instance_https", "instance_timezone", "public_ipv4", "public_ipv6",
 	"acme_email", "auto_cleanup", "proxy_dashboard", "require_2fa", "password_login",
 	"s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
-	"trivy_image", "semgrep_image", "semgrep_config", "zap_image", "status_page_enabled", "status_page_title", "status_page_description",
+	"trivy_image", "semgrep_image", "semgrep_config", "zap_image", "cosign_image", "status_page_enabled", "status_page_title", "status_page_description",
 	// corporate network (netcfg.SettingKeys)
 	"proxy_http", "proxy_https", "proxy_no", "proxy_username", "proxy_password",
 	"proxy_portdock", "proxy_builds", "proxy_containers",
 	"registry_mirror", "registry_insecure", "npm_registry", "pypi_index", "go_proxy", "build_env", "trivy_db_repository",
+	// OpenTelemetry collector of the applications (deploy.OTelKeys)
+	"otel_endpoint", "otel_protocol", "otel_headers",
 }
 
 // secretSettings are stored encrypted and never returned.
-var secretSettings = map[string]bool{"s3_secret_key": true, "proxy_password": true, "s3_access_key": true}
+var secretSettings = map[string]bool{"s3_secret_key": true, "proxy_password": true, "s3_access_key": true, "otel_headers": true}
 
 // memberSettingKeys is what the interface needs for users who are not
 // administrators. The rest (storage, proxy and mirror URLs, build variables,
@@ -564,7 +537,7 @@ func (s *Server) createNotification(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	c := store.NotificationChannel{Enabled: true, CreatedAt: store.Now(),
-		Events: "deployment.failed,deployment.success,backup.failed,server.unreachable,server.reachable,alert.firing,alert.resolved,deployment.approval_required,certificate.expiring,certificate.failed,certificate.renewed,update.available,update.success,update.failed"}
+		Events: "deployment.failed,deployment.success,backup.failed,job.failed,server.unreachable,server.reachable,alert.firing,alert.resolved,deployment.approval_required,certificate.expiring,certificate.failed,certificate.renewed,update.available,update.success,update.failed"}
 	if err := s.applyNotification(&c, in); err != nil {
 		return err
 	}

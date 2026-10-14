@@ -91,8 +91,7 @@ func containerResource(c docker.Container, res map[string]*fleetResource) *fleet
 func (s *Server) eachServer(ctx context.Context, only int64, fn func(ctx context.Context, x executor.Executor, srv store.Server) (int, error)) []fleetServer {
 	servers, _ := store.Select[store.Server](ctx, s.db, "SELECT * FROM servers ORDER BY is_local DESC, name")
 	out := make([]fleetServer, 0, len(servers))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	var targets []store.Server
 	for _, srv := range servers {
 		if only != 0 && srv.ID != only {
 			continue
@@ -101,10 +100,16 @@ func (s *Server) eachServer(ctx context.Context, only int64, fn func(ctx context
 		if srv.IsLocal {
 			fs.Host = "localhost"
 		}
-		i := len(out)
 		out = append(out, fs)
+		targets = append(targets, srv)
+	}
+	// The list is complete before the goroutines start: appending to it while
+	// they write their entry was a data race.
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i, srv := range targets {
 		wg.Add(1)
-		go func(srv store.Server) {
+		go func(i int, srv store.Server) {
 			defer wg.Done()
 			cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 			defer cancel()
@@ -119,7 +124,7 @@ func (s *Server) eachServer(ctx context.Context, only int64, fn func(ctx context
 			if err != nil {
 				out[i].Error = err.Error()
 			}
-		}(srv)
+		}(i, srv)
 	}
 	wg.Wait()
 	return out

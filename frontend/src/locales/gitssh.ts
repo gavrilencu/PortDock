@@ -1,0 +1,101 @@
+// Translations for components/gitssh.tsx (Git over SSH: deploy keys, host keys)
+// and the fixed messages of backend/internal/deploy/gitssh.go.
+export const ro: Record<string, string> = {
+  "Clone from any Git host, over HTTPS or SSH.": "Clonează din orice server Git, prin HTTPS sau SSH.",
+  "Cloned over SSH: PortDock generates a deploy key for this application and shows it after you create it, to add to the repository.":
+    "Clonare prin SSH: PortDock generează o cheie de deploy pentru această aplicație și ți-o arată după creare, ca s-o adaugi în repozitoriu.",
+  "Deploy key": "Cheie de deploy",
+  "The repository is cloned over SSH with a key of this application.": "Repozitoriul se clonează prin SSH cu o cheie a acestei aplicații.",
+  "No deploy key yet: deployments of this repository fail until you add one.": "Încă nu există cheie de deploy: deploy-urile din acest repozitoriu eșuează până adaugi una.",
+  "Add it to the repository as a read-only deploy key (GitLab: Settings → Repository → Deploy keys; Bitbucket: Repository settings → Access keys; Gitea: Settings → Deploy keys).":
+    "Adaug-o în repozitoriu ca deploy key doar pentru citire (GitLab: Settings → Repository → Deploy keys; Bitbucket: Repository settings → Access keys; Gitea: Settings → Deploy keys).",
+  "Generate a deploy key": "Generează o cheie de deploy",
+  "Generate a new key": "Generează o cheie nouă",
+  "Use my own key": "Folosește cheia mea",
+  "Replace the deploy key?": "Înlocuiești cheia de deploy?",
+  "The current key stops working: add the new public key to the repository.": "Cheia actuală nu mai funcționează: adaugă noua cheie publică în repozitoriu.",
+  "Remove the deploy key?": "Ștergi cheia de deploy?",
+  "Paste an unencrypted OpenSSH private key (ed25519 or RSA). It is stored encrypted and only used to clone this repository.":
+    "Lipește o cheie privată OpenSSH necriptată (ed25519 sau RSA). Se păstrează criptat și se folosește doar pentru clonarea acestui repozitoriu.",
+  "Deploy key saved": "Cheia de deploy a fost salvată",
+  "Add its public key to the repository before the next deployment.": "Adaugă cheia publică în repozitoriu înainte de următorul deploy.",
+  "Deploy key removed": "Cheia de deploy a fost ștearsă",
+  "Add the deploy key to the repository": "Adaugă cheia de deploy în repozitoriu",
+  "PortDock clones {repo} over SSH with this key.": "PortDock clonează {repo} prin SSH cu această cheie.",
+  Later: "Mai târziu",
+  "Key added — deploy now": "Am adăugat cheia — deploy acum",
+  "{name}: first deployment queued": "{name}: primul deploy a fost pus în coadă",
+  "SSH host keys": "Cheile SSH ale serverelor Git",
+  "Repositories cloned over SSH (git@host:… or ssh://…) are checked against these keys, so a server pretending to be your Git host is refused.":
+    "Repozitoriile clonate prin SSH (git@host:… sau ssh://…) sunt verificate cu aceste chei, așa că un server care se dă drept serverul vostru Git este refuzat.",
+  "Add host": "Adaugă server",
+  "No Git hosts yet": "Încă niciun server Git",
+  "A host is added on its first clone (trust on first use), or here after you compare its fingerprint.": "Un server se adaugă la prima clonare (încredere la prima utilizare) sau aici, după ce îi compari amprenta.",
+  Fingerprints: "Amprente",
+  Added: "Adăugat",
+  "First use": "Prima utilizare",
+  "Its key is read again on the next clone, or refused in strict mode.": "Cheia lui se citește din nou la următoarea clonare sau e refuzată în modul strict.",
+  "Only trust hosts listed here": "Ai încredere doar în serverele de aici",
+  "Off: an unknown host is trusted on its first clone and its fingerprint written to the deployment log. On: unknown hosts are refused.":
+    "Dezactivat: un server necunoscut e acceptat la prima clonare, iar amprenta lui apare în logul deploy-ului. Activat: serverele necunoscute sunt refuzate.",
+  "Add a Git host": "Adaugă un server Git",
+  "Read the host's keys, compare the fingerprints with the ones your Git administrator publishes, then trust them.":
+    "Citește cheile serverului, compară amprentele cu cele publicate de administratorul Git și apoi acceptă-le.",
+  "Trust these keys": "Acceptă aceste chei",
+  "host, host:port or a repository URL, e.g. ssh://git@gitlab.corp:2222/team/app.git": "host, host:port sau URL-ul unui repozitoriu, de ex. ssh://git@gitlab.corp:2222/team/app.git",
+  "Read keys": "Citește cheile",
+  "Paste known_hosts lines instead": "Lipește în schimb linii known_hosts",
+  "As known_hosts names it: host, or [host]:port for another port than 22.": "Cum îl numește known_hosts: host sau [host]:port pentru alt port decât 22.",
+  "known_hosts lines": "Linii known_hosts",
+  "Host key trusted": "Cheia serverului a fost acceptată",
+};
+
+export const ru: Record<string, string> = {
+  "Clone from any Git host, over HTTPS or SSH.": "Клонирование с любого Git-сервера по HTTPS или SSH.",
+  "Cloned over SSH: PortDock generates a deploy key for this application and shows it after you create it, to add to the repository.":
+    "Клонирование по SSH: PortDock создаст ключ развёртывания для этого приложения и покажет его после создания, чтобы добавить в репозиторий.",
+  "Deploy key": "Ключ развёртывания",
+  "The repository is cloned over SSH with a key of this application.": "Репозиторий клонируется по SSH ключом этого приложения.",
+  "No deploy key yet: deployments of this repository fail until you add one.": "Ключа развёртывания пока нет: деплои этого репозитория не пройдут, пока вы его не добавите.",
+  "Add it to the repository as a read-only deploy key (GitLab: Settings → Repository → Deploy keys; Bitbucket: Repository settings → Access keys; Gitea: Settings → Deploy keys).":
+    "Добавьте его в репозиторий как ключ развёртывания только для чтения (GitLab: Settings → Repository → Deploy keys; Bitbucket: Repository settings → Access keys; Gitea: Settings → Deploy keys).",
+  "Generate a deploy key": "Создать ключ развёртывания",
+  "Generate a new key": "Создать новый ключ",
+  "Use my own key": "Использовать свой ключ",
+  "Replace the deploy key?": "Заменить ключ развёртывания?",
+  "The current key stops working: add the new public key to the repository.": "Текущий ключ перестанет работать: добавьте новый открытый ключ в репозиторий.",
+  "Remove the deploy key?": "Удалить ключ развёртывания?",
+  "Paste an unencrypted OpenSSH private key (ed25519 or RSA). It is stored encrypted and only used to clone this repository.":
+    "Вставьте незашифрованный закрытый ключ OpenSSH (ed25519 или RSA). Он хранится в зашифрованном виде и используется только для клонирования этого репозитория.",
+  "Deploy key saved": "Ключ развёртывания сохранён",
+  "Add its public key to the repository before the next deployment.": "Добавьте открытый ключ в репозиторий перед следующим деплоем.",
+  "Deploy key removed": "Ключ развёртывания удалён",
+  "Add the deploy key to the repository": "Добавьте ключ развёртывания в репозиторий",
+  "PortDock clones {repo} over SSH with this key.": "PortDock клонирует {repo} по SSH с этим ключом.",
+  Later: "Позже",
+  "Key added — deploy now": "Ключ добавлен — деплой сейчас",
+  "{name}: first deployment queued": "{name}: первый деплой в очереди",
+  "SSH host keys": "SSH-ключи Git-серверов",
+  "Repositories cloned over SSH (git@host:… or ssh://…) are checked against these keys, so a server pretending to be your Git host is refused.":
+    "Репозитории, клонируемые по SSH (git@host:… или ssh://…), проверяются по этим ключам, поэтому сервер, выдающий себя за ваш Git-сервер, будет отклонён.",
+  "Add host": "Добавить сервер",
+  "No Git hosts yet": "Git-серверов пока нет",
+  "A host is added on its first clone (trust on first use), or here after you compare its fingerprint.": "Сервер добавляется при первом клонировании (доверие при первом использовании) или здесь после сверки отпечатка.",
+  Fingerprints: "Отпечатки",
+  Added: "Добавлен",
+  "First use": "Первое использование",
+  "Its key is read again on the next clone, or refused in strict mode.": "Его ключ будет прочитан заново при следующем клонировании или отклонён в строгом режиме.",
+  "Only trust hosts listed here": "Доверять только серверам из списка",
+  "Off: an unknown host is trusted on its first clone and its fingerprint written to the deployment log. On: unknown hosts are refused.":
+    "Выключено: неизвестный сервер принимается при первом клонировании, а его отпечаток записывается в журнал деплоя. Включено: неизвестные серверы отклоняются.",
+  "Add a Git host": "Добавить Git-сервер",
+  "Read the host's keys, compare the fingerprints with the ones your Git administrator publishes, then trust them.":
+    "Прочитайте ключи сервера, сверьте отпечатки с опубликованными администратором Git и примите их.",
+  "Trust these keys": "Доверять этим ключам",
+  "host, host:port or a repository URL, e.g. ssh://git@gitlab.corp:2222/team/app.git": "host, host:port или URL репозитория, например ssh://git@gitlab.corp:2222/team/app.git",
+  "Read keys": "Прочитать ключи",
+  "Paste known_hosts lines instead": "Вставить строки known_hosts вместо этого",
+  "As known_hosts names it: host, or [host]:port for another port than 22.": "Как в known_hosts: host или [host]:port для порта, отличного от 22.",
+  "known_hosts lines": "Строки known_hosts",
+  "Host key trusted": "Ключ сервера принят",
+};

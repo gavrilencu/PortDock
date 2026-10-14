@@ -23,6 +23,7 @@ make test      # go vet, go test and the TypeScript check
 - **Backend** (Go, `backend/`): keep the standard library style of the surrounding code, add a test next to what you change (`go test ./...`).
 - **Frontend** (React + TypeScript, `frontend/`): run `npx tsc -b`. Every text shown to users goes through `t("…")`; add its Romanian and Russian translations in `frontend/src/locales/` and check with `npm run i18n:check`.
 - **Releases** take their description from `docs/releases/vX.Y.Z.md`.
+- **One-click services** are compose files in `backend/internal/templates/services/`; [its README](backend/internal/templates/services/README.md) explains the format, the placeholders and how to check a template (`pdctl template lint`).
 
 ## Pull requests
 

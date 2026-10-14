@@ -172,6 +172,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 			s.sec.limiter.Fail(ipKey)
 			s.sec.limiter.Fail(emailKey)
 			s.db.LogActivity(ctx, u.ID, "login.failed", email+" from "+auth.ClientIP(r))
+			if err == nil && u.ServiceAccount {
+				return errStatus(401, "a service account cannot sign in; it acts through API tokens")
+			}
 			if err == nil && !u.HasPassword() && !strings.HasPrefix(u.AuthSource, "ldap:") {
 				return errStatus(401, "this account signs in with single sign-on")
 			}
@@ -184,6 +187,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	if u.Disabled {
 		return errStatus(403, "this account has been disabled; contact an administrator")
+	}
+	if u.ServiceAccount {
+		return errStatus(403, "a service account cannot sign in; it acts through API tokens")
 	}
 	if base == "password" && !s.passwordLoginAllowed(ctx, u) {
 		return errStatus(403, "password sign-in is disabled for your organization; use single sign-on")
@@ -536,8 +542,14 @@ func (s *Server) ssoRedirectURI(ctx context.Context, slug string) string {
 const ssoCookie = "portdock_sso"
 
 // safeNext keeps post-login redirects on this site.
+// safeNext keeps a redirect target on this site. Browsers drop tabs and line
+// breaks and read a backslash as "/", so "/<tab>/evil.example" is refused too.
 func safeNext(next string) string {
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") ||
+		strings.ContainsFunc(next, func(r rune) bool { return r <= ' ' || r == 0x7f || r == '\\' }) {
+		return "/"
+	}
+	if u, err := url.Parse(next); err != nil || u.Scheme != "" || u.Host != "" {
 		return "/"
 	}
 	return next
@@ -730,6 +742,9 @@ func (s *Server) ssoResolveUser(ctx context.Context, p store.SSOProvider, c sso.
 	}
 	if u.Disabled {
 		return store.User{}, fmt.Errorf("this account has been disabled; contact an administrator")
+	}
+	if u.ServiceAccount {
+		return store.User{}, fmt.Errorf("a service account cannot sign in; it acts through API tokens")
 	}
 	if admins := splitCSV(p.AdminGroups); len(admins) > 0 && u.Role != "owner" {
 		role := "member"

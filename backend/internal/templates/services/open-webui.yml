@@ -1,0 +1,29 @@
+# Open WebUI: https://openwebui.com
+x-portdock:
+  name: Open WebUI with Ollama
+  description: "A ChatGPT-like interface for local models served by Ollama, which stays private to the service. The first account created becomes the administrator; pull models from the interface."
+  category: AI & Machine Learning
+  website: https://openwebui.com
+  tags: [ai, llm, chat, ollama, local]
+  service: open-webui
+  port: 8080
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      WEBUI_SECRET_KEY: ${PORTDOCK_SECRET_WEBUI}
+      WEBUI_URL: ${PORTDOCK_URL}
+    volumes:
+      - webui-data:/app/backend/data
+    depends_on:
+      - ollama
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+volumes:
+  webui-data:
+  ollama-models:

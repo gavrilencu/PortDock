@@ -120,12 +120,29 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 		if strings.TrimSpace(a.GitRepository) == "" {
 			return badRequest("git_repository is required")
 		}
+		if _, _, _, err := deploy.ParseSSHRepo(a.GitRepository); err != nil {
+			return badRequest("%v", err)
+		}
 		if a.GitBranch == "" {
 			a.GitBranch = "main"
 		}
 	}
 	if a.Port < 0 || a.Port > 65535 {
 		return badRequest("invalid port")
+	}
+	if a.CanaryPercent < 0 || a.CanaryPercent > 90 {
+		return badRequest("the canary share of the traffic must be between 0 (off) and 90 percent")
+	}
+	if a.CanaryPercent > 0 {
+		if a.CanaryMinutes < 1 || a.CanaryMinutes > 120 {
+			return badRequest("the canary observation time must be between 1 and 120 minutes")
+		}
+		if a.CanaryMaxErrors <= 0 || a.CanaryMaxErrors > 100 {
+			return badRequest("the canary error threshold must be between 0 and 100 percent")
+		}
+	}
+	if err := deploy.CheckRef(a.GitBranch, a.GitCommit); err != nil {
+		return badRequest("%v", err)
 	}
 	if _, err := docker.ParseLabels(a.CustomLabels); err != nil {
 		return badRequest("%v", err)
@@ -237,6 +254,8 @@ func validateDockerOptions(ctx context.Context, opts, previous string) error {
 type appInput struct {
 	*store.Application
 	GitToken *string `json:"git_token"`
+	// GitSSHKey imports a private deploy key ("" removes it on update).
+	GitSSHKey *string `json:"git_ssh_key"`
 	// ServerIDs are the additional servers to deploy to (besides server_id).
 	ServerIDs *[]int64 `json:"server_ids"`
 	// DomainRoutes adds domains that target a service of a compose application
@@ -278,6 +297,10 @@ func (s *Server) applyAppServers(r *http.Request, a store.Application, ids *[]in
 	}
 	if len(after) != len(before) {
 		s.activity(r, "application.servers", fmt.Sprintf("%s: %d server(s)", a.Name, len(after)))
+		if a.LoadBalance {
+			// The primary's proxy stops sending traffic to a removed server.
+			go func() { _ = s.engine.ApplyRoutes(context.WithoutCancel(ctx), a) }()
+		}
 	}
 	return nil
 }
@@ -299,7 +322,7 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	a := store.Application{
 		SourceType: "git", GitBranch: "main", BuildPack: "auto", BaseDirectory: "/", DockerfilePath: "Dockerfile",
 		ComposePath: "docker-compose.yml", PublishDirectory: "dist", Port: 3000, HTTPS: true, AutoDeploy: true,
-		HealthCheckTimeout: 60, Replicas: 1,
+		HealthCheckTimeout: 60, Replicas: 1, CanaryMinutes: 10, CanaryMaxErrors: 5,
 	}
 	in := appInput{Application: &a}
 	if err := readJSON(r, &in); err != nil {
@@ -312,6 +335,12 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 	a.AzureHookID, a.AzureHookError = "", ""
 	if in.GitToken != nil {
 		a.GitToken = s.box.Encrypt(*in.GitToken)
+	}
+	a.GitSSHKey, a.GitSSHPublicKey = "", ""
+	if in.GitSSHKey != nil && *in.GitSSHKey != "" {
+		if err := s.setDeployKey(&a, *in.GitSSHKey); err != nil {
+			return err
+		}
 	}
 	if err := s.validateApp(r.Context(), &a); err != nil {
 		return err
@@ -389,6 +418,7 @@ func (s *Server) createApplication(w http.ResponseWriter, r *http.Request) error
 		a, _ = store.ByID[store.Application](r.Context(), s.db, "applications", a.ID)
 	}
 	s.activity(r, "application.create", a.Name)
+	s.drains.Trigger() // its logs get its name
 	return ok(w, s.appOut(r.Context(), a))
 }
 
@@ -417,6 +447,12 @@ func (s *Server) updateApplication(w http.ResponseWriter, r *http.Request) error
 	a.AzureHookID, a.AzureHookError = orig.AzureHookID, orig.AzureHookError
 	if in.GitToken != nil {
 		a.GitToken = s.box.Encrypt(*in.GitToken)
+	}
+	a.GitSSHKey, a.GitSSHPublicKey = orig.GitSSHKey, orig.GitSSHPublicKey
+	if in.GitSSHKey != nil {
+		if err := s.setDeployKey(&a, *in.GitSSHKey); err != nil {
+			return err
+		}
 	}
 	if a.ServerID != orig.ServerID && orig.Status != "stopped" {
 		return badRequest("stop the application before moving it to another server")
@@ -765,12 +801,16 @@ func (s *Server) deletePreview(w http.ResponseWriter, r *http.Request) error {
 
 // ---- environment variables ----
 
-var ownerTypes = map[string]string{"applications": "application", "services": "service", "databases": "database"}
+var ownerTypes = map[string]string{"applications": "application", "services": "service", "databases": "database",
+	"projects": "project", "environments": "environment"}
 
 func (s *Server) envOwner(r *http.Request) (string, int64, error) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/") // api/{owner}/{id}/envs
 	if len(parts) < 3 {
 		return "", 0, badRequest("invalid path")
+	}
+	if parts[1] == "organization" { // api/organization/envs: shared by every project
+		return "organization", 0, nil
 	}
 	typ, ok := ownerTypes[parts[1]]
 	if !ok {
@@ -876,6 +916,15 @@ func (s *Server) createEnv(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	v.ID, v.OwnerType, v.OwnerID, v.CreatedAt = 0, typ, id, store.Now()
+	if v.RefStoreID > 0 {
+		// Read from a secret store when deployments start: nothing to keep here.
+		if err := s.validRef(r.Context(), typ, id, &v); err != nil {
+			return err
+		}
+		v.Value, v.IsSecret = "", true
+	} else {
+		v.RefStoreID, v.RefPath, v.RefKey = 0, "", ""
+	}
 	plain := v.Value
 	v.Value = s.box.Encrypt(plain)
 	if _, err := store.Insert(r.Context(), s.db, "env_vars", &v); err != nil {
@@ -922,11 +971,15 @@ func (s *Server) bulkEnvs(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ? AND service = ?", typ, id, in.IsPreview, in.Service); err != nil {
+	// Variables read from a secret store are not in the .env content: they stay.
+	if _, err := tx.ExecContext(r.Context(), "DELETE FROM env_vars WHERE owner_type = ? AND owner_id = ? AND is_preview = ? AND service = ? AND ref_store_id = 0", typ, id, in.IsPreview, in.Service); err != nil {
 		return err
 	}
 	for _, kv := range parsed {
 		old := prev[kv[0]]
+		if old.RefStoreID > 0 {
+			continue
+		}
 		if _, err := tx.ExecContext(r.Context(),
 			"INSERT INTO env_vars(owner_type, owner_id, service, key, value, is_build, is_preview, is_secret, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
 			typ, id, in.Service, kv[0], s.box.Encrypt(kv[1]), old.IsBuild, in.IsPreview, old.IsSecret, store.Now()); err != nil {
@@ -985,9 +1038,34 @@ func (s *Server) updateEnv(w http.ResponseWriter, r *http.Request) error {
 		Value    *string `json:"value"`
 		IsBuild  *bool   `json:"is_build"`
 		IsSecret *bool   `json:"is_secret"`
+		// A secret store reference; ref_store_id 0 turns the variable into a plain one.
+		RefStoreID *int64  `json:"ref_store_id"`
+		RefPath    *string `json:"ref_path"`
+		RefKey     *string `json:"ref_key"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
+	}
+	if in.RefStoreID != nil || in.RefPath != nil || in.RefKey != nil {
+		if in.RefStoreID != nil {
+			v.RefStoreID = *in.RefStoreID
+		}
+		if in.RefPath != nil {
+			v.RefPath = *in.RefPath
+		}
+		if in.RefKey != nil {
+			v.RefKey = *in.RefKey
+		}
+		if v.RefStoreID > 0 {
+			if err := s.validRef(r.Context(), v.OwnerType, v.OwnerID, &v); err != nil {
+				return err
+			}
+			v.Value, v.IsSecret = s.box.Encrypt(""), true
+		} else {
+			v.RefPath, v.RefKey = "", ""
+		}
+	} else if in.Value != nil && v.RefStoreID > 0 {
+		return badRequest("%s comes from a secret store: change its reference, or remove it first", v.Key)
 	}
 	if in.Key != nil {
 		if !validEnvKey(*in.Key) {
@@ -1001,7 +1079,7 @@ func (s *Server) updateEnv(w http.ResponseWriter, r *http.Request) error {
 	if in.IsBuild != nil {
 		v.IsBuild = *in.IsBuild
 	}
-	if in.IsSecret != nil {
+	if in.IsSecret != nil && v.RefStoreID == 0 {
 		v.IsSecret = *in.IsSecret
 	}
 	if err := store.Update(r.Context(), s.db, "env_vars", &v); err != nil {

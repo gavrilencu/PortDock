@@ -3,3 +3,4 @@ frontend/dist
 .data
 bin
 .git
+terraform-provider-portdock

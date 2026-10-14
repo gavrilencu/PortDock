@@ -139,6 +139,8 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) error {
 	}
 	srv.ID, srv.Status, srv.ProxyStatus, srv.CreatedAt = 0, "unknown", "unknown", store.Now()
 	srv.IsLocal = false
+	// The private network is set in its own settings.
+	srv.OverlayJoin, srv.OverlayIP, srv.OverlayPublicKey, srv.OverlayPrivateKey, srv.OverlayEndpoint = false, "", "", "", ""
 	if err := validateServer(&srv); err != nil {
 		return err
 	}
@@ -156,10 +158,12 @@ func (s *Server) updateServer(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	id, local, created := srv.ID, srv.IsLocal, srv.CreatedAt
+	orig := srv
 	if err := readJSON(r, &srv); err != nil {
 		return err
 	}
 	srv.ID, srv.IsLocal, srv.CreatedAt = id, local, created
+	srv.OverlayJoin, srv.OverlayIP, srv.OverlayPublicKey, srv.OverlayPrivateKey, srv.OverlayEndpoint = orig.OverlayJoin, orig.OverlayIP, orig.OverlayPublicKey, orig.OverlayPrivateKey, orig.OverlayEndpoint
 	if err := validateServer(&srv); err != nil {
 		return err
 	}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FolderKanban, Lock, MoreHorizontal, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
+import { Braces, ExternalLink, FolderKanban, Lock, MoreHorizontal, Pencil, Plus, Search, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { EnvironmentResources, Project } from "../lib/types";
@@ -9,6 +9,7 @@ import { Badge, Button, Empty, ErrorBox, Field, Input, Loading, Menu, MenuItem, 
 import { ResourceIcon } from "../components/shared";
 import { ProtectedBadge, RoleBadge } from "../components/access";
 import { EnvironmentSettingsModal, MembersModal } from "../components/projectAccess";
+import { SharedVariablesModal } from "../components/sharedenv";
 import { domainURL, splitList, timeAgo } from "../lib/utils";
 import { t, tk } from "../lib/i18n";
 
@@ -108,6 +109,11 @@ export function ProjectPage() {
         }
         actions={
           <>
+            {canWrite && (
+              <Button icon={<Braces />} onClick={() => setParams({ ...Object.fromEntries(params), variables: "1" })}>
+                {t("Variables")}
+              </Button>
+            )}
             {canManage && (
               <Button icon={<Users />} onClick={() => setMembersOpen(true)}>
                 {t("Access")}
@@ -164,6 +170,16 @@ export function ProjectPage() {
         }
       />
 
+      <SharedVariablesModal
+        project={p}
+        env={env}
+        open={canWrite && params.get("variables") === "1"}
+        onClose={() => {
+          const next = Object.fromEntries(params);
+          delete next.variables;
+          setParams(next);
+        }}
+      />
       <Tabs
         value={String(envId)}
         onChange={(v) => (v === "new" ? setNewEnv("") : setParams({ env: v }))}

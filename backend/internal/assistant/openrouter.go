@@ -1,5 +1,7 @@
-// Package assistant talks to OpenRouter, an OpenAI-compatible gateway to
-// hundreds of models, for PortDock's built-in AI assistant.
+// Package assistant talks to the model of PortDock's built-in AI assistant:
+// OpenRouter, an OpenAI-compatible gateway to hundreds of models, or any
+// OpenAI-compatible server the organization runs itself (Ollama, vLLM,
+// LiteLLM, LocalAI, llama.cpp), so the assistant also works offline.
 package assistant
 
 import (
@@ -44,20 +46,55 @@ type KeyInfo struct {
 	Limit *float64 `json:"limit"` // nil = no limit
 }
 
-// Client calls OpenRouter. Referer returns the URL of the PortDock instance
+// Provider is where the model runs: OpenRouter (no BaseURL) or an
+// OpenAI-compatible server at BaseURL (e.g. http://ollama:11434/v1), for
+// which the key is optional.
+type Provider struct {
+	BaseURL string
+	Key     string
+}
+
+func (p Provider) base() string {
+	if p.BaseURL != "" {
+		return strings.TrimRight(p.BaseURL, "/")
+	}
+	return BaseURL
+}
+
+// OpenRouter reports whether the provider is OpenRouter.
+func (p Provider) OpenRouter() bool { return p.BaseURL == "" }
+
+func (p Provider) name() string {
+	if p.OpenRouter() {
+		return "OpenRouter"
+	}
+	return "the AI server"
+}
+
+// Name is how messages refer to the provider, capitalized.
+func (p Provider) Name() string {
+	n := p.name()
+	return strings.ToUpper(n[:1]) + n[1:]
+}
+
+// Client calls the provider. Referer returns the URL of the PortDock instance
 // (OpenRouter shows it as the app in usage statistics).
 type Client struct {
 	HTTP    *http.Client
 	Referer func() string
 
-	mu       sync.Mutex
-	models   []Model
-	modelsAt time.Time
+	mu     sync.Mutex
+	models map[string]cachedModels // by base URL
 }
 
-func New() *Client { return &Client{HTTP: &http.Client{}} }
+type cachedModels struct {
+	list []Model
+	at   time.Time
+}
 
-func (c *Client) do(ctx context.Context, method, path, key string, body any) (*http.Response, error) {
+func New() *Client { return &Client{HTTP: &http.Client{}, models: map[string]cachedModels{}} }
+
+func (c *Client) do(ctx context.Context, method, path string, p Provider, body any) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -66,17 +103,17 @@ func (c *Client) do(ctx context.Context, method, path, key string, body any) (*h
 		}
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, BaseURL+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, p.base()+path, r)
 	if err != nil {
 		return nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if key != "" {
-		req.Header.Set("Authorization", "Bearer "+key)
+	if p.Key != "" {
+		req.Header.Set("Authorization", "Bearer "+p.Key)
 	}
-	if c.Referer != nil {
+	if c.Referer != nil && p.OpenRouter() {
 		if ref := c.Referer(); ref != "" {
 			req.Header.Set("HTTP-Referer", ref)
 		}
@@ -84,17 +121,17 @@ func (c *Client) do(ctx context.Context, method, path, key string, body any) (*h
 	req.Header.Set("X-Title", "PortDock")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("OpenRouter is unreachable: %w", err)
+		return nil, fmt.Errorf("%s is unreachable: %w", p.Name(), err)
 	}
 	if res.StatusCode >= 300 {
 		defer res.Body.Close()
-		return nil, apiError(res)
+		return nil, apiError(res, p)
 	}
 	return res, nil
 }
 
-// apiError turns an OpenRouter error response into a readable error.
-func apiError(res *http.Response) error {
+// apiError turns an error response of the provider into a readable error.
+func apiError(res *http.Response, p Provider) error {
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	var body struct {
 		Error struct {
@@ -107,25 +144,29 @@ func apiError(res *http.Response) error {
 	}
 	switch res.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("the OpenRouter API key was rejected: %s", msg)
+		return fmt.Errorf("the %s API key was rejected: %s", strings.TrimPrefix(p.name(), "the "), msg)
 	case http.StatusPaymentRequired:
 		return fmt.Errorf("the OpenRouter account has no credits left: %s", msg)
 	}
 	if msg == "" {
 		msg = res.Status
 	}
-	return fmt.Errorf("OpenRouter: %s (HTTP %d)", msg, res.StatusCode)
+	return fmt.Errorf("%s: %s (HTTP %d)", p.Name(), msg, res.StatusCode)
 }
 
-// Models returns the OpenRouter catalog (cached for an hour). It needs no key.
-func (c *Client) Models(ctx context.Context) ([]Model, error) {
+// Models returns the provider's models (cached for an hour). OpenRouter's
+// catalog needs no key; a local server lists what it serves.
+func (c *Client) Models(ctx context.Context, p Provider) ([]Model, error) {
 	c.mu.Lock()
-	if c.models != nil && time.Since(c.modelsAt) < modelsTTL {
+	if m, ok := c.models[p.base()]; ok && time.Since(m.at) < modelsTTL {
 		defer c.mu.Unlock()
-		return c.models, nil
+		return m.list, nil
 	}
 	c.mu.Unlock()
-	res, err := c.do(ctx, http.MethodGet, "/models", "", nil)
+	if p.OpenRouter() {
+		p.Key = "" // the catalog is public
+	}
+	res, err := c.do(ctx, http.MethodGet, "/models", p, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +184,7 @@ func (c *Client) Models(ctx context.Context) ([]Model, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("unexpected OpenRouter model list: %w", err)
+		return nil, fmt.Errorf("unexpected model list from %s: %w", p.name(), err)
 	}
 	out := make([]Model, 0, len(body.Data))
 	for _, m := range body.Data {
@@ -154,14 +195,14 @@ func (c *Client) Models(ctx context.Context) ([]Model, error) {
 		out = append(out, Model{ID: m.ID, Name: m.Name, ContextLength: m.ContextLength, PromptPrice: m.Pricing.Prompt, CompletionPrice: m.Pricing.Completion, Description: desc})
 	}
 	c.mu.Lock()
-	c.models, c.modelsAt = out, time.Now()
+	c.models[p.base()] = cachedModels{list: out, at: time.Now()}
 	c.mu.Unlock()
 	return out, nil
 }
 
-// Key checks an API key and returns its label and usage.
-func (c *Client) Key(ctx context.Context, key string) (KeyInfo, error) {
-	res, err := c.do(ctx, http.MethodGet, "/key", key, nil)
+// Key checks an OpenRouter API key and returns its label and usage.
+func (c *Client) Key(ctx context.Context, p Provider) (KeyInfo, error) {
+	res, err := c.do(ctx, http.MethodGet, "/key", p, nil)
 	if err != nil {
 		return KeyInfo{}, err
 	}
@@ -176,8 +217,8 @@ func (c *Client) Key(ctx context.Context, key string) (KeyInfo, error) {
 }
 
 // Complete returns a whole (short) reply; used to test a model.
-func (c *Client) Complete(ctx context.Context, key, model string, msgs []Message, maxTokens int) (string, error) {
-	res, err := c.do(ctx, http.MethodPost, "/chat/completions", key, map[string]any{"model": model, "messages": msgs, "max_tokens": maxTokens})
+func (c *Client) Complete(ctx context.Context, p Provider, model string, msgs []Message, maxTokens int) (string, error) {
+	res, err := c.do(ctx, http.MethodPost, "/chat/completions", p, map[string]any{"model": model, "messages": msgs, "max_tokens": maxTokens})
 	if err != nil {
 		return "", err
 	}
@@ -191,13 +232,13 @@ func (c *Client) Complete(ctx context.Context, key, model string, msgs []Message
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return "", fmt.Errorf("unexpected OpenRouter response: %w", err)
+		return "", fmt.Errorf("unexpected response from %s: %w", p.name(), err)
 	}
 	if body.Error != nil {
-		return "", fmt.Errorf("OpenRouter: %s", body.Error.Message)
+		return "", fmt.Errorf("%s: %s", p.Name(), body.Error.Message)
 	}
 	if len(body.Choices) == 0 {
-		return "", errors.New("OpenRouter returned no reply")
+		return "", errors.New(p.Name() + " returned no reply")
 	}
 	return strings.TrimSpace(body.Choices[0].Message.Content), nil
 }
@@ -205,8 +246,8 @@ func (c *Client) Complete(ctx context.Context, key, model string, msgs []Message
 // Stream sends the conversation and calls onDelta with each piece of the reply
 // as it is generated. It returns the whole reply; on error (or cancellation)
 // the part received so far is returned with the error.
-func (c *Client) Stream(ctx context.Context, key, model string, msgs []Message, onDelta func(string) error) (string, error) {
-	res, err := c.do(ctx, http.MethodPost, "/chat/completions", key, map[string]any{"model": model, "messages": msgs, "stream": true})
+func (c *Client) Stream(ctx context.Context, p Provider, model string, msgs []Message, onDelta func(string) error) (string, error) {
+	res, err := c.do(ctx, http.MethodPost, "/chat/completions", p, map[string]any{"model": model, "messages": msgs, "stream": true})
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +283,7 @@ func (c *Client) Stream(ctx context.Context, key, model string, msgs []Message, 
 			continue
 		}
 		if chunk.Error != nil {
-			return full.String(), fmt.Errorf("OpenRouter: %s", chunk.Error.Message)
+			return full.String(), fmt.Errorf("%s: %s", p.Name(), chunk.Error.Message)
 		}
 		for _, ch := range chunk.Choices {
 			if ch.Delta.Content == "" {

@@ -224,6 +224,10 @@ type Plan struct {
 	RegistryPass string
 	// Backup copies the database before anything changes; it returns the backup path.
 	Backup func(ctx context.Context) (string, error)
+	// Verify checks the signature of the pulled image. It returns the image
+	// pinned to the verified digest (or "" to keep Image) and a line for the
+	// update log; an error stops the update before anything changes.
+	Verify func(ctx context.Context, image string) (pinned, message string, err error)
 }
 
 // Launch pulls the image, backs up the data and starts the updater container,
@@ -248,6 +252,23 @@ func Launch(ctx context.Context, d *Docker, p Plan) (State, error) {
 			return fail(fmt.Errorf("pull %s: %w", p.Image, err))
 		}
 		st.Log(p.DataDir, "Image downloaded")
+	}
+	if p.Verify != nil {
+		pinned, msg, err := p.Verify(ctx, p.Image)
+		if err != nil {
+			return fail(err)
+		}
+		if msg != "" {
+			st.Log(p.DataDir, "%s", msg)
+		}
+		if pinned != "" && pinned != p.Image {
+			if !d.ImageExists(ctx, pinned) {
+				if err := d.Pull(ctx, pinned, p.RegistryUser, p.RegistryPass, func(string) {}); err != nil {
+					return fail(fmt.Errorf("pull %s: %w", pinned, err))
+				}
+			}
+			p.Image, st.Image = pinned, pinned
+		}
 	}
 	if p.Backup != nil {
 		path, err := p.Backup(ctx)

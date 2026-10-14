@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,7 +32,10 @@ const (
 var chatModelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$`)
 
 type chatConfig struct {
-	Enabled      bool
+	Enabled bool
+	// Provider is "openrouter" or "openai" (an OpenAI-compatible server at BaseURL).
+	Provider     string
+	BaseURL      string
 	Key          string
 	Model        string
 	Access       string // all | admins | selected
@@ -42,6 +46,8 @@ type chatConfig struct {
 func (s *Server) chatConfig(ctx context.Context) chatConfig {
 	c := chatConfig{
 		Enabled:      s.db.Setting(ctx, "chat_enabled") == "true",
+		Provider:     firstNonEmpty(s.db.Setting(ctx, "chat_provider"), "openrouter"),
+		BaseURL:      s.db.Setting(ctx, "chat_base_url"),
 		Key:          s.box.MustDecrypt(s.db.Setting(ctx, "chat_api_key")),
 		Model:        s.db.Setting(ctx, "chat_model"),
 		Access:       firstNonEmpty(s.db.Setting(ctx, "chat_access"), "admins"),
@@ -54,7 +60,24 @@ func (s *Server) chatConfig(ctx context.Context) chatConfig {
 	return c
 }
 
-func (c chatConfig) ready() bool { return c.Enabled && c.Key != "" && c.Model != "" }
+// provider is where the assistant's model runs.
+func (c chatConfig) provider() assistant.Provider {
+	if c.Provider == "openai" {
+		return assistant.Provider{BaseURL: c.BaseURL, Key: c.Key}
+	}
+	return assistant.Provider{Key: c.Key}
+}
+
+// ready: a local server needs no key, OpenRouter does.
+func (c chatConfig) ready() bool {
+	if !c.Enabled || c.Model == "" {
+		return false
+	}
+	if c.Provider == "openai" {
+		return c.BaseURL != ""
+	}
+	return c.Key != ""
+}
 
 func (c chatConfig) allows(u store.User) bool {
 	if !c.ready() || u.Disabled {
@@ -70,7 +93,7 @@ func (c chatConfig) allows(u store.User) bool {
 }
 
 func (s *Server) chatSettingsOut(c chatConfig) map[string]any {
-	return map[string]any{"enabled": c.Enabled, "api_key_set": c.Key != "", "model": c.Model, "access": c.Access, "user_ids": c.UserIDs, "instructions": c.Instructions}
+	return map[string]any{"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "", "model": c.Model, "access": c.Access, "user_ids": c.UserIDs, "instructions": c.Instructions}
 }
 
 func (s *Server) chatStatus(w http.ResponseWriter, r *http.Request) error {
@@ -85,6 +108,8 @@ func (s *Server) getChatSettings(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Enabled      *bool    `json:"enabled"`
+		Provider     *string  `json:"provider"`
+		BaseURL      *string  `json:"base_url"`
 		APIKey       *string  `json:"api_key"`
 		ClearAPIKey  bool     `json:"clear_api_key"`
 		Model        *string  `json:"model"`
@@ -100,6 +125,19 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 	if in.Enabled != nil {
 		set["chat_enabled"] = fmt.Sprint(*in.Enabled)
 	}
+	if in.Provider != nil {
+		if *in.Provider != "openrouter" && *in.Provider != "openai" {
+			return badRequest("provider must be openrouter or openai")
+		}
+		set["chat_provider"] = *in.Provider
+	}
+	if in.BaseURL != nil {
+		u := strings.TrimRight(strings.TrimSpace(*in.BaseURL), "/")
+		if err := validAIBaseURL(u); err != nil {
+			return err
+		}
+		set["chat_base_url"] = u
+	}
 	if in.ClearAPIKey {
 		set["chat_api_key"] = ""
 	} else if in.APIKey != nil && strings.TrimSpace(*in.APIKey) != "" {
@@ -108,7 +146,7 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 	if in.Model != nil {
 		m := strings.TrimSpace(*in.Model)
 		if m != "" && !chatModelRe.MatchString(m) {
-			return badRequest("invalid model id; use an OpenRouter id such as openai/gpt-4o")
+			return badRequest("invalid model id, e.g. openai/gpt-4o on OpenRouter or qwen2.5:7b on Ollama")
 		}
 		set["chat_model"] = m
 	}
@@ -148,10 +186,44 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 	return ok(w, s.chatSettingsOut(c))
 }
 
+// validAIBaseURL checks the address of an OpenAI-compatible server ("" allowed).
+func validAIBaseURL(u string) error {
+	if u == "" {
+		return nil
+	}
+	p, err := url.Parse(u)
+	if err != nil || (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" || p.User != nil {
+		return badRequest("the server address must be an http(s) URL such as http://ollama:11434/v1")
+	}
+	return nil
+}
+
+// formProvider is the provider of the settings form (unsaved values first).
+func (s *Server) formProvider(c chatConfig, provider, baseURL, key string) (assistant.Provider, error) {
+	if provider == "" {
+		provider = c.Provider
+	}
+	if provider != "openai" {
+		return assistant.Provider{Key: firstNonEmpty(key, c.Key)}, nil
+	}
+	baseURL = strings.TrimRight(firstNonEmpty(strings.TrimSpace(baseURL), c.BaseURL), "/")
+	if baseURL == "" {
+		return assistant.Provider{}, badRequest("enter the address of the AI server first")
+	}
+	if err := validAIBaseURL(baseURL); err != nil {
+		return assistant.Provider{}, err
+	}
+	return assistant.Provider{BaseURL: baseURL, Key: firstNonEmpty(key, c.Key)}, nil
+}
+
 func (s *Server) chatModels(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	models, err := s.ai.Models(ctx)
+	p, err := s.formProvider(s.chatConfig(ctx), r.URL.Query().Get("provider"), r.URL.Query().Get("base_url"), "")
+	if err != nil {
+		return err
+	}
+	models, err := s.ai.Models(ctx, p)
 	if err != nil {
 		return errStatus(502, "%v", err)
 	}
@@ -162,28 +234,44 @@ func (s *Server) chatModels(w http.ResponseWriter, r *http.Request) error {
 // from the form take precedence over the saved ones.
 func (s *Server) testChat(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		APIKey string `json:"api_key"`
-		Model  string `json:"model"`
+		Provider string `json:"provider"`
+		BaseURL  string `json:"base_url"`
+		APIKey   string `json:"api_key"`
+		Model    string `json:"model"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
 	c := s.chatConfig(r.Context())
-	key, model := firstNonEmpty(strings.TrimSpace(in.APIKey), c.Key), firstNonEmpty(strings.TrimSpace(in.Model), c.Model)
-	if key == "" {
-		return badRequest("enter an OpenRouter API key first")
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	info, err := s.ai.Key(ctx, key)
+	p, err := s.formProvider(c, in.Provider, in.BaseURL, strings.TrimSpace(in.APIKey))
 	if err != nil {
-		return badRequest("%v", err)
+		return err
 	}
-	res := map[string]any{"ok": true, "label": info.Label, "usage": info.Usage, "limit": info.Limit, "reply": ""}
-	if model != "" {
-		reply, err := s.ai.Complete(ctx, key, model, []assistant.Message{{Role: "user", Content: "Reply with the single word OK."}}, 16)
+	model := firstNonEmpty(strings.TrimSpace(in.Model), c.Model)
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	res := map[string]any{"ok": true, "label": "", "usage": 0, "limit": nil, "reply": ""}
+	if p.OpenRouter() {
+		if p.Key == "" {
+			return badRequest("enter an OpenRouter API key first")
+		}
+		info, err := s.ai.Key(ctx, p)
 		if err != nil {
-			return badRequest("the key works, but model %s failed: %v", model, err)
+			return badRequest("%v", err)
+		}
+		res["label"], res["usage"], res["limit"] = info.Label, info.Usage, info.Limit
+	} else if model == "" {
+		if _, err := s.ai.Models(ctx, p); err != nil {
+			return badRequest("%v", err)
+		}
+	}
+	if model != "" {
+		reply, err := s.ai.Complete(ctx, p, model, []assistant.Message{{Role: "user", Content: "Reply with the single word OK."}}, 16)
+		if err != nil {
+			if p.OpenRouter() {
+				return badRequest("the key works, but model %s failed: %v", model, err)
+			}
+			return badRequest("model %s failed: %v", model, err)
 		}
 		res["reply"] = reply
 	}
@@ -380,7 +468,7 @@ func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 		}
 	}()
 
-	reply, err := s.ai.Stream(streamCtx, c.Key, c.Model, msgs, func(text string) error {
+	reply, err := s.ai.Stream(streamCtx, c.provider(), c.Model, msgs, func(text string) error {
 		return out.send("delta", map[string]string{"text": text})
 	})
 	close(stopPing)

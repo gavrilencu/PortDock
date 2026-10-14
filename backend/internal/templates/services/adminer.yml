@@ -1,0 +1,15 @@
+# Adminer: https://www.adminer.org
+x-portdock:
+  name: Adminer
+  description: "Database management in one page: MySQL, MariaDB, PostgreSQL, SQLite, SQL Server and more. Reaches the databases of its network; protect the domain (Access) before exposing it."
+  category: Developer Tools
+  website: https://www.adminer.org
+  tags: [database, sql, admin]
+  service: adminer
+  port: 8080
+services:
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    environment:
+      ADMINER_DESIGN: pepa-linha

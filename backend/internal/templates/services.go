@@ -1,33 +1,87 @@
 package templates
 
 import (
+	"crypto/rand"
+	"embed"
+	"encoding/base64"
+	"fmt"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/portdock/portdock/internal/secrets"
+	"go.yaml.in/yaml/v3"
 )
 
-// ServiceTemplate is a docker-compose based one-click service.
-// Placeholders rendered at creation time:
+// ServiceTemplate is a one-click service: a docker-compose file whose
+// top-level `x-portdock` key describes it and names the public service:
 //
-//	${PORTDOCK_FQDN}            the service domain (host only)
-//	${PORTDOCK_URL}             https://<domain>
-//	${PORTDOCK_PASSWORD_<NAME>} random 24-char password (stable per NAME)
-//	${PORTDOCK_USER_<NAME>}     random 12-char username
-//	${PORTDOCK_SECRET_<NAME>}   random 64-char hex secret
+//	x-portdock:
+//	  name: n8n
+//	  description: Workflow automation with 400+ integrations.
+//	  category: Low-code & Automation
+//	  website: https://n8n.io
+//	  logo: https://example.com/n8n.svg   # optional
+//	  tags: [automation, workflows]       # optional
+//	  service: n8n                        # the service the domain points to (omit both
+//	  port: 5678                          # for a background service): its port inside the container
+//	services:
+//	  …
 //
-// The top-level `x-portdock` key tells PortDock which service/port to expose.
+// Placeholders rendered when the service is created:
+//
+//	${PORTDOCK_FQDN}               the service domain (host only)
+//	${PORTDOCK_URL}                https://<domain>
+//	${PORTDOCK_PASSWORD_<NAME>}    random 24-character password (the same for every use of NAME)
+//	${PORTDOCK_PASSWORD64_<NAME>}  random 64-character password
+//	${PORTDOCK_USER_<NAME>}        random 12-character lowercase user name
+//	${PORTDOCK_SECRET_<NAME>}      random 64-character hex secret
+//	${PORTDOCK_HEX32_<NAME>}       random hex of 32 (or HEX64, HEX128) characters
+//	${PORTDOCK_RANDOM32_<NAME>}    random letters and digits, 32 (or RANDOM64, RANDOM128) characters
+//	${PORTDOCK_BASE64_<NAME>}      base64 of 32 random bytes (or BASE64x64, BASE64x128 bytes)
 type ServiceTemplate struct {
-	Slug        string `json:"slug"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Category    string `json:"category"`
-	Website     string `json:"website"`
-	Compose     string `json:"compose"`
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Category    string   `json:"category"`
+	Website     string   `json:"website"`
+	Logo        string   `json:"logo,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Service     string   `json:"service,omitempty"` // "" = no public address
+	Port        int      `json:"port,omitempty"`
+	// Key identifies the template to create a service from: its slug, or
+	// catalog/slug for a template of a catalog.
+	Key string `json:"key,omitempty"`
+	// Source is the catalog the template comes from ("" = built in).
+	Source string `json:"source,omitempty"`
+	// HostAccess tells that the template only deploys with host access.
+	HostAccess bool   `json:"host_access,omitempty"`
+	Compose    string `json:"compose,omitempty"`
+	// Notes are what a conversion changed or could not keep.
+	Notes []string `json:"notes,omitempty"`
+	// Required are the variables (${NAME:?…}) to set in the service's
+	// environment before it can start.
+	Required []string `json:"required,omitempty"`
 }
 
-var placeholder = regexp.MustCompile(`\$\{(?:PORTDOCK|SHIPYARD)_(FQDN|URL|PASSWORD|USER|SECRET)(?:_([A-Z0-9_]+))?\}`)
+var requiredVar = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*):?\?[^}]*\}`)
+
+// required lists the variables a compose file needs a value for.
+func required(compose string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range requiredVar.FindAllStringSubmatch(compose, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			out = append(out, m[1])
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+var placeholder = regexp.MustCompile(`\$\{(?:PORTDOCK|SHIPYARD)_(FQDN|URL|PASSWORD64|PASSWORD|USER|SECRET|HEX32|HEX64|HEX128|RANDOM32|RANDOM64|RANDOM128|BASE64x64|BASE64x128|BASE64)(?:_([A-Z0-9_]+))?\}`)
 
 // Render substitutes placeholders in a compose file.
 func Render(compose, domain string) string {
@@ -49,19 +103,105 @@ func Render(compose, domain string) string {
 		if v, ok := generated[key]; ok {
 			return v
 		}
-		var v string
-		switch kind {
-		case "PASSWORD":
-			v = secrets.RandomPassword(24)
-		case "USER":
-			v = strings.ToLower(secrets.RandomPassword(12))
-		case "SECRET":
-			v = secrets.RandomToken(32)
-		}
+		v := random(kind)
 		generated[key] = v
 		return v
 	})
 }
+
+func random(kind string) string {
+	switch kind {
+	case "PASSWORD":
+		return secrets.RandomPassword(24)
+	case "PASSWORD64":
+		return secrets.RandomPassword(64)
+	case "USER":
+		return strings.ToLower(secrets.RandomPassword(12))
+	case "SECRET", "HEX64":
+		return secrets.RandomToken(32)
+	case "HEX32":
+		return secrets.RandomToken(16)
+	case "HEX128":
+		return secrets.RandomToken(64)
+	case "RANDOM32":
+		return secrets.RandomPassword(32)
+	case "RANDOM64":
+		return secrets.RandomPassword(64)
+	case "RANDOM128":
+		return secrets.RandomPassword(128)
+	}
+	n := map[string]int{"BASE64": 32, "BASE64x64": 64, "BASE64x128": 128}[kind]
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
+var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// Parse reads a template: a compose file with its x-portdock description.
+func Parse(slug, compose string) (ServiceTemplate, error) {
+	var spec struct {
+		X struct {
+			Name        string   `yaml:"name"`
+			Description string   `yaml:"description"`
+			Category    string   `yaml:"category"`
+			Website     string   `yaml:"website"`
+			Logo        string   `yaml:"logo"`
+			Tags        []string `yaml:"tags"`
+			Service     string   `yaml:"service"`
+			Port        int      `yaml:"port"`
+		} `yaml:"x-portdock"`
+		Services map[string]yaml.Node `yaml:"services"`
+	}
+	t := ServiceTemplate{Slug: slug, Compose: compose}
+	if !slugRe.MatchString(slug) {
+		return t, fmt.Errorf("template %q: the slug must be lowercase letters, digits and dashes", slug)
+	}
+	if err := yaml.Unmarshal([]byte(compose), &spec); err != nil {
+		return t, fmt.Errorf("template %s: invalid YAML: %w", slug, err)
+	}
+	x := spec.X
+	t.Name, t.Description, t.Category, t.Website, t.Logo, t.Tags, t.Service, t.Port =
+		strings.TrimSpace(x.Name), strings.TrimSpace(x.Description), strings.TrimSpace(x.Category), x.Website, x.Logo, x.Tags, x.Service, x.Port
+	switch {
+	case len(spec.Services) == 0:
+		return t, fmt.Errorf("template %s: no services", slug)
+	case t.Name == "":
+		return t, fmt.Errorf("template %s: x-portdock.name is required", slug)
+	case (t.Service == "") != (t.Port == 0) || t.Port < 0 || t.Port > 65535:
+		return t, fmt.Errorf("template %s: x-portdock.service and x-portdock.port name the public service (both, or neither for a service without a domain)", slug)
+	}
+	if _, ok := spec.Services[t.Service]; t.Service != "" && !ok {
+		return t, fmt.Errorf("template %s: x-portdock.service %q is not a service of the file", slug, t.Service)
+	}
+	if t.Category == "" {
+		t.Category = "Other"
+	}
+	t.Required = required(compose)
+	return t, nil
+}
+
+//go:embed services/*.yml
+var builtin embed.FS
+
+// Services are the built-in templates, by slug (services/<slug>.yml).
+var Services = func() map[string]ServiceTemplate {
+	out := map[string]ServiceTemplate{}
+	files, _ := builtin.ReadDir("services")
+	for _, f := range files {
+		b, err := builtin.ReadFile("services/" + f.Name())
+		if err != nil {
+			panic(err)
+		}
+		// The same text on every checkout (Git may convert line endings).
+		t, err := Parse(strings.TrimSuffix(path.Base(f.Name()), ".yml"), strings.ReplaceAll(string(b), "\r\n", "\n"))
+		if err != nil {
+			panic("templates: " + err.Error())
+		}
+		out[t.Slug] = t
+	}
+	return out
+}()
 
 func ServiceList() []ServiceTemplate {
 	out := make([]ServiceTemplate, 0, len(Services))
@@ -70,397 +210,4 @@ func ServiceList() []ServiceTemplate {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
-}
-
-var Services = map[string]ServiceTemplate{
-	"litellm": {
-		Slug: "litellm", Name: "LiteLLM", Category: "AI", Website: "https://www.litellm.ai",
-		Description: "OpenAI-compatible LLM gateway with admin UI, backed by PostgreSQL. Log in as admin with UI_PASSWORD (see Compose tab).",
-		Compose: `x-portdock:
-  service: litellm
-  port: 4000
-services:
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://litellm:${PORTDOCK_PASSWORD_DB}@postgres:5432/litellm
-      LITELLM_MASTER_KEY: sk-${PORTDOCK_SECRET_MASTER}
-      LITELLM_SALT_KEY: sk-${PORTDOCK_SECRET_SALT}
-      STORE_MODEL_IN_DB: "True"
-      UI_USERNAME: admin
-      UI_PASSWORD: ${PORTDOCK_PASSWORD_UI}
-    depends_on:
-      postgres:
-        condition: service_healthy
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      POSTGRES_DB: litellm
-    volumes:
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
-      interval: 5s
-      retries: 10
-volumes:
-  pg-data:
-`,
-	},
-	"wordpress": {
-		Slug: "wordpress", Name: "WordPress", Category: "CMS", Website: "https://wordpress.org",
-		Description: "The world's most popular CMS, with MariaDB.",
-		Compose: `x-portdock:
-  service: wordpress
-  port: 80
-services:
-  wordpress:
-    image: wordpress:6-php8.3-apache
-    restart: unless-stopped
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      WORDPRESS_DB_NAME: wordpress
-    volumes:
-      - wp-data:/var/www/html
-    depends_on:
-      db:
-        condition: service_healthy
-  db:
-    image: mariadb:11
-    restart: unless-stopped
-    environment:
-      MARIADB_DATABASE: wordpress
-      MARIADB_USER: wordpress
-      MARIADB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      MARIADB_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
-    volumes:
-      - db-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      retries: 10
-volumes:
-  wp-data:
-  db-data:
-`,
-	},
-	"uptime-kuma": {
-		Slug: "uptime-kuma", Name: "Uptime Kuma", Category: "Monitoring", Website: "https://uptime.kuma.pet",
-		Description: "Self-hosted uptime monitoring with status pages.",
-		Compose: `x-portdock:
-  service: uptime-kuma
-  port: 3001
-services:
-  uptime-kuma:
-    image: louislam/uptime-kuma:2
-    restart: unless-stopped
-    volumes:
-      - data:/app/data
-volumes:
-  data:
-`,
-	},
-	"n8n": {
-		Slug: "n8n", Name: "n8n", Category: "Automation", Website: "https://n8n.io",
-		Description: "Workflow automation with 400+ integrations, backed by PostgreSQL.",
-		Compose: `x-portdock:
-  service: n8n
-  port: 5678
-services:
-  n8n:
-    image: n8nio/n8n:latest
-    restart: unless-stopped
-    environment:
-      N8N_HOST: ${PORTDOCK_FQDN}
-      N8N_PROTOCOL: https
-      WEBHOOK_URL: ${PORTDOCK_URL}/
-      N8N_ENCRYPTION_KEY: ${PORTDOCK_SECRET_KEY}
-      DB_TYPE: postgresdb
-      DB_POSTGRESDB_HOST: postgres
-      DB_POSTGRESDB_DATABASE: n8n
-      DB_POSTGRESDB_USER: n8n
-      DB_POSTGRESDB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      GENERIC_TIMEZONE: UTC
-    volumes:
-      - n8n-data:/home/node/.n8n
-    depends_on:
-      postgres:
-        condition: service_healthy
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: n8n
-      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      POSTGRES_DB: n8n
-    volumes:
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
-      interval: 5s
-      retries: 10
-volumes:
-  n8n-data:
-  pg-data:
-`,
-	},
-	"gitea": {
-		Slug: "gitea", Name: "Gitea", Category: "Development", Website: "https://gitea.com",
-		Description: "Lightweight self-hosted Git service with Actions CI.",
-		Compose: `x-portdock:
-  service: gitea
-  port: 3000
-services:
-  gitea:
-    image: gitea/gitea:1
-    restart: unless-stopped
-    environment:
-      GITEA__server__ROOT_URL: ${PORTDOCK_URL}/
-      GITEA__server__DOMAIN: ${PORTDOCK_FQDN}
-      GITEA__security__SECRET_KEY: ${PORTDOCK_SECRET_KEY}
-      GITEA__database__DB_TYPE: sqlite3
-    volumes:
-      - data:/data
-    ports:
-      - "2222:22"
-volumes:
-  data:
-`,
-	},
-	"minio": {
-		Slug: "minio", Name: "MinIO", Category: "Storage", Website: "https://min.io",
-		Description: "S3-compatible object storage (console exposed on the domain, API on :9000).",
-		Compose: `x-portdock:
-  service: minio
-  port: 9001
-services:
-  minio:
-    image: quay.io/minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${PORTDOCK_USER_ADMIN}
-      MINIO_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
-      MINIO_BROWSER_REDIRECT_URL: ${PORTDOCK_URL}
-    volumes:
-      - data:/data
-    ports:
-      - "9000:9000"
-volumes:
-  data:
-`,
-	},
-	"umami": {
-		Slug: "umami", Name: "Umami", Category: "Analytics", Website: "https://umami.is",
-		Description: "Privacy-focused, GDPR compliant web analytics.",
-		Compose: `x-portdock:
-  service: umami
-  port: 3000
-services:
-  umami:
-    image: ghcr.io/umami-software/umami:postgresql-latest
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://umami:${PORTDOCK_PASSWORD_DB}@postgres:5432/umami
-      APP_SECRET: ${PORTDOCK_SECRET_APP}
-    depends_on:
-      postgres:
-        condition: service_healthy
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: umami
-      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      POSTGRES_DB: umami
-    volumes:
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
-      interval: 5s
-      retries: 10
-volumes:
-  pg-data:
-`,
-	},
-	"grafana": {
-		Slug: "grafana", Name: "Grafana", Category: "Monitoring", Website: "https://grafana.com",
-		Description: "Dashboards and observability for metrics, logs and traces.",
-		Compose: `x-portdock:
-  service: grafana
-  port: 3000
-services:
-  grafana:
-    image: grafana/grafana:latest
-    restart: unless-stopped
-    environment:
-      GF_SERVER_ROOT_URL: ${PORTDOCK_URL}
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
-    volumes:
-      - data:/var/lib/grafana
-volumes:
-  data:
-`,
-	},
-	"vaultwarden": {
-		Slug: "vaultwarden", Name: "Vaultwarden", Category: "Security", Website: "https://github.com/dani-garcia/vaultwarden",
-		Description: "Bitwarden-compatible password manager server.",
-		Compose: `x-portdock:
-  service: vaultwarden
-  port: 80
-services:
-  vaultwarden:
-    image: vaultwarden/server:latest
-    restart: unless-stopped
-    environment:
-      DOMAIN: ${PORTDOCK_URL}
-      ADMIN_TOKEN: ${PORTDOCK_SECRET_ADMIN}
-      SIGNUPS_ALLOWED: "true"
-    volumes:
-      - data:/data
-volumes:
-  data:
-`,
-	},
-	"ghost": {
-		Slug: "ghost", Name: "Ghost", Category: "CMS", Website: "https://ghost.org",
-		Description: "Professional publishing platform with MySQL.",
-		Compose: `x-portdock:
-  service: ghost
-  port: 2368
-services:
-  ghost:
-    image: ghost:6-alpine
-    restart: unless-stopped
-    environment:
-      url: ${PORTDOCK_URL}
-      database__client: mysql
-      database__connection__host: mysql
-      database__connection__user: ghost
-      database__connection__password: ${PORTDOCK_PASSWORD_DB}
-      database__connection__database: ghost
-    volumes:
-      - content:/var/lib/ghost/content
-    depends_on:
-      mysql:
-        condition: service_healthy
-  mysql:
-    image: mysql:8.4
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
-      MYSQL_DATABASE: ghost
-      MYSQL_USER: ghost
-      MYSQL_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-    volumes:
-      - mysql:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
-      interval: 10s
-      retries: 10
-volumes:
-  content:
-  mysql:
-`,
-	},
-	"metabase": {
-		Slug: "metabase", Name: "Metabase", Category: "Analytics", Website: "https://metabase.com",
-		Description: "Business intelligence and dashboards for your data.",
-		Compose: `x-portdock:
-  service: metabase
-  port: 3000
-services:
-  metabase:
-    image: metabase/metabase:latest
-    restart: unless-stopped
-    environment:
-      MB_DB_TYPE: postgres
-      MB_DB_DBNAME: metabase
-      MB_DB_PORT: "5432"
-      MB_DB_USER: metabase
-      MB_DB_PASS: ${PORTDOCK_PASSWORD_DB}
-      MB_DB_HOST: postgres
-      MB_SITE_URL: ${PORTDOCK_URL}
-    depends_on:
-      postgres:
-        condition: service_healthy
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: metabase
-      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      POSTGRES_DB: metabase
-    volumes:
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U metabase -d metabase"]
-      interval: 5s
-      retries: 10
-volumes:
-  pg-data:
-`,
-	},
-	"pgadmin": {
-		Slug: "pgadmin", Name: "pgAdmin", Category: "Database", Website: "https://pgadmin.org",
-		Description: "Web administration tool for PostgreSQL.",
-		Compose: `x-portdock:
-  service: pgadmin
-  port: 80
-services:
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
-    volumes:
-      - data:/var/lib/pgadmin
-volumes:
-  data:
-`,
-	},
-	"nocodb": {
-		Slug: "nocodb", Name: "NocoDB", Category: "Productivity", Website: "https://nocodb.com",
-		Description: "Open-source Airtable alternative on top of PostgreSQL.",
-		Compose: `x-portdock:
-  service: nocodb
-  port: 8080
-services:
-  nocodb:
-    image: nocodb/nocodb:latest
-    restart: unless-stopped
-    environment:
-      NC_DB: pg://postgres:5432?u=nocodb&p=${PORTDOCK_PASSWORD_DB}&d=nocodb
-      NC_PUBLIC_URL: ${PORTDOCK_URL}
-      NC_AUTH_JWT_SECRET: ${PORTDOCK_SECRET_JWT}
-    volumes:
-      - data:/usr/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: nocodb
-      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
-      POSTGRES_DB: nocodb
-    volumes:
-      - pg-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nocodb -d nocodb"]
-      interval: 5s
-      retries: 10
-volumes:
-  data:
-  pg-data:
-`,
-	},
 }

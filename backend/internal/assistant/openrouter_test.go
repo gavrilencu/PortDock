@@ -70,33 +70,33 @@ func TestClient(t *testing.T) {
 	c.Referer = func() string { return "https://portdock.example.com" }
 	ctx := context.Background()
 
-	models, err := c.Models(ctx)
+	models, err := c.Models(ctx, Provider{})
 	if err != nil || len(models) != 2 || models[0].ID != "openai/gpt-4o" || models[0].PromptPrice != "0.0000025" || models[1].CompletionPrice != "0" {
 		t.Fatalf("models: %+v %v", models, err)
 	}
-	if info, err := c.Key(ctx, "good"); err != nil || info.Label == "" || info.Usage != 1.25 || info.Limit != nil {
+	if info, err := c.Key(ctx, Provider{Key: "good"}); err != nil || info.Label == "" || info.Usage != 1.25 || info.Limit != nil {
 		t.Fatalf("key: %+v %v", info, err)
 	}
-	if _, err := c.Key(ctx, "bad"); err == nil || !strings.Contains(err.Error(), "rejected") {
+	if _, err := c.Key(ctx, Provider{Key: "bad"}); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("a bad key must be rejected clearly, got %v", err)
 	}
-	if reply, err := c.Complete(ctx, "good", "openai/gpt-4o", []Message{{Role: "user", Content: "hi"}}, 5); err != nil || reply != "OK" {
+	if reply, err := c.Complete(ctx, Provider{Key: "good"}, "openai/gpt-4o", []Message{{Role: "user", Content: "hi"}}, 5); err != nil || reply != "OK" {
 		t.Fatalf("complete: %q %v", reply, err)
 	}
 
 	var deltas []string
-	full, err := c.Stream(ctx, "good", "openai/gpt-4o", []Message{{Role: "user", Content: "hi"}}, func(s string) error {
+	full, err := c.Stream(ctx, Provider{Key: "good"}, "openai/gpt-4o", []Message{{Role: "user", Content: "hi"}}, func(s string) error {
 		deltas = append(deltas, s)
 		return nil
 	})
 	if err != nil || full != "Hello world" || len(deltas) != 3 {
 		t.Fatalf("stream: %q %v %v", full, deltas, err)
 	}
-	full, err = c.Stream(ctx, "good", "broken/model", nil, func(string) error { return nil })
+	full, err = c.Stream(ctx, Provider{Key: "good"}, "broken/model", nil, func(string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "provider overloaded") || full != "Hello world" {
 		t.Fatalf("mid-stream errors keep the partial reply: %q %v", full, err)
 	}
-	if _, err := c.Stream(ctx, "good", "missing/model", nil, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "not a valid model") {
+	if _, err := c.Stream(ctx, Provider{Key: "good"}, "missing/model", nil, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "not a valid model") {
 		t.Fatalf("unknown model: %v", err)
 	}
 }

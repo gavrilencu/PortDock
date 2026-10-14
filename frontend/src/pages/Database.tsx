@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, Globe, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, TerminalSquare, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, CalendarClock, Database as DatabaseIcon, DatabaseBackup, Download, FlaskConical, Globe, LayoutGrid, Play, Plus, RotateCw, Save, ScrollText, Settings2, Square, SquareTerminal, TerminalSquare, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Backup, BackupRunsResponse, DatabaseDetail } from "../lib/types";
-import { Badge, Button, Card, CopyButton, CopyField, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
+import { Badge, Button, Card, CopyButton, CopyField, Empty, ErrorBox, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge, Switch, Table, Tabs, useConfirm } from "../components/ui";
 import { ContainerLogs } from "../components/ContainerTable";
 import { DNSBadge } from "../components/Domains";
 import { Terminal } from "../components/LazyTerminal";
@@ -13,6 +13,8 @@ import { cn, formatBytes, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { SQLConsole } from "../components/sqlconsole";
 import { intlLocale, t, tk, tMaybe, tx } from "../lib/i18n";
+import { PointInTimeRecovery } from "../components/pitr";
+import { Replicas } from "../components/replicas";
 
 type Tab = "overview" | "metrics" | "query" | "backups" | "logs" | "terminal" | "settings";
 
@@ -103,6 +105,7 @@ export function DatabasePage() {
             </div>
           </Card>
           <PublicAccess db={db} />
+          {db.engine === "postgres" && <Replicas db={db} />}
         </div>
       )}
       {tab === "metrics" && <MetricsPanel scope="database" id={db.id} />}
@@ -269,7 +272,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
     queryKey: ["backup-runs", db.id],
     queryFn: () => api.get<BackupRunsResponse>(`/databases/${db.id}/backup-runs`),
     refetchInterval: (q) =>
-      q.state.data?.runs.some((r) => r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running") ? 2000 : 15_000,
+      q.state.data?.runs.some((r) => [r.status, r.restore_status, r.verify_status].some((s) => s === "pending" || s === "running")) ? 2000 : 15_000,
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ["backup-runs", db.id] });
   const [edit, setEdit] = useState<Partial<Backup> | null>(null);
@@ -299,6 +302,14 @@ function Backups({ db }: { db: DatabaseDetail }) {
     onSuccess: () => {
       refresh();
       toast.success(t("Restore queued"), { description: t("A safety backup of the current data is taken first.") });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const verify = useMutation({
+    mutationFn: (rid: number) => api.post(`/backup-runs/${rid}/verify`),
+    onSuccess: () => {
+      refresh();
+      toast.success(t("Test restore queued"), { description: t("The backup is restored into a temporary container; the database is not touched.") });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -349,7 +360,8 @@ function Backups({ db }: { db: DatabaseDetail }) {
             <tbody>
               {(info.runs ?? []).map((r) => {
                 const st = runStatus[r.status] ?? { status: r.status, label: r.status };
-                const busy = r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running";
+                const testing = r.verify_status === "pending" || r.verify_status === "running";
+                const busy = r.status === "pending" || r.status === "running" || r.restore_status === "pending" || r.restore_status === "running" || testing;
                 return (
                   <tr key={r.id}>
                     <td className="align-top">
@@ -359,6 +371,15 @@ function Backups({ db }: { db: DatabaseDetail }) {
                         {r.restore_status === "running" && <Badge tone="info">{r.restore_message ? tMaybe(r.restore_message) : t("Restoring…")}</Badge>}
                         {r.restore_status === "success" && <Badge tone="success">{t("Restored {time}", { time: timeAgo(r.restored_at) })}</Badge>}
                         {r.restore_status === "failed" && <Badge tone="danger">{t("Restore failed")}</Badge>}
+                        {r.verify_status === "pending" && <Badge tone="info">{t("Test restore pending")}</Badge>}
+                        {r.verify_status === "running" && <Badge tone="info">{r.verify_message ? tMaybe(r.verify_message) : t("Testing…")}</Badge>}
+                        {r.verify_status === "success" && (
+                          <Badge tone="success" className="gap-1">
+                            <FlaskConical className="size-3" />
+                            {t("Restore tested {time}", { time: timeAgo(r.verified_at) })}
+                          </Badge>
+                        )}
+                        {r.verify_status === "failed" && <Badge tone="danger">{t("Test restore failed")}</Badge>}
                       </div>
                     </td>
                     <td className="align-top text-xs text-muted" title={new Date(r.created_at).toLocaleString(intlLocale())}>
@@ -384,6 +405,8 @@ function Backups({ db }: { db: DatabaseDetail }) {
                         )}
                         {r.message && <p className={cn("mt-1 text-xs", r.status === "failed" ? "text-danger" : "text-warning")}>{tMaybe(r.message)}</p>}
                         {r.restore_status === "failed" && r.restore_message && <p className="mt-1 text-xs text-danger">{tMaybe(r.restore_message)}</p>}
+                        {r.verify_status === "success" && r.verify_message && <p className="mt-1 text-xs text-muted">{r.verify_message}</p>}
+                        {r.verify_status === "failed" && r.verify_message && <p className="mt-1 whitespace-pre-wrap text-xs text-danger">{tMaybe(r.verify_message)}</p>}
                       </div>
                     </td>
                     <td className="align-top">
@@ -395,6 +418,12 @@ function Backups({ db }: { db: DatabaseDetail }) {
                                 {t("Download")}
                               </Button>
                             </a>
+                            {info.verify && (
+                              <Button size="sm" variant="ghost" disabled={busy} loading={verify.isPending && verify.variables === r.id} onClick={() => verify.mutate(r.id)} title={t("Restore into a temporary container and count what it holds")}>
+                                <FlaskConical className="size-3.5" />
+                                {t("Test restore")}
+                              </Button>
+                            )}
                             {info.restore && (
                               <Button
                                 size="sm"
@@ -472,6 +501,7 @@ function Backups({ db }: { db: DatabaseDetail }) {
           </div>
         )}
       </Card>
+      {db.engine === "postgres" && <PointInTimeRecovery db={db} />}
       <Modal
         open={!!edit}
         onClose={() => setEdit(null)}
@@ -491,11 +521,48 @@ function Backups({ db }: { db: DatabaseDetail }) {
               <Input type="number" value={edit.retention} onChange={(e) => setEdit({ ...edit, retention: Number(e.target.value) })} />
             </Field>
             <Switch checked={!!edit.upload_s3} onChange={(v) => setEdit({ ...edit, upload_s3: v })} label={t("Upload to S3")} description={t("Configure the S3 destination in Settings → Backups.")} />
+            {info.verify && <VerifySchedule value={edit.verify_schedule ?? ""} onChange={(v) => setEdit({ ...edit, verify_schedule: v })} />}
             <Switch checked={!!edit.enabled} onChange={(v) => setEdit({ ...edit, enabled: v })} label={t("Enabled")} />
           </div>
         )}
       </Modal>
     </div>
+  );
+}
+
+const verifyPresets = [
+  { value: "", label: tk("Never") },
+  { value: "0 5 * * 0", label: tk("Test restore weekly") },
+  { value: "0 5 * * *", label: tk("Test restore daily") },
+];
+
+// VerifySchedule picks when the latest backup of a schedule is test-restored.
+function VerifySchedule({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const preset = verifyPresets.some((p) => p.value === value);
+  const [custom, setCustom] = useState(!preset);
+  return (
+    <Field label={t("Test restores")} hint={t("Restores the latest backup into a temporary container (no network, the database untouched), counts its tables and alerts when it fails.")}>
+      <div className="flex gap-2">
+        <Select
+          value={custom ? "custom" : value}
+          onChange={(e) => {
+            if (e.target.value === "custom") {
+              setCustom(true);
+              onChange(value || "0 5 * * 0");
+            } else {
+              setCustom(false);
+              onChange(e.target.value);
+            }
+          }}
+        >
+          <option value="">{t("Never")}</option>
+          <option value="0 5 * * 0">{t("Weekly, Sunday at 05:00")}</option>
+          <option value="0 5 * * *">{t("Daily at 05:00")}</option>
+          <option value="custom">{t("Custom schedule")}</option>
+        </Select>
+        {custom && <Input value={value} onChange={(e) => onChange(e.target.value)} className="font-mono" placeholder="0 5 * * 0" />}
+      </div>
+    </Field>
   );
 }
 
@@ -512,7 +579,14 @@ function BackupItem({ b, onRun, onEdit, onDelete }: { b: Backup; onRun: () => vo
     <div className="flex flex-wrap items-center gap-4 px-5 py-3">
       <code className="rounded-md bg-panel-2 px-2 py-1 font-mono text-xs">{b.schedule}</code>
       <div className="flex-1 text-sm text-muted">
-        {t("keep {count} · last run {time}", { count: b.retention, time: timeAgo(b.last_run_at) })} {b.upload_s3 && <Badge tone="info">S3</Badge>} {!b.enabled && <Badge>{t("paused")}</Badge>}
+        {t("keep {count} · last run {time}", { count: b.retention, time: timeAgo(b.last_run_at) })} {b.upload_s3 && <Badge tone="info">S3</Badge>}{" "}
+        {b.verify_schedule && (
+          <Badge tone="success" className="gap-1">
+            <FlaskConical className="size-3" />
+            {verifyPresets.find((p) => p.value === b.verify_schedule) ? t(verifyPresets.find((p) => p.value === b.verify_schedule)!.label) : b.verify_schedule}
+          </Badge>
+        )}{" "}
+        {!b.enabled && <Badge>{t("paused")}</Badge>}
       </div>
       <Button size="sm" icon={<Play className="size-3.5" />} loading={run.isPending} onClick={() => run.mutate()}>
         {t("Run now")}

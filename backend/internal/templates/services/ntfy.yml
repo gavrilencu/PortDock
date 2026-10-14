@@ -1,0 +1,24 @@
+# ntfy: https://ntfy.sh
+x-portdock:
+  name: ntfy
+  description: "Send push notifications to phones and desktops with a simple HTTP request (curl -d message https://your-domain/topic). Topics are open: restrict them with ntfy's access control if needed."
+  category: Messaging & Streaming
+  website: https://ntfy.sh
+  tags: [notifications, push, alerts]
+  service: ntfy
+  port: 80
+services:
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${PORTDOCK_URL}
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+    volumes:
+      - data:/var/lib/ntfy
+volumes:
+  data:

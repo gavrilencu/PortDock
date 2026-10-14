@@ -1,0 +1,46 @@
+# Directus: https://directus.io
+x-portdock:
+  name: Directus
+  description: "Headless CMS and data platform: a REST and GraphQL API with an admin app over PostgreSQL. Sign in with admin@example.com and the ADMIN_PASSWORD of the Compose tab."
+  category: CMS & Websites
+  website: https://directus.io
+  tags: [cms, headless, api, graphql]
+  service: directus
+  port: 8055
+services:
+  directus:
+    image: directus/directus:11
+    restart: unless-stopped
+    environment:
+      KEY: ${PORTDOCK_SECRET_KEY}
+      SECRET: ${PORTDOCK_SECRET_JWT}
+      PUBLIC_URL: ${PORTDOCK_URL}
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: directus
+      DB_USER: directus
+      DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+    volumes:
+      - uploads:/directus/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: directus
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus -d directus"]
+      interval: 5s
+      retries: 10
+volumes:
+  uploads:
+  pg-data:

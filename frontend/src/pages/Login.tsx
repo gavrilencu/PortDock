@@ -9,6 +9,7 @@ import { Logo, useAuthStatus } from "../components/Layout";
 import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui";
 import { LanguageSelect } from "../components/LanguagePicker";
 import { Credits } from "../components/credits";
+import { SetupRestore } from "../components/instanceBackup";
 import { t, tk, tx } from "../lib/i18n";
 
 const highlights = [
@@ -25,6 +26,7 @@ export function LoginPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [mfa, setMfa] = useState<{ token: string; code: string; recovery: boolean } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<unknown>(params.get("sso_error") ? new Error(params.get("sso_error")!) : null);
   const [busy, setBusy] = useState(false);
 
@@ -32,7 +34,8 @@ export function LoginPage() {
   // Only paths on this site: "?next=https://evil.example" (or "//evil.example")
   // after a sign-in would be a convincing phishing step.
   const raw = params.get("next") || "/";
-  const next = raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : "/";
+  // Browsers drop tabs and line breaks and read "\" as "/": "/<tab>/evil.example" leaves the site.
+  const next = /^\/(?!\/)[^\\\s\x00-\x1f\x7f]*$/.test(raw) ? raw : "/";
   if (data?.user) return <Navigate to={next} replace />;
   const setup = data?.setup_required;
   const ssoList = setup ? [] : (providers.data?.providers ?? []);
@@ -129,6 +132,8 @@ export function LoginPage() {
                 </button>
               </div>
             </form>
+          ) : setup && restoring ? (
+            <SetupRestore onCancel={() => setRestoring(false)} />
           ) : (
             <form onSubmit={submit} className="w-full max-w-[360px]">
               <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? t("Set up your instance") : t("Sign in")}</h1>
@@ -171,6 +176,11 @@ export function LoginPage() {
                   <Button type="submit" variant={ssoList.length > 0 ? "secondary" : "primary"} size="lg" className="w-full justify-center" loading={busy} trailing={!busy && <ArrowRight />}>
                     {setup ? t("Create owner account") : ssoList.length > 0 ? t("Continue with email") : t("Continue")}
                   </Button>
+                  {setup && (
+                    <button type="button" onClick={() => setRestoring(true)} className="text-xs text-muted underline-offset-2 hover:text-fg hover:underline">
+                      {t("Moving an instance? Restore it from a backup")}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="mt-4 space-y-4">

@@ -170,8 +170,8 @@ func (s *Server) pushOutcome(ctx context.Context, app store.Application, branch,
 	return res, nil
 }
 
-func (s *Server) handlePullRequest(ctx context.Context, w http.ResponseWriter, app store.Application, action string, number int, branch, sha, title string) error {
-	res, err := s.pullRequestOutcome(ctx, app, action, number, branch, sha, title)
+func (s *Server) handlePullRequest(ctx context.Context, w http.ResponseWriter, app store.Application, action string, number int, branch, sha, title string, fork bool) error {
+	res, err := s.pullRequestOutcome(ctx, app, action, number, branch, sha, title, fork)
 	if err != nil {
 		return err
 	}
@@ -179,7 +179,9 @@ func (s *Server) handlePullRequest(ctx context.Context, w http.ResponseWriter, a
 }
 
 // pullRequestOutcome creates, updates or removes the preview deployment of a PR.
-func (s *Server) pullRequestOutcome(ctx context.Context, app store.Application, action string, number int, branch, sha, title string) (webhookResult, error) {
+// Pull requests from forks are not deployed: anyone can open one, and its
+// build and containers would run with the application's variables.
+func (s *Server) pullRequestOutcome(ctx context.Context, app store.Application, action string, number int, branch, sha, title string, fork bool) (webhookResult, error) {
 	res := webhookResult{Application: app.Name}
 	if !app.PreviewEnabled {
 		res.Status, res.Message = "ignored", "preview deployments are disabled"
@@ -187,6 +189,10 @@ func (s *Server) pullRequestOutcome(ctx context.Context, app store.Application, 
 	}
 	switch action {
 	case "opened", "reopened", "synchronize", "open", "reopen", "update":
+		if fork {
+			res.Status, res.Message = "ignored", "pull requests from forks are not deployed as previews"
+			return res, nil
+		}
 		d, err := s.engine.Enqueue(ctx, app, deploy.Options{Trigger: "webhook", PRNumber: number, Branch: branch, CommitSHA: sha, CommitMessage: firstLine(title)})
 		if err != nil {
 			return res, err
@@ -256,11 +262,13 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 			PullRequest struct {
 				Title string `json:"title"`
 				Head  struct {
-					Ref string `json:"ref"`
-					SHA string `json:"sha"`
+					Ref  string    `json:"ref"`
+					SHA  string    `json:"sha"`
+					Repo *repoName `json:"repo"`
 				} `json:"head"`
 				Base struct {
-					Ref string `json:"ref"`
+					Ref  string    `json:"ref"`
+					Repo *repoName `json:"repo"`
 				} `json:"base"`
 			} `json:"pull_request"`
 		}
@@ -270,9 +278,16 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) error {
 		if p.PullRequest.Base.Ref != "" && p.PullRequest.Base.Ref != app.GitBranch {
 			return accepted(w, webhookResult{Status: "ignored", Message: "PR does not target " + app.GitBranch})
 		}
-		return s.handlePullRequest(r.Context(), w, app, p.Action, p.Number, p.PullRequest.Head.Ref, p.PullRequest.Head.SHA, p.PullRequest.Title)
+		// The head repository is missing when the fork was deleted.
+		head, base := p.PullRequest.Head.Repo, p.PullRequest.Base.Repo
+		fork := head == nil || base == nil || !strings.EqualFold(head.FullName, base.FullName)
+		return s.handlePullRequest(r.Context(), w, app, p.Action, p.Number, p.PullRequest.Head.Ref, p.PullRequest.Head.SHA, p.PullRequest.Title, fork)
 	}
 	return accepted(w, webhookResult{Status: "ignored", Message: "event " + event})
+}
+
+type repoName struct {
+	FullName string `json:"full_name"`
 }
 
 func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) error {
@@ -308,12 +323,14 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) error {
 	case "Merge Request Hook":
 		var p struct {
 			Attrs struct {
-				IID          int    `json:"iid"`
-				Action       string `json:"action"`
-				Title        string `json:"title"`
-				SourceBranch string `json:"source_branch"`
-				TargetBranch string `json:"target_branch"`
-				LastCommit   struct {
+				IID             int    `json:"iid"`
+				Action          string `json:"action"`
+				Title           string `json:"title"`
+				SourceBranch    string `json:"source_branch"`
+				TargetBranch    string `json:"target_branch"`
+				SourceProjectID int64  `json:"source_project_id"`
+				TargetProjectID int64  `json:"target_project_id"`
+				LastCommit      struct {
 					ID string `json:"id"`
 				} `json:"last_commit"`
 			} `json:"object_attributes"`
@@ -324,7 +341,8 @@ func (s *Server) gitlabWebhook(w http.ResponseWriter, r *http.Request) error {
 		if p.Attrs.TargetBranch != app.GitBranch {
 			return accepted(w, webhookResult{Status: "ignored", Message: "MR does not target " + app.GitBranch})
 		}
-		return s.handlePullRequest(r.Context(), w, app, p.Attrs.Action, p.Attrs.IID, p.Attrs.SourceBranch, p.Attrs.LastCommit.ID, p.Attrs.Title)
+		fork := p.Attrs.SourceProjectID != p.Attrs.TargetProjectID
+		return s.handlePullRequest(r.Context(), w, app, p.Attrs.Action, p.Attrs.IID, p.Attrs.SourceBranch, p.Attrs.LastCommit.ID, p.Attrs.Title, fork)
 	}
 	return accepted(w, webhookResult{Status: "ignored"})
 }
@@ -345,6 +363,9 @@ func (s *Server) deployHook(w http.ResponseWriter, r *http.Request) error {
 		return errStatus(401, "invalid token")
 	}
 	q := r.URL.Query()
+	if err := deploy.CheckRef(q.Get("branch"), q.Get("commit")); err != nil {
+		return badRequest("%v", err)
+	}
 	d, err := s.engine.Enqueue(r.Context(), app, deploy.Options{
 		Trigger: "api", CommitSHA: q.Get("commit"), Branch: q.Get("branch"), ForceRebuild: q.Get("force") == "true",
 		NeedsApproval: s.automationNeedsApproval(r.Context(), app, 0),

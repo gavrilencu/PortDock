@@ -29,6 +29,11 @@ const (
 	// LabelConfig stores a fingerprint of the proxy configuration so changes
 	// (email, CA, DNS provider) recreate the proxy automatically.
 	LabelConfig = "portdock.proxy-config"
+	// MetricsPort serves Traefik's Prometheus metrics inside the container.
+	MetricsPort = 8082
+	// argsVersion changes when the arguments the proxy runs with change, so
+	// existing proxies are recreated with them.
+	argsVersion = 2
 )
 
 var q = executor.Quote
@@ -58,6 +63,7 @@ func (o Options) Fingerprint() string {
 	h := sha256.New()
 	// DataDir is part of the fingerprint: it determines the certificate and routing mounts.
 	fmt.Fprintf(h, "%s|%s|%s|%v|%s|%s|%s|%s", Image, o.DataDir, o.ACMEEmail, o.Dashboard, o.ACMEServer, o.DNSProvider, o.DNSResolvers, o.Network)
+	fmt.Fprintf(h, "|args%d", argsVersion)
 	for _, k := range keys {
 		fmt.Fprintf(h, "|%s=%s", k, o.DNSEnv[k])
 	}
@@ -100,6 +106,12 @@ func Ensure(ctx context.Context, e executor.Executor, o Options, recreate bool) 
 		"--certificatesresolvers." + CertResolver + ".acme.httpchallenge.entrypoint=web",
 		"--certificatesresolvers." + CertResolver + ".acme.keytype=EC256",
 		"--ping=true",
+		// Request counts per service, read by PortDock (canary analysis) from
+		// inside the container: the metrics entrypoint is not published.
+		"--entrypoints.metrics.address=:" + strconv.Itoa(MetricsPort),
+		"--metrics.prometheus=true",
+		"--metrics.prometheus.entrypoint=metrics",
+		"--metrics.prometheus.addservicesLabels=true",
 		"--accesslog=false",
 		"--log.level=INFO",
 	}

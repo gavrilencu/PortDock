@@ -371,17 +371,49 @@ type ComposeUp struct {
 	Env    map[string]string
 	// ProxyEnv (the corporate proxy) is added to every service, below its own variables.
 	ProxyEnv map[string]string
+	// Defaults returns variables for a service (OpenTelemetry), given what its
+	// compose `environment:` and PortDock already set. Used with FileRoutes.
+	Defaults func(service string, has func(string) bool) map[string]string
 	// BuildArgs are passed to the builds of the compose file (proxy for builds).
 	BuildArgs map[string]string
 	Kind      string // application | service
-	Resource  string
-	Network   string
-	Build     bool
-	Timeout   int
-	Log       interface {
+	// HostAccess, Root and Forbidden are the policy of composefile.CheckResolved:
+	// Root is the directory the project may use (the checkout).
+	HostAccess bool
+	Root       string
+	Forbidden  []string
+	Resource   string
+	Network    string
+	Build      bool
+	Timeout    int
+	Log        interface {
 		Write([]byte) (int, error)
 		Printf(string, ...any)
 	}
+}
+
+// composeEnvKeys lists the variables a compose service sets in `environment:`
+// (a map or a list of KEY=value).
+func composeEnvKeys(svc yaml.Node) map[string]bool {
+	var s struct {
+		Environment any `yaml:"environment"`
+	}
+	_ = svc.Decode(&s)
+	keys := map[string]bool{}
+	switch env := s.Environment.(type) {
+	case map[string]any:
+		for k := range env {
+			keys[k] = true
+		}
+	case []any:
+		for _, item := range env {
+			if str, ok := item.(string); ok {
+				k, _, _ := strings.Cut(str, "=")
+				keys[strings.TrimSpace(k)] = true
+			}
+		}
+	}
+	return keys
 }
 
 // escapeCompose doubles "$" so compose doesn't interpolate variable values.
@@ -441,6 +473,9 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 	if err := executor.WriteFile(ctx, c.X, envPath, []byte(envFile(c.Env)), "0600"); err != nil {
 		return res, err
 	}
+	if err := checkComposeConfig(ctx, c, raw, envPath); err != nil {
+		return res, err
+	}
 
 	override := map[string]any{}
 	services := map[string]any{}
@@ -474,6 +509,16 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 			}
 			for k, v := range c.ServiceEnv[n] {
 				env[k] = v
+			}
+			if c.Defaults != nil {
+				own := composeEnvKeys(spec.Services[n])
+				svcName := n
+				if n == main {
+					svcName = ""
+				}
+				for k, v := range c.Defaults(svcName, func(k string) bool { _, set := env[k]; return set || own[k] }) {
+					env[k] = v
+				}
 			}
 			if len(env) > 0 {
 				svc["environment"] = escapeCompose(env)
@@ -520,6 +565,31 @@ func RunComposeUp(ctx context.Context, c ComposeUp) (ComposeResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// checkComposeConfig checks what `docker compose up` will run: the compose file
+// with variables interpolated and extends/include merged, as rendered by
+// `docker compose config` (the file as written can hide anything behind them).
+func checkComposeConfig(ctx context.Context, c ComposeUp, raw, envPath string) error {
+	base := fmt.Sprintf("cd %s && docker compose -p %s -f %s --env-file %s config", q(c.Dir), q(c.Project), q(c.File), q(envPath))
+	rendered, err := executor.Output(ctx, c.X, base+" --no-env-resolution")
+	if err != nil && strings.Contains(err.Error(), "unknown flag") {
+		// Docker Compose before 2.24 inlines env files instead of listing them,
+		// so env_file paths are checked on the file as written.
+		if rendered, err = executor.Output(ctx, c.X, base); err == nil {
+			err = composefile.CheckEnvFiles(raw)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("docker compose config: %w", err)
+	}
+	paths, err := composefile.CheckResolved(rendered, composefile.Policy{
+		HostAccess: c.HostAccess, Root: c.Root, Project: c.Project, Network: c.Network, Forbidden: c.Forbidden,
+	})
+	if err != nil {
+		return err
+	}
+	return ensureInside(ctx, c.X, c.Root, paths...)
 }
 
 // deployComposeAll runs the compose project on every server, one after another.
@@ -637,18 +707,40 @@ func (j *job) deployCompose(ctx context.Context) error {
 	}
 	if _, err := RunComposeUp(ctx, ComposeUp{
 		X: j.x, Project: composeProject(j.app.UUID), Dir: j.ctxDir, File: file,
+		HostAccess: j.app.ComposeHostAccess, Root: j.srcDir, Forbidden: []string{j.e.cfg.DataDir},
 		Service: main, Port: mainPort, FileRoutes: true, Routed: routedServices(routes),
 		Env: vars, ServiceEnv: j.env.Services, Images: images, Kind: "application", Resource: j.app.UUID, Network: j.e.cfg.ProxyNetwork,
 		ProxyEnv: containerProxyEnv(j.net, j.app.ProxyMode), BuildArgs: buildProxyEnv(j.net),
+		Defaults: func(service string, has func(string) bool) map[string]string {
+			return j.e.otelEnv(ctx, j.app, j.d, service, has)
+		},
 		Build: !reuse, Timeout: j.app.HealthCheckTimeout, Log: j.log,
 	}); err != nil {
 		return err
 	}
 	// Traffic moves once `up --wait` reported the containers healthy.
-	return j.e.writeComposeRoutes(ctx, j.x, j.app, routes, j.d.PRNumber, j.log)
+	return j.e.writeComposeRoutes(ctx, j.x, j.srv, j.app, routes, j.d.PRNumber, j.log)
 }
 
 // ---- shared helpers ----
+
+// SharedEnvOf returns the shared variables an application or service
+// receives: the organization's, its project's and its environment's, in
+// that order (a narrower scope overrides a broader one).
+func (e *Engine) SharedEnvOf(ctx context.Context, ownerType string, ownerID int64) ([]store.EnvVar, error) {
+	table := map[string]string{"application": "applications", "service": "services"}[ownerType]
+	if table == "" {
+		return nil, nil
+	}
+	var envID, projectID int64
+	if err := e.db.QueryRowContext(ctx, "SELECT r.environment_id, e.project_id FROM "+table+" r JOIN environments e ON e.id = r.environment_id WHERE r.id = ?",
+		ownerID).Scan(&envID, &projectID); err != nil {
+		return nil, err
+	}
+	return store.Select[store.EnvVar](ctx, e.db, `SELECT * FROM env_vars WHERE service = '' AND (
+		(owner_type = 'organization' AND owner_id = 0) OR (owner_type = 'project' AND owner_id = ?) OR (owner_type = 'environment' AND owner_id = ?))
+		ORDER BY CASE owner_type WHEN 'organization' THEN 0 WHEN 'project' THEN 1 ELSE 2 END, is_preview, key`, projectID, envID)
+}
 
 type Env struct {
 	Runtime map[string]string
@@ -661,20 +753,38 @@ type Env struct {
 // ResolveEnv decrypts the environment variables of a resource. Preview
 // variables override regular ones when preview is true.
 func (e *Engine) ResolveEnv(ctx context.Context, ownerType string, ownerID int64, preview bool) (Env, error) {
-	vars, err := store.Select[store.EnvVar](ctx, e.db, "SELECT * FROM env_vars WHERE owner_type = ? AND owner_id = ? ORDER BY is_preview, key", ownerType, ownerID)
+	own, err := store.Select[store.EnvVar](ctx, e.db, "SELECT * FROM env_vars WHERE owner_type = ? AND owner_id = ? ORDER BY is_preview, key", ownerType, ownerID)
 	if err != nil {
 		return Env{}, err
 	}
+	// Shared variables first: the narrower the scope, the later it applies.
+	vars, err := e.SharedEnvOf(ctx, ownerType, ownerID)
+	if err != nil {
+		return Env{}, err
+	}
+	vars = append(vars, own...)
 	env := Env{Runtime: map[string]string{}, Build: map[string]string{}, Services: map[string]map[string]string{}}
+	var refs *refResolver
 	for _, v := range vars {
 		if v.IsPreview && !preview {
 			continue
 		}
-		val, err := e.box.Decrypt(v.Value)
-		if err != nil {
+		var val string
+		if v.RefStoreID > 0 {
+			if refs == nil {
+				project, err := e.ProjectOf(ctx, ownerType, ownerID)
+				if err != nil {
+					return env, err
+				}
+				refs = e.newRefResolver(project)
+			}
+			if val, err = refs.value(ctx, v); err != nil {
+				return env, fmt.Errorf("variable %s: %w", v.Key, err)
+			}
+		} else if val, err = e.box.Decrypt(v.Value); err != nil {
 			return env, fmt.Errorf("decrypt %s: %w", v.Key, err)
 		}
-		if v.IsSecret {
+		if v.IsSecret || v.RefStoreID > 0 {
 			env.Secrets = append(env.Secrets, val)
 		}
 		if v.Service != "" {

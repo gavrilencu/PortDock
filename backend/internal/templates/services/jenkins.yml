@@ -1,0 +1,19 @@
+# Jenkins: https://www.jenkins.io
+x-portdock:
+  name: Jenkins
+  description: "Automation server for CI/CD pipelines (LTS). The first sign-in asks for the initial password from the jenkins container's log."
+  category: DevOps & CI/CD
+  website: https://www.jenkins.io
+  tags: [ci, cd, pipelines, build]
+  service: jenkins
+  port: 8080
+services:
+  jenkins:
+    image: jenkins/jenkins:lts-jdk21
+    restart: unless-stopped
+    environment:
+      JENKINS_OPTS: --httpPort=8080
+    volumes:
+      - jenkins-home:/var/jenkins_home
+volumes:
+  jenkins-home:

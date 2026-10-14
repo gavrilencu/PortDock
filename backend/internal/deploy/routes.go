@@ -99,7 +99,20 @@ func (e *Engine) ApplyRoutes(ctx context.Context, app store.Application) error {
 		for _, c := range cs {
 			ups = append(ups, c.Name)
 		}
-		return writeRoutes(ctx, t.x, e.routesPath(app.UUID, 0), proxy.RenderDynamic(proxy.AppRoutes{Name: app.UUID, Upstreams: ups, Domains: routes}))
+		ar := proxy.AppRoutes{Name: app.UUID, Upstreams: ups, Domains: routes, Protection: e.protectionFor(ctx, app, t.srv)}
+		if t.srv.ID == app.ServerID && e.LoadBalanced(ctx, app) {
+			ar.Upstreams, ar.HealthPath = append(ups, e.lbEndpoints(ctx, app)...), app.HealthCheckPath
+		}
+		if c, ok := activeCanaries.Load(app.ID); ok {
+			// Keep the split of a canary in progress.
+			run := c.(*canaryRun)
+			ar.Upstreams, ar.Canary = run.stable, &proxy.Canary{Upstreams: run.canary, Percent: run.percent, Tag: run.tag}
+		}
+		prot := ar.Protection
+		if err := writeRoutes(ctx, t.x, e.routesPath(app.UUID, 0), proxy.RenderDynamic(ar)); err != nil {
+			return err
+		}
+		return e.applyPreviewRoutes(ctx, t, app, prot)
 	})
 }
 

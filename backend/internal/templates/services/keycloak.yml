@@ -1,0 +1,43 @@
+# Keycloak: https://www.keycloak.org
+x-portdock:
+  name: Keycloak
+  description: "Identity and access management: single sign-on with OpenID Connect and SAML, user federation with LDAP / Active Directory. Sign in as admin with the KC_BOOTSTRAP_ADMIN_PASSWORD of the Compose tab."
+  category: Security & Identity
+  website: https://www.keycloak.org
+  tags: [sso, oidc, saml, identity]
+  service: keycloak
+  port: 8080
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    restart: unless-stopped
+    command: start
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      KC_HOSTNAME: ${PORTDOCK_URL}
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${PORTDOCK_PASSWORD_ADMIN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+      POSTGRES_DB: keycloak
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      retries: 10
+volumes:
+  pg-data:

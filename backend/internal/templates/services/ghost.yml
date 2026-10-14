@@ -1,0 +1,42 @@
+# Ghost: https://ghost.org
+x-portdock:
+  name: Ghost
+  description: "Professional publishing platform with MySQL."
+  category: CMS & Websites
+  website: https://ghost.org
+  tags: [blog, cms, publishing]
+  service: ghost
+  port: 2368
+services:
+  ghost:
+    image: ghost:6-alpine
+    restart: unless-stopped
+    environment:
+      url: ${PORTDOCK_URL}
+      database__client: mysql
+      database__connection__host: mysql
+      database__connection__user: ghost
+      database__connection__password: ${PORTDOCK_PASSWORD_DB}
+      database__connection__database: ghost
+    volumes:
+      - content:/var/lib/ghost/content
+    depends_on:
+      mysql:
+        condition: service_healthy
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PORTDOCK_PASSWORD_ROOT}
+      MYSQL_DATABASE: ghost
+      MYSQL_USER: ghost
+      MYSQL_PASSWORD: ${PORTDOCK_PASSWORD_DB}
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 10s
+      retries: 10
+volumes:
+  content:
+  mysql:

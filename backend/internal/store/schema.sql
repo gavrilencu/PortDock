@@ -99,7 +99,11 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   name         TEXT NOT NULL,
   token_hash   TEXT NOT NULL UNIQUE,
   last_used_at TEXT NOT NULL DEFAULT '',
-  created_at   TEXT NOT NULL DEFAULT ''
+  created_at   TEXT NOT NULL DEFAULT '',
+  scope        TEXT NOT NULL DEFAULT 'full', -- read | deploy | write | full
+  project_ids  TEXT NOT NULL DEFAULT '',     -- comma separated; '' = every project of the user
+  expires_at   TEXT NOT NULL DEFAULT '',     -- '' = never
+  created_by   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -286,6 +290,7 @@ CREATE TABLE IF NOT EXISTS services (
   compose        TEXT NOT NULL DEFAULT '',
   domain         TEXT NOT NULL DEFAULT '',
   status         TEXT NOT NULL DEFAULT 'stopped',
+  host_access    INTEGER NOT NULL DEFAULT 0,          -- granted by an administrator
   created_at     TEXT NOT NULL DEFAULT ''
 );
 
@@ -387,6 +392,50 @@ CREATE TABLE IF NOT EXISTS app_volumes (
   created_at     TEXT NOT NULL DEFAULT '',
   UNIQUE(application_id, name),
   UNIQUE(application_id, mount_path)
+);
+
+-- Scheduled jobs of applications (store.AppJob) and their runs.
+CREATE TABLE IF NOT EXISTS app_jobs (
+  id             INTEGER PRIMARY KEY,
+  application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL,
+  schedule       TEXT NOT NULL,
+  command        TEXT NOT NULL,
+  service        TEXT NOT NULL DEFAULT '',
+  timeout        INTEGER NOT NULL DEFAULT 3600,
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  last_run_at    TEXT NOT NULL DEFAULT '',
+  last_status    TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_app_jobs_app ON app_jobs(application_id);
+
+CREATE TABLE IF NOT EXISTS job_runs (
+  id             INTEGER PRIMARY KEY,
+  job_id         INTEGER NOT NULL REFERENCES app_jobs(id) ON DELETE CASCADE,
+  application_id INTEGER NOT NULL,
+  trigger        TEXT NOT NULL DEFAULT 'schedule',
+  status         TEXT NOT NULL DEFAULT 'running',
+  exit_code      INTEGER NOT NULL DEFAULT 0,
+  output         TEXT NOT NULL DEFAULT '',
+  started_at     TEXT NOT NULL DEFAULT '',
+  finished_at    TEXT NOT NULL DEFAULT '',
+  started_by     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_job_runs_job ON job_runs(job_id, id DESC);
+
+-- Who reaches an application through the proxy (store.AppProtection).
+CREATE TABLE IF NOT EXISTS app_protection (
+  application_id INTEGER PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+  auth           TEXT NOT NULL DEFAULT '',        -- '' | password | sso
+  sso_access     TEXT NOT NULL DEFAULT 'project', -- project | any
+  sso_emails     TEXT NOT NULL DEFAULT '',
+  basic_users    TEXT NOT NULL DEFAULT '',        -- JSON [{"user","hash"}] (bcrypt)
+  ip_allow       TEXT NOT NULL DEFAULT '',        -- newline separated addresses / CIDR ranges
+  ip_depth       INTEGER NOT NULL DEFAULT 0,
+  rate_average   INTEGER NOT NULL DEFAULT 0,
+  rate_burst     INTEGER NOT NULL DEFAULT 0,
+  updated_at     TEXT NOT NULL DEFAULT ''
 );
 
 -- Additional servers an application is deployed to (besides applications.server_id).
@@ -576,3 +625,101 @@ CREATE TABLE IF NOT EXISTS monitor_incidents (
   resolved_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_monitor_incidents ON monitor_incidents(monitor_id, started_at);
+
+-- Destinations of the application logs (Loki, Elasticsearch, Graylog, Splunk,
+-- syslog, HTTP), shipped by a Vector agent on each server (logdrain package).
+CREATE TABLE IF NOT EXISTS log_drains (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  type          TEXT NOT NULL,             -- loki | elasticsearch | gelf | splunk | syslog | http
+  url           TEXT NOT NULL DEFAULT '',
+  config        TEXT NOT NULL DEFAULT '',  -- encrypted JSON: credentials and options
+  project_ids   TEXT NOT NULL DEFAULT '',  -- comma separated; '' = every project
+  include_proxy INTEGER NOT NULL DEFAULT 0, -- also the proxy's (Traefik) logs
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT ''
+);
+
+-- Point-in-time recovery of PostgreSQL databases: base backups (the WAL
+-- archive sits next to them on the database's server) and restores.
+CREATE TABLE IF NOT EXISTS pitr_backups (
+  id          INTEGER PRIMARY KEY,
+  database_id INTEGER NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+  status      TEXT NOT NULL DEFAULT 'running', -- running | success | failed
+  file        TEXT NOT NULL DEFAULT '',
+  size        INTEGER NOT NULL DEFAULT 0,
+  start_wal   TEXT NOT NULL DEFAULT '',
+  message     TEXT NOT NULL DEFAULT '',
+  started_at  TEXT NOT NULL DEFAULT '',
+  finished_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_pitr_backups_db ON pitr_backups(database_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS pitr_restores (
+  id           INTEGER PRIMARY KEY,
+  database_id  INTEGER NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+  target_time  TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending', -- pending | running | success | failed
+  message      TEXT NOT NULL DEFAULT '',
+  base_file    TEXT NOT NULL DEFAULT '',
+  replaced_dir TEXT NOT NULL DEFAULT '',
+  timeline     INTEGER NOT NULL DEFAULT 0,
+  created_by   INTEGER NOT NULL DEFAULT 0,
+  started_at   TEXT NOT NULL DEFAULT '',
+  finished_at  TEXT NOT NULL DEFAULT ''
+);
+
+-- Streaming replicas of PostgreSQL databases (hot standby, read-only).
+CREATE TABLE IF NOT EXISTS db_replicas (
+  id          INTEGER PRIMARY KEY,
+  database_id INTEGER NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+  uuid        TEXT NOT NULL UNIQUE,
+  server_id   INTEGER NOT NULL REFERENCES servers(id),
+  public_port INTEGER NOT NULL DEFAULT 0,
+  status      TEXT NOT NULL DEFAULT 'creating',
+  message     TEXT NOT NULL DEFAULT '',
+  lag_bytes   INTEGER NOT NULL DEFAULT 0,
+  lag_seconds REAL NOT NULL DEFAULT 0,
+  checked_at  TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT ''
+);
+
+-- Host keys of the Git servers cloned over SSH (deploy.GitKnownHost).
+CREATE TABLE IF NOT EXISTS git_known_hosts (
+  host         TEXT PRIMARY KEY,           -- host, or [host]:port
+  keys         TEXT NOT NULL,              -- known_hosts lines
+  fingerprints TEXT NOT NULL DEFAULT '',
+  source       TEXT NOT NULL DEFAULT 'admin', -- admin | first use
+  created_at   TEXT NOT NULL DEFAULT ''
+);
+
+-- External secret managers (HashiCorp Vault, Azure Key Vault) that
+-- environment variables reference (env_vars.ref_store_id).
+CREATE TABLE IF NOT EXISTS secret_stores (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  type        TEXT NOT NULL,             -- vault | azure_keyvault
+  url         TEXT NOT NULL DEFAULT '',
+  config      TEXT NOT NULL DEFAULT '',  -- encrypted JSON: credentials and options
+  project_ids TEXT NOT NULL DEFAULT '',  -- comma separated; '' = every project
+  path_prefix TEXT NOT NULL DEFAULT '',
+  checked_at  TEXT NOT NULL DEFAULT '',
+  check_error TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT ''
+);
+
+-- Catalogs of service templates (catalogs package): downloaded from a URL or
+-- uploaded, kept parsed.
+CREATE TABLE IF NOT EXISTS template_catalogs (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL UNIQUE,
+  url         TEXT NOT NULL DEFAULT '',
+  format      TEXT NOT NULL DEFAULT 'auto', -- auto | portdock | coolify
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  content     TEXT NOT NULL DEFAULT '',
+  templates   TEXT NOT NULL DEFAULT '',
+  count       INTEGER NOT NULL DEFAULT 0,
+  fetched_at  TEXT NOT NULL DEFAULT '',
+  fetch_error TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT ''
+);

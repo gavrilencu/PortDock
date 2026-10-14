@@ -112,7 +112,7 @@ func routedServices(routes []proxy.DomainRoute) []string {
 
 // writeComposeRoutes points the routes at the running containers of each
 // service, joining them to the proxy network first when needed.
-func (e *Engine) writeComposeRoutes(ctx context.Context, x executor.Executor, app store.Application, routes []proxy.DomainRoute, pr int, log interface{ Printf(string, ...any) }) error {
+func (e *Engine) writeComposeRoutes(ctx context.Context, x executor.Executor, srv store.Server, app store.Application, routes []proxy.DomainRoute, pr int, log interface{ Printf(string, ...any) }) error {
 	cs, err := docker.PS(ctx, x, false, "label=com.docker.compose.project="+composeProject(app.UUID))
 	if err != nil {
 		return err
@@ -137,7 +137,8 @@ func (e *Engine) writeComposeRoutes(ctx context.Context, x executor.Executor, ap
 	if pr > 0 {
 		name = fmt.Sprintf("%s-pr%d", app.UUID, pr)
 	}
-	if err := writeRoutes(ctx, x, e.routesPath(app.UUID, pr), proxy.RenderDynamic(proxy.AppRoutes{Name: name, Services: byService, Domains: routes})); err != nil {
+	r := proxy.AppRoutes{Name: name, Services: byService, Domains: routes, Protection: e.protectionFor(ctx, app, srv)}
+	if err := writeRoutes(ctx, x, e.routesPath(app.UUID, pr), proxy.RenderDynamic(r)); err != nil {
 		return err
 	}
 	if log != nil {
@@ -162,7 +163,7 @@ func (e *Engine) applyComposeRoutes(ctx context.Context, t target, app store.App
 	if err != nil {
 		return err
 	}
-	return e.writeComposeRoutes(ctx, t.x, app, resolved, 0, nil)
+	return e.writeComposeRoutes(ctx, t.x, t.srv, app, resolved, 0, nil)
 }
 
 // ComposeServices lists the services of the compose file checked out by the

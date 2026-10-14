@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/csv"
 	"fmt"
 	"regexp"
 	"strings"
@@ -143,12 +144,13 @@ func checkRunValue(flag, value string, trusted bool) error {
 			if err := CheckBindSource(src); err != nil {
 				return fmt.Errorf("docker options: %w", err)
 			}
+		} else if err := checkVolumeOwner(src, trusted); err != nil {
+			return err
 		}
 	case "--mount":
-		fields := map[string]string{}
-		for _, f := range strings.Split(value, ",") {
-			k, v, _ := strings.Cut(strings.TrimSpace(f), "=")
-			fields[strings.ToLower(k)] = v
+		fields, err := mountFields(value)
+		if err != nil {
+			return err
 		}
 		typ := fields["type"]
 		src := fields["source"]
@@ -159,6 +161,9 @@ func checkRunValue(flag, value string, trusted bool) error {
 		case typ == "" || typ == "volume":
 			if src != "" && !volumeName.MatchString(src) {
 				return fmt.Errorf("docker options: invalid volume name %q", src)
+			}
+			if err := checkVolumeOwner(src, trusted); err != nil {
+				return err
 			}
 		case typ == "tmpfs":
 		case typ == "bind":
@@ -199,6 +204,53 @@ func checkRunValue(flag, value string, trusted bool) error {
 		}
 	}
 	return nil
+}
+
+// reservedVolume matches the Docker volumes PortDock names: databases
+// (sy-<uuid>), compose projects (sy-<uuid>_<name>), managed volumes of
+// applications (pd-<uuid>_<name>) and those the image catalog used to create
+// (sy-<app>-<suffix>-<n>). Options saved earlier keep working: they are
+// validated as trusted while unchanged.
+var reservedVolume = regexp.MustCompile(`^(sy|pd)-`)
+
+func checkVolumeOwner(name string, trusted bool) error {
+	if !trusted && reservedVolume.MatchString(strings.ToLower(name)) {
+		return fmt.Errorf("docker options: volume %s belongs to another PortDock resource; add persistent storage from the Storage tab", name)
+	}
+	return nil
+}
+
+// mountKeys are the --mount fields that are allowed. volume-driver and
+// volume-opt are not: the local driver's options mount any path of the server
+// (type=none,o=bind,device=/).
+var mountKeys = map[string]bool{
+	"type": true, "source": true, "src": true, "target": true, "destination": true, "dst": true,
+	"readonly": true, "ro": true, "volume-nocopy": true, "volume-subpath": true, "volume-label": true,
+	"tmpfs-size": true, "tmpfs-mode": true, "bind-propagation": true, "bind-recursive": true, "bind-nonrecursive": true, "consistency": true,
+}
+
+// mountFields parses a --mount value the way Docker does (CSV, so quoted
+// fields can hold commas) and refuses unknown fields.
+func mountFields(value string) (map[string]string, error) {
+	r := csv.NewReader(strings.NewReader(value))
+	r.LazyQuotes = true
+	rec, err := r.Read()
+	if err != nil {
+		return nil, fmt.Errorf("docker options: invalid --mount %q: %v", value, err)
+	}
+	fields := map[string]string{}
+	for _, f := range rec {
+		k, v, _ := strings.Cut(strings.TrimSpace(f), "=")
+		k = strings.ToLower(strings.TrimSpace(k))
+		if !mountKeys[k] {
+			return nil, fmt.Errorf("docker options: --mount option %q is not allowed", k)
+		}
+		if _, dup := fields[k]; dup {
+			return nil, fmt.Errorf("docker options: --mount option %q is repeated", k)
+		}
+		fields[k] = v
+	}
+	return fields, nil
 }
 
 // CheckBindSource refuses the host paths that hand over the host even to an

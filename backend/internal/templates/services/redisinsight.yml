@@ -1,0 +1,17 @@
+# Redis Insight: https://redis.io/insight/
+x-portdock:
+  name: Redis Insight
+  description: "Browse, analyse and debug Redis and Valkey databases. Reaches the databases of its network; protect the domain (Access) before exposing it."
+  category: Developer Tools
+  website: https://redis.io/insight/
+  tags: [redis, valkey, database, admin]
+  service: redisinsight
+  port: 5540
+services:
+  redisinsight:
+    image: redis/redisinsight:latest
+    restart: unless-stopped
+    volumes:
+      - data:/data
+volumes:
+  data:

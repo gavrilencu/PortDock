@@ -32,7 +32,8 @@ func TestDockerOptionsPolicy(t *testing.T) {
 	}
 	post(owner, "--privileged", 400)
 	post(owner, "-v /var/run/docker.sock:/s", 400)
-	app := post(dev, "-v sy-web-data:/data --shm-size 1g", 200)
+	post(dev, "-v sy-web-data:/data", 400) // PortDock's own volume names
+	app := post(dev, "-v web-data:/data --shm-size 1g", 200)
 	base := fmt.Sprintf("/api/applications/%v", app["id"])
 
 	// An administrator may bind-mount a server path; the member can still edit

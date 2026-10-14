@@ -1,0 +1,93 @@
+// Translations for components/pitr.tsx (point-in-time recovery of PostgreSQL)
+// and the fixed progress messages of backend/internal/deploy/pitr.go.
+export const ro: Record<string, string> = {
+  "Point-in-time recovery": "Recuperare la un moment dat (PITR)",
+  "Continuous WAL archiving and scheduled base backups: restore the database as it was at any second of the recovery window, for example just before a bad migration or a deleted table.":
+    "Arhivare continuă a WAL și base backups programate: restaurezi baza de date exact cum era în orice secundă din fereastra de recuperare, de exemplu chiar înainte de o migrare greșită sau de un tabel șters.",
+  "Off. Logical backups restore the state of a backup; point-in-time recovery reaches any moment in between. Enabling it restarts the database once.":
+    "Dezactivat. Backup-urile logice readuc starea unui backup; recuperarea la un moment dat ajunge la orice moment dintre ele. Activarea repornește baza de date o singură dată.",
+  "Base backup now": "Base backup acum",
+  "Restore to a point in time": "Restaurează la un moment dat",
+  "Recovery window": "Fereastra de recuperare",
+  "After the first base backup": "După primul base backup",
+  "WAL archiving": "Arhivarea WAL",
+  Failing: "Eșuează",
+  Working: "Funcționează",
+  "last segment {time}": "ultimul segment {time}",
+  "keep {count}": "păstrează {count}",
+  "S3 · synced {time}": "S3 · sincronizat {time}",
+  "Restore to {time}": "Restaurare la {time}",
+  "Base backup": "Base backup",
+  "First WAL segment": "Primul segment WAL",
+  "Archive and base backups: {dir} on the database's server.": "Arhiva și base backups: {dir} pe serverul bazei de date.",
+  "Point-in-time recovery saved": "Recuperarea la un moment dat a fost salvată",
+  "Point-in-time recovery turned off": "Recuperarea la un moment dat a fost dezactivată",
+  "Base backup started": "Base backup pornit",
+  "Point-in-time restore started": "Restaurarea la un moment dat a pornit",
+  "The database restarts and replays its changes up to that time.": "Baza de date repornește și reia modificările până la acel moment.",
+  "Turn off point-in-time recovery?": "Dezactivezi recuperarea la un moment dat?",
+  "WAL archiving stops (the database restarts once). The archive and base backups already taken stay on the server.":
+    "Arhivarea WAL se oprește (baza de date repornește o dată). Arhiva și base backups deja făcute rămân pe server.",
+  "Enable and restart the database": "Activează și repornește baza de date",
+  "Base backups": "Base backups",
+  "Cron, in the instance time zone. A base backup a day keeps recoveries short.": "Cron, în fusul orar al instanței. Un base backup pe zi face recuperările scurte.",
+  "Keep the last N base backups": "Păstrează ultimele N base backups",
+  "The recovery window starts at the oldest one kept; older WAL is removed.": "Fereastra de recuperare începe la cel mai vechi păstrat; WAL-ul mai vechi se șterge.",
+  "Copy to S3": "Copie în S3",
+  "The archive and base backups are mirrored to the bucket every 5 minutes and after each base backup.":
+    "Arhiva și base backups sunt copiate în bucket la fiecare 5 minute și după fiecare base backup.",
+  "Configure the S3 destination in Settings → Backup storage.": "Configurează destinația S3 în Setări → Backup storage.",
+  "The database stops, its data is replaced by the state at this time and it starts again. The current data is kept in the data volume until the next restore, and put back automatically if the recovery fails.":
+    "Baza de date se oprește, datele ei sunt înlocuite cu starea de la acel moment și pornește din nou. Datele actuale rămân în volumul de date până la următoarea restaurare și sunt puse la loc automat dacă recuperarea eșuează.",
+  "Time (your time zone)": "Ora (fusul tău orar)",
+  "Between {from} and {to}.": "Între {from} și {to}.",
+  "Type {name} to confirm": "Scrie {name} pentru confirmare",
+  "Archiving the latest changes…": "Se arhivează ultimele modificări…",
+  "Stopping the database and unpacking the base backup…": "Se oprește baza de date și se despachetează base backup-ul…",
+};
+
+export const ru: Record<string, string> = {
+  "Point-in-time recovery": "Восстановление на момент времени (PITR)",
+  "Continuous WAL archiving and scheduled base backups: restore the database as it was at any second of the recovery window, for example just before a bad migration or a deleted table.":
+    "Непрерывное архивирование WAL и базовые копии по расписанию: восстановите базу данных в состояние на любую секунду окна восстановления, например прямо перед неудачной миграцией или удалением таблицы.",
+  "Off. Logical backups restore the state of a backup; point-in-time recovery reaches any moment in between. Enabling it restarts the database once.":
+    "Выключено. Логические копии возвращают состояние копии; восстановление на момент времени достигает любого момента между ними. Включение один раз перезапускает базу данных.",
+  "Base backup now": "Базовая копия сейчас",
+  "Restore to a point in time": "Восстановить на момент времени",
+  "Recovery window": "Окно восстановления",
+  "After the first base backup": "После первой базовой копии",
+  "WAL archiving": "Архивирование WAL",
+  Failing: "Сбой",
+  Working: "Работает",
+  "last segment {time}": "последний сегмент {time}",
+  "keep {count}": "хранить {count}",
+  "S3 · synced {time}": "S3 · синхронизировано {time}",
+  "Restore to {time}": "Восстановление на {time}",
+  "Base backup": "Базовая копия",
+  "First WAL segment": "Первый сегмент WAL",
+  "Archive and base backups: {dir} on the database's server.": "Архив и базовые копии: {dir} на сервере базы данных.",
+  "Point-in-time recovery saved": "Восстановление на момент времени сохранено",
+  "Point-in-time recovery turned off": "Восстановление на момент времени выключено",
+  "Base backup started": "Базовая копия запущена",
+  "Point-in-time restore started": "Восстановление на момент времени запущено",
+  "The database restarts and replays its changes up to that time.": "База данных перезапускается и воспроизводит изменения до этого момента.",
+  "Turn off point-in-time recovery?": "Выключить восстановление на момент времени?",
+  "WAL archiving stops (the database restarts once). The archive and base backups already taken stay on the server.":
+    "Архивирование WAL остановится (база данных перезапустится один раз). Архив и уже сделанные базовые копии остаются на сервере.",
+  "Enable and restart the database": "Включить и перезапустить базу данных",
+  "Base backups": "Базовые копии",
+  "Cron, in the instance time zone. A base backup a day keeps recoveries short.": "Cron, в часовом поясе экземпляра. Базовая копия раз в день сокращает время восстановления.",
+  "Keep the last N base backups": "Хранить последние N базовых копий",
+  "The recovery window starts at the oldest one kept; older WAL is removed.": "Окно восстановления начинается с самой старой сохранённой копии; более старый WAL удаляется.",
+  "Copy to S3": "Копировать в S3",
+  "The archive and base backups are mirrored to the bucket every 5 minutes and after each base backup.":
+    "Архив и базовые копии зеркалируются в бакет каждые 5 минут и после каждой базовой копии.",
+  "Configure the S3 destination in Settings → Backup storage.": "Настройте хранилище S3 в Настройки → Backup storage.",
+  "The database stops, its data is replaced by the state at this time and it starts again. The current data is kept in the data volume until the next restore, and put back automatically if the recovery fails.":
+    "База данных останавливается, её данные заменяются состоянием на этот момент, и она запускается снова. Текущие данные сохраняются в томе данных до следующего восстановления и возвращаются автоматически, если восстановление не удалось.",
+  "Time (your time zone)": "Время (ваш часовой пояс)",
+  "Between {from} and {to}.": "Между {from} и {to}.",
+  "Type {name} to confirm": "Введите {name} для подтверждения",
+  "Archiving the latest changes…": "Архивирование последних изменений…",
+  "Stopping the database and unpacking the base backup…": "Остановка базы данных и распаковка базовой копии…",
+};

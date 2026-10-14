@@ -8,9 +8,14 @@ import { Badge, Button, Card, Empty, Input, Loading, SegmentedControl, Switch, T
 import { cn } from "../lib/utils";
 import { t } from "../lib/i18n";
 import { useComposeServices } from "./Domains";
+import { RefCheckButton, refText, SecretRefFields, useSecretStoreNames, type RefDraft } from "./secretstores";
 
+const noRef: RefDraft = { ref_store_id: 0, ref_path: "", ref_key: "" };
+
+// Variables read from a secret manager have no value to edit as text.
 function toDotEnv(vars: EnvVar[]) {
   return vars
+    .filter((v) => !v.ref_store_id)
     .map((v) => {
       const needsQuote = /[\s#"'\n]/.test(v.value);
       const val = needsQuote ? `"${v.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"` : v.value;
@@ -37,6 +42,9 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
   const [dev, setDev] = useState(false);
   const [bulk, setBulk] = useState("");
   const [draft, setDraft] = useState({ key: "", value: "", is_build: false, is_secret: false });
+  const stores = useSecretStoreNames().data ?? [];
+  const [fromStore, setFromStore] = useState(false);
+  const [ref, setRef] = useState<RefDraft>(noRef);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [edits, setEdits] = useState<Record<number, string>>({});
 
@@ -60,9 +68,11 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
   });
 
   const add = useMutation({
-    mutationFn: () => api.post<EnvVar>(`${owner}/envs`, { ...draft, is_preview: isPreview, service }),
+    mutationFn: () =>
+      api.post<EnvVar>(`${owner}/envs`, fromStore ? { key: draft.key, is_build: draft.is_build, ...ref, is_preview: isPreview, service } : { ...draft, is_preview: isPreview, service }),
     onSuccess: () => {
       setDraft({ key: "", value: "", is_build: false, is_secret: false });
+      setRef(noRef);
       refresh();
       toast.success(t("Variable added"));
     },
@@ -167,6 +177,11 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
           <div className="p-5">
             <Textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={16} placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=secret"} />
             <p className="mt-2 text-xs text-muted">{isPreview ? t("Paste a .env file. Saving replaces all preview variables; build/secret flags are kept for existing keys.") : t("Paste a .env file. Saving replaces all production variables; build/secret flags are kept for existing keys.")}</p>
+            {vars.some((v) => v.ref_store_id) && (
+              <p className="mt-1 text-xs text-muted">
+                {t("{n} variable read from a secret manager is not shown here and is kept.|{n} variables read from a secret manager are not shown here and are kept.", { n: vars.filter((v) => v.ref_store_id).length })}
+              </p>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-border">
@@ -181,17 +196,29 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
               return (
                 <div key={v.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                   <code className="w-56 shrink-0 truncate font-mono text-[13px] font-medium">{v.key}</code>
-                  <div className="relative min-w-48 flex-1">
-                    <Input
-                      className="font-mono text-[13px]"
-                      type={hidden ? "password" : "text"}
-                      value={edited ?? v.value}
-                      onChange={(e) => setEdits({ ...edits, [v.id]: e.target.value })}
-                    />
-                  </div>
+                  {v.ref_store_id ? (
+                    <div className="flex h-8 min-w-48 flex-1 items-center gap-2 rounded-md border border-dashed border-border bg-surface-2/40 px-2.5" title={t("Read from the secret manager when a deployment starts")}>
+                      <KeyRound className="size-3.5 shrink-0 text-faint" />
+                      <code className="truncate font-mono text-[13px] text-muted">{refText(stores, v)}</code>
+                    </div>
+                  ) : (
+                    <div className="relative min-w-48 flex-1">
+                      <Input
+                        className="font-mono text-[13px]"
+                        type={hidden ? "password" : "text"}
+                        value={edited ?? v.value}
+                        onChange={(e) => setEdits({ ...edits, [v.id]: e.target.value })}
+                      />
+                    </div>
+                  )}
                   <div className="flex items-center gap-1">
                     {v.is_build && <Badge tone="info"><Hammer className="size-3" />{t("build")}</Badge>}
-                    {v.is_secret && <Badge tone="warning"><Lock className="size-3" />{t("secret")}</Badge>}
+                    {v.ref_store_id ? (
+                      <Badge tone="accent"><KeyRound className="size-3" />{t("secret manager")}</Badge>
+                    ) : (
+                      v.is_secret && <Badge tone="warning"><Lock className="size-3" />{t("secret")}</Badge>
+                    )}
+                    {!!v.ref_store_id && <RefCheckButton owner={owner} v={v} />}
                     {edited !== undefined && edited !== v.value && (
                       <Button
                         size="sm"
@@ -206,7 +233,7 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                         {t("Save")}
                       </Button>
                     )}
-                    {v.is_secret && (
+                    {v.is_secret && !v.ref_store_id && (
                       <Button size="icon" variant="ghost" onClick={() => setRevealed({ ...revealed, [v.id]: !revealed[v.id] })}>
                         {hidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
                       </Button>
@@ -216,9 +243,11 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
                         <Hammer className={cn("size-4", v.is_build && "text-info")} />
                       </Button>
                     )}
-                    <Button size="icon" variant="ghost" title={t("Toggle secret")} onClick={() => update.mutate({ id: v.id, body: { is_secret: !v.is_secret } })}>
-                      <Lock className={cn("size-4", v.is_secret && "text-warning")} />
-                    </Button>
+                    {!v.ref_store_id && (
+                      <Button size="icon" variant="ghost" title={t("Toggle secret")} onClick={() => update.mutate({ id: v.id, body: { is_secret: !v.is_secret } })}>
+                        <Lock className={cn("size-4", v.is_secret && "text-warning")} />
+                      </Button>
+                    )}
                     <Button
                       size="icon"
                       variant="ghost"
@@ -268,10 +297,25 @@ export function EnvEditor({ owner, supportsBuild = false, supportsPreview = fals
               }}
             >
               <Input className="w-56 font-mono text-[13px]" placeholder="KEY" value={draft.key} onChange={(e) => setDraft({ ...draft, key: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_") })} />
-              <Input className="min-w-48 flex-1 font-mono text-[13px]" placeholder={t("value")} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
+              {stores.length > 0 && (
+                <SegmentedControl
+                  value={fromStore ? "store" : "value"}
+                  onChange={(v) => setFromStore(v === "store")}
+                  className="[&>button]:normal-case"
+                  options={[
+                    { value: "value", label: t("Value") },
+                    { value: "store", label: t("Secret manager") },
+                  ]}
+                />
+              )}
+              {fromStore ? (
+                <SecretRefFields owner={owner} stores={stores} value={ref} onChange={setRef} />
+              ) : (
+                <Input className="min-w-48 flex-1 font-mono text-[13px]" placeholder={t("value")} value={draft.value} onChange={(e) => setDraft({ ...draft, value: e.target.value })} />
+              )}
               {supportsBuild && <Switch checked={draft.is_build} onChange={(is_build) => setDraft({ ...draft, is_build })} label={t("Build")} />}
-              <Switch checked={draft.is_secret} onChange={(is_secret) => setDraft({ ...draft, is_secret })} label={t("Secret")} />
-              <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={add.isPending} disabled={!draft.key}>
+              {!fromStore && <Switch checked={draft.is_secret} onChange={(is_secret) => setDraft({ ...draft, is_secret })} label={t("Secret")} />}
+              <Button type="submit" variant="primary" icon={<Plus className="size-4" />} loading={add.isPending} disabled={!draft.key || (fromStore && (!ref.ref_store_id || !ref.ref_path))}>
                 {t("Add")}
               </Button>
             </form>

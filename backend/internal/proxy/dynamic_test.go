@@ -99,3 +99,19 @@ func TestWildcardRule(t *testing.T) {
 		t.Errorf("wildcard rule = %s", got)
 	}
 }
+
+func TestRemoteUpstreams(t *testing.T) {
+	r := AppRoutes{Name: "abc", Upstreams: []string{"abc-1", "10.88.0.3:49153"}, HealthPath: "/healthz",
+		Domains: []DomainRoute{{Host: "shop.example.com", Port: 3000, HTTPS: true}}}
+	out := string(RenderDynamic(r))
+	for _, want := range []string{"url: http://abc-1:3000", "url: http://10.88.0.3:49153", "path: /healthz", "interval: 10s"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	// Containers of one server only: no health check, as before.
+	r.Upstreams = []string{"abc-1"}
+	if out := string(RenderDynamic(r)); strings.Contains(out, "healthCheck") {
+		t.Errorf("health check without remote upstreams:\n%s", out)
+	}
+}

@@ -39,6 +39,7 @@ const TopologyPage = page(() => import("./pages/Topology").then((m) => ({ defaul
 const UptimePage = page(() => import("./pages/Uptime").then((m) => ({ default: m.UptimePage })));
 const FleetPage = page(() => import("./pages/Fleet").then((m) => ({ default: m.FleetPage })));
 const StatusPage = page(() => import("./pages/StatusPage").then((m) => ({ default: m.StatusPage })));
+const ApiDocsPage = page(() => import("./pages/ApiDocs").then((m) => ({ default: m.ApiDocsPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -77,6 +78,7 @@ const router = createBrowserRouter([
       { path: "uptime", element: UptimePage, errorElement: <RouteError /> },
       { path: "containers", element: FleetPage, errorElement: <RouteError /> },
       { path: "topology", element: TopologyPage, errorElement: <RouteError /> },
+      { path: "api-docs", element: ApiDocsPage, errorElement: <RouteError /> },
       { path: "*", element: <NotFound />, errorElement: <RouteError /> },
     ],
   },

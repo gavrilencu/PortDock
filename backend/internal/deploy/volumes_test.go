@@ -87,16 +87,24 @@ func TestVolumesE2E(t *testing.T) {
 	}
 	// Previews get their own, empty volumes.
 	pm := mounts(3)
-	if !strings.Contains(pm, "pd-"+uuid+"_data-pr3:/data") {
+	if !strings.Contains(pm, "pd-"+uuid+"_data_pr3:/data") {
 		t.Fatalf("preview mounts: %s", pm)
 	}
 	if out, _ := run(pm, "cat /data/file 2>/dev/null || echo empty"); out != "empty" {
 		t.Fatalf("preview sees production data: %q", out)
 	}
-	labels, _ := exec.Command("docker", "volume", "inspect", "-f", "{{json .Labels}}", "pd-"+uuid+"_data-pr3").Output()
+	labels, _ := exec.Command("docker", "volume", "inspect", "-f", "{{json .Labels}}", "pd-"+uuid+"_data_pr3").Output()
 	if !strings.Contains(string(labels), `"portdock.pr":"3"`) || !strings.Contains(string(labels), `"portdock.volume":"data"`) {
 		t.Fatalf("labels: %s", labels)
 	}
+
+	// A volume made beforehand under the same name is not taken over.
+	_ = exec.Command("docker", "volume", "create", "pd-"+uuid+"_conf_pr4").Run()
+	j4 := &job{e: e, app: app, x: x, d: &store.Deployment{ID: 1, PRNumber: 4}, log: newLogger(e, 1)}
+	if _, err := j4.volumeArgs(ctx); err == nil || !strings.Contains(err.Error(), "create volumes") {
+		t.Fatalf("foreign volume reused: %v", err)
+	}
+	_ = exec.Command("docker", "volume", "rm", "-f", "pd-"+uuid+"_conf_pr4", "pd-"+uuid+"_data_pr4").Run()
 
 	// Closing the preview removes only its volumes.
 	if err := removeAppVolumes(ctx, x, uuid, "portdock.pr=3"); err != nil {
@@ -106,7 +114,7 @@ func TestVolumesE2E(t *testing.T) {
 		out, _ := executor.Output(ctx, x, volumesCmd(uuid))
 		return out
 	}
-	if l := list(); strings.Contains(l, "-pr3") || !strings.Contains(l, "_data") {
+	if l := list(); strings.Contains(l, "_pr3") || !strings.Contains(l, "_data") {
 		t.Fatalf("after preview cleanup: %q", l)
 	}
 	if u := e.VolumeUsage(ctx, app); len(u) != 1 || u[0].Error != "" || strings.Join(u[0].Volumes, ",") != "conf,data" {

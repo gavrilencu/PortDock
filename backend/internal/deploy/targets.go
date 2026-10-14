@@ -201,7 +201,12 @@ func (j *job) distribute(ctx context.Context, image string, build target, target
 				return fmt.Errorf("%s: %w", t.srv.Name, err)
 			}
 			if err := t.x.Run(ctx, "docker pull "+q(image), executor.RunOpts{Stdout: j.log}); err != nil {
-				return fmt.Errorf("%s: pull image: %w", t.srv.Name, err)
+				// An image built on the server (e.g. by Dokku) or loaded by
+				// hand is in no registry: use it as it is.
+				if !hasImage(ctx, t.x, image) {
+					return fmt.Errorf("%s: pull image: %w", t.srv.Name, err)
+				}
+				j.log.Printf("[%s] %s is in no registry: using the image already on the server", t.srv.Name, image)
 			}
 		case t.srv.ID == build.srv.ID || hasImage(ctx, t.x, image):
 			// already present
