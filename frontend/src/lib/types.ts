@@ -1014,6 +1014,10 @@ export interface ChatStatus {
   /** Enabled, configured and this user is permitted. */
   allowed: boolean;
   model: string;
+  /** The assistant reads the platform (logs, containers, deployments…) with the user's permissions. */
+  tools?: boolean;
+  /** It may propose actions that run only after the user confirms them. */
+  actions?: boolean;
 }
 
 export interface ChatSettings {
@@ -1026,6 +1030,24 @@ export interface ChatSettings {
   access: "all" | "admins" | "selected";
   user_ids: number[];
   instructions: string;
+  tools_enabled?: boolean;
+  actions_enabled?: boolean;
+}
+
+/** "expired" is set by the browser when the server no longer knows the action. */
+export type ChatStepStatus = "running" | "done" | "error" | "pending" | "confirmed" | "failed" | "cancelled" | "expired";
+
+/** A tool the assistant used for a reply, or an action it proposed. */
+export interface ChatStep {
+  id: string;
+  tool: string;
+  /** English fallback title; the UI renders its own from tool and args. */
+  title: string;
+  args?: Record<string, unknown>;
+  status: ChatStepStatus;
+  detail?: string;
+  action_id?: string;
+  at?: string;
 }
 
 export interface ChatModel {
@@ -1053,6 +1075,8 @@ export interface ChatMessage {
   model: string;
   created_at: string;
   error?: boolean;
+  /** What the assistant did for this reply (tools, proposed actions). */
+  meta?: { steps?: ChatStep[]; notice?: string };
 }
 
 export type LogDrainType = "loki" | "elasticsearch" | "gelf" | "splunk" | "syslog" | "http";

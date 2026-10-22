@@ -28,7 +28,7 @@ Deploy applications, databases and services from Git or Docker — with HTTPS, r
 - **Roll back in seconds.** Every production deployment is kept as a version. Drag an older version onto **Live** and it is back — no rebuild, same environment variables.
 - **Monorepos done right.** A frontend and a backend in one `docker-compose.yml` deploy together, each service with its own domain and its own variables.
 - **Built for teams.** Project roles, protected environments, deployment approvals, SSO (OIDC), LDAP / Active Directory, two-factor authentication and a full audit log.
-- **An AI assistant built in.** Ask about failing deployments, DNS or Docker in the corner of every page, with any model on OpenRouter.
+- **An AI assistant built in.** Ask why a container or deployment fails in the corner of every page: it reads your logs, containers and deployments with your own permissions, proposes fixes you confirm, and works with any model on OpenRouter or a local server.
 - **Free and open source.** No plans, no license keys, no limits on servers or users. Apache-2.0.
 
 ## Quick start
@@ -153,7 +153,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 **✨ Platform**
 - One-click updates from GitHub releases, with a backup and automatic rollback
-- AI assistant with any model on OpenRouter or a local server (Ollama, vLLM…), per-user history, access control
+- AI assistant with any model on OpenRouter or a local server (Ollama, vLLM…): reads logs, containers and deployments with the user's permissions, proposes actions that run after confirmation, knows the documentation; per-user history, access control
 - MCP server: AI agents (Claude Code, VS Code, Cursor…) list, deploy, follow, roll back and read logs with an API token
 - Interface in English, Romanian and Russian; light and dark theme
 - Command palette (Ctrl K), real-time UI, full-width responsive layout
@@ -696,6 +696,10 @@ Applications instrumented with an OpenTelemetry SDK send traces, metrics and log
 - the API key is stored encrypted; **Test connection** checks the key and the model;
 - access for all users, administrators only or selected users; optional instructions for the system prompt;
 - each user has a private history; replies stream in with Markdown, code blocks, Stop and copy.
+
+**What it can see and do.** The assistant has tools that read the instance with the user's own permissions (project roles, visibility and token limits apply exactly as in the interface): projects, applications, deployments and their logs, the containers of every server with their logs, inspect data and live resource usage, databases and their backups, services, servers, domains, jobs, versions, alerts, uptime monitors and the audit log. Ask *Why did the last deployment fail?* or *Which containers have problems?* and it reads the evidence before answering; the chat shows each step and keeps it with the reply. Values that look like credentials in logs are masked before they reach the model. It also searches PortDock's documentation and troubleshooting playbooks, embedded in the binary, and knows which page you are looking at.
+
+It can propose a few **actions**: deploy, roll back, restart or start an application, container, database or service, back up a database, run a job. A proposal runs only when the user presses **Confirm** in the chat, with the user's own rights, and is written to the audit log; it expires after 15 minutes. Nothing can be deleted, removed or stopped through the assistant, and no variable, domain, setting, user or token can be changed: the API refuses such requests even if a model tried. Administrators can turn the actions, or the tools altogether, off in **Settings → AI assistant → Access to the platform**. The tools need a model with tool calling; a model without it answers without the tools.
 
 Messages are sent to OpenRouter and the provider of the selected model — don't paste secrets. `PORTDOCK_OPENROUTER_URL` points the assistant at an OpenRouter-compatible gateway.
 

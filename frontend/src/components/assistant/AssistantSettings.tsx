@@ -24,6 +24,10 @@ interface Form {
   instructions: string;
   /** A new key to save; empty keeps the saved one. */
   api_key: string;
+  /** The assistant may read the platform with each user's permissions. */
+  tools_enabled: boolean;
+  /** It may propose actions that run after the user confirms them. */
+  actions_enabled: boolean;
 }
 
 interface TestResult {
@@ -52,6 +56,8 @@ const formFrom = (s: ChatSettings): Form => ({
   user_ids: s.user_ids ?? [],
   instructions: s.instructions ?? "",
   api_key: "",
+  tools_enabled: s.tools_enabled ?? true,
+  actions_enabled: s.actions_enabled ?? true,
 });
 
 function sameIds(a: number[], b: number[]): boolean {
@@ -140,6 +146,8 @@ export function AssistantSettings() {
         access: form.access,
         user_ids: known ? form.user_ids.filter((id) => known.has(id)) : form.user_ids,
         instructions: form.instructions,
+        tools_enabled: form.tools_enabled,
+        actions_enabled: form.actions_enabled,
         ...(form.api_key.trim() ? { api_key: form.api_key.trim() } : {}),
       });
     },
@@ -187,6 +195,8 @@ export function AssistantSettings() {
     f.provider !== (s.provider ?? "openrouter") ||
     f.base_url.trim() !== (s.base_url ?? "") ||
     f.enabled !== !!s.enabled ||
+    f.tools_enabled !== (s.tools_enabled ?? true) ||
+    f.actions_enabled !== (s.actions_enabled ?? true) ||
     f.model.trim() !== (s.model ?? "") ||
     f.access !== (s.access ?? "all") ||
     f.instructions !== (s.instructions ?? "") ||
@@ -208,7 +218,7 @@ export function AssistantSettings() {
     <div className="space-y-6">
       <Card
         title={t("AI assistant")}
-        description={t("Answers questions about PortDock, deployments, Docker and configuration with a model of your choice, on OpenRouter or on a server of your own. It only sees what users write in the chat.")}
+        description={t("Answers questions about PortDock, deployments, Docker and configuration with a model of your choice, on OpenRouter or on a server of your own. It can read the platform with each user's permissions and propose actions that run only after they confirm them.")}
         actions={s.enabled ? configured ? <Badge tone="success">{t("Enabled")}</Badge> : <Badge tone="warning">{t("Not configured")}</Badge> : <Badge>{t("Disabled")}</Badge>}
       >
         <div className="space-y-3 p-5">
@@ -313,6 +323,28 @@ export function AssistantSettings() {
           {f.access === "selected" && (
             <UserPicker list={users.data} loading={users.isLoading} error={users.error} selected={f.user_ids} onChange={(user_ids) => setF({ ...f, user_ids })} />
           )}
+        </div>
+      </Card>
+
+      <Card title={t("Access to the platform")} description={t("What the assistant may do on this instance. It always acts with the permissions of the signed-in user.")}>
+        <div className="space-y-4 p-5">
+          <Switch
+            checked={f.tools_enabled}
+            onChange={(tools_enabled) => setF({ ...f, tools_enabled })}
+            label={t("Let the assistant read the platform")}
+            description={t("Projects, applications, deployments and their logs, containers (logs, inspect, resource usage), databases and backups, servers, domains, alerts and the documentation. Secret values are never read.")}
+          />
+          <Switch
+            checked={f.tools_enabled && f.actions_enabled}
+            disabled={!f.tools_enabled}
+            onChange={(actions_enabled) => setF({ ...f, actions_enabled })}
+            label={t("Let it propose actions, run only after the user confirms")}
+            description={t("Deploy, roll back, restart or start an application, container, database or service, back up a database, run a scheduled job. Each one appears as a confirmation card in the chat and is written to the audit log.")}
+          />
+          <div className="flex gap-2.5 rounded-lg border border-border bg-surface-2/60 px-3 py-2.5 text-xs leading-relaxed text-muted">
+            <ShieldAlert className="mt-px size-4 shrink-0" />
+            <span>{t("The assistant can never delete, remove or stop anything, change variables, domains, settings, users or tokens, or run commands on servers. These limits are enforced by the server, not by the model.")}</span>
+          </div>
         </div>
       </Card>
 

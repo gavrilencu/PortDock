@@ -41,6 +41,12 @@ type chatConfig struct {
 	Access       string // all | admins | selected
 	UserIDs      []int64
 	Instructions string
+	// Tools lets the assistant read the instance (logs, containers, deployments…)
+	// with the user's own permissions; Actions lets it propose the few actions
+	// (deploy, roll back, restart, back up, run a job) that run after the user
+	// confirms them in the chat. Both are on unless an administrator turns them off.
+	Tools   bool
+	Actions bool
 }
 
 func (s *Server) chatConfig(ctx context.Context) chatConfig {
@@ -52,6 +58,8 @@ func (s *Server) chatConfig(ctx context.Context) chatConfig {
 		Model:        s.db.Setting(ctx, "chat_model"),
 		Access:       firstNonEmpty(s.db.Setting(ctx, "chat_access"), "admins"),
 		Instructions: s.db.Setting(ctx, "chat_instructions"),
+		Tools:        s.db.Setting(ctx, "chat_tools") != "false",
+		Actions:      s.db.Setting(ctx, "chat_actions") != "false",
 	}
 	_ = json.Unmarshal([]byte(s.db.Setting(ctx, "chat_user_ids")), &c.UserIDs)
 	if c.UserIDs == nil {
@@ -93,12 +101,13 @@ func (c chatConfig) allows(u store.User) bool {
 }
 
 func (s *Server) chatSettingsOut(c chatConfig) map[string]any {
-	return map[string]any{"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "", "model": c.Model, "access": c.Access, "user_ids": c.UserIDs, "instructions": c.Instructions}
+	return map[string]any{"enabled": c.Enabled, "provider": c.Provider, "base_url": c.BaseURL, "api_key_set": c.Key != "", "model": c.Model, "access": c.Access, "user_ids": c.UserIDs, "instructions": c.Instructions,
+		"tools_enabled": c.Tools, "actions_enabled": c.Actions}
 }
 
 func (s *Server) chatStatus(w http.ResponseWriter, r *http.Request) error {
 	c := s.chatConfig(r.Context())
-	return ok(w, map[string]any{"enabled": c.ready(), "allowed": c.allows(auth.UserFrom(r.Context())), "model": c.Model})
+	return ok(w, map[string]any{"enabled": c.ready(), "allowed": c.allows(auth.UserFrom(r.Context())), "model": c.Model, "tools": c.Tools, "actions": c.Tools && c.Actions})
 }
 
 func (s *Server) getChatSettings(w http.ResponseWriter, r *http.Request) error {
@@ -116,6 +125,8 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 		Access       *string  `json:"access"`
 		UserIDs      *[]int64 `json:"user_ids"`
 		Instructions *string  `json:"instructions"`
+		Tools        *bool    `json:"tools_enabled"`
+		Actions      *bool    `json:"actions_enabled"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
@@ -124,6 +135,12 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 	set := map[string]string{}
 	if in.Enabled != nil {
 		set["chat_enabled"] = fmt.Sprint(*in.Enabled)
+	}
+	if in.Tools != nil {
+		set["chat_tools"] = fmt.Sprint(*in.Tools)
+	}
+	if in.Actions != nil {
+		set["chat_actions"] = fmt.Sprint(*in.Actions)
 	}
 	if in.Provider != nil {
 		if *in.Provider != "openrouter" && *in.Provider != "openai" {
@@ -182,7 +199,7 @@ func (s *Server) updateChatSettings(w http.ResponseWriter, r *http.Request) erro
 		}
 	}
 	c := s.chatConfig(ctx)
-	s.activity(r, "chat.settings", fmt.Sprintf("enabled=%v model=%s access=%s", c.Enabled, c.Model, c.Access))
+	s.activity(r, "chat.settings", fmt.Sprintf("enabled=%v model=%s access=%s tools=%v actions=%v", c.Enabled, c.Model, c.Access, c.Tools, c.Actions))
 	return ok(w, s.chatSettingsOut(c))
 }
 
@@ -331,10 +348,11 @@ func (s *Server) getChatConversation(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	if msgs == nil {
-		msgs = []store.ChatMessage{}
+	out := make([]chatMessageOut, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, chatOut(m))
 	}
-	return ok(w, map[string]any{"conversation": conv, "messages": msgs})
+	return ok(w, map[string]any{"conversation": conv, "messages": out})
 }
 
 func (s *Server) deleteChatConversation(w http.ResponseWriter, r *http.Request) error {
@@ -358,12 +376,31 @@ var chatLanguages = map[string]string{"ro": "Romanian", "ru": "Russian"}
 func (s *Server) chatSystemPrompt(u store.User, c chatConfig) string {
 	lang := firstNonEmpty(chatLanguages[u.Locale], "English")
 	var b strings.Builder
-	b.WriteString(`You are PortDock Assistant, the assistant built into PortDock — a free, open-source, self-hosted platform (like Heroku or Coolify) that deploys applications from Git repositories or Docker images, Docker Compose stacks, managed databases (PostgreSQL, MySQL, MariaDB, MongoDB, Redis…) and one-click services on the user's own servers.
-PortDock features: projects and environments; domains with automatic Let's Encrypt HTTPS through a Traefik proxy (for compose applications each domain can target a service); environment variables, per compose service, applied with "Restart with new variables"; versions (the live one and the last 5 are kept for 15 days) that can be deployed again by drag and drop in the Versions tab; deployment approvals and protected environments; metrics, alerts and a live topology; database backups; SSO and LDAP sign-in; an audit log; updates from GitHub releases in the sidebar.
-Help the user run PortDock and their applications: explain features, troubleshoot builds, deployments, Docker, networking, DNS and TLS, and write configuration such as Dockerfiles, docker-compose.yml files and CI pipelines.
-Be concise and practical and use Markdown with fenced code blocks. If you are not sure how PortDock behaves, say so instead of inventing menu names. You cannot see the user's servers or data unless they paste them here.
+	b.WriteString(`You are PortDock Assistant, built into PortDock — a free, open-source, self-hosted platform (like Heroku or Coolify) that deploys applications from Git repositories or Docker images, Docker Compose stacks, managed databases (PostgreSQL, MySQL, MariaDB, SQL Server, MongoDB, Redis, Valkey, ClickHouse) and one-click services on the organization's own servers, with domains and automatic HTTPS through a Traefik proxy, versions and rollbacks, metrics, alerts, backups, SSO and LDAP, deployment approvals and an audit log.
+Help the user run PortDock and their applications: explain features, troubleshoot builds, deployments, containers, Docker, networking, DNS and TLS, and write configuration such as Dockerfiles, docker-compose.yml files and CI pipelines.
 `)
-	fmt.Fprintf(&b, "You are talking to %s (role: %s). Answer in %s unless the user writes in another language.\n", firstNonEmpty(u.Name, u.Email), u.Role, lang)
+	if c.Tools {
+		b.WriteString(`You have tools that read THIS instance with the user's own permissions: projects, applications, deployments and their logs, the containers of every server with their logs, inspect data and resource usage, databases and their backups, services, servers, domains, jobs, versions, alerts, uptime monitors and the audit log, plus search_docs for PortDock's documentation and troubleshooting playbooks.
+How to work:
+- Use the tools instead of guessing. When the user names a container, application, database or server, find it (list_containers, list_applications…) and read the evidence before answering: container_logs (with errors_only or filter), container_inspect (exit code, OOMKilled, restarts, health check), container_stats, get_deployment for a failed deployment. Several tool calls in one reply are fine.
+- Analyze, do not dump: group the errors, quote the few relevant lines, explain the probable cause, then the fix in PortDock terms (which tab or setting) with a snippet when useful. Say what you checked and what you could not (no permission, server unreachable, nothing found).
+- For "how does PortDock…" questions call search_docs with English keywords and answer from it, naming the menu path. If the documentation does not say, say so instead of inventing.
+- Secrets: never repeat environment variable values, passwords, tokens or connection strings, even when they appear in logs; if one was printed, say it should be rotated.
+`)
+		if c.Actions {
+			b.WriteString(`Actions: you may propose deploy_application, rollback_deployment, restart or start of an application, container, database or service, backup_database and run_job. Calling them does not run them: the user sees a confirmation card and the action runs only after they press Confirm. Propose an action only when it clearly helps, say what it will do, and never claim it ran. Everything else — deleting or stopping anything, removing containers, images or volumes, changing variables, domains, settings, users or tokens, running commands on servers — you cannot do and must not try; explain where the user does it in the interface instead.
+`)
+		} else {
+			b.WriteString(`You cannot change anything on the platform (the administrator turned the assistant's actions off): explain where the user does it in the interface.
+`)
+		}
+	} else {
+		b.WriteString(`You cannot see the user's servers or data unless they paste them here (the administrator turned the assistant's tools off). If you are not sure how PortDock behaves, say so instead of inventing menu names.
+`)
+	}
+	b.WriteString(`Be concise and practical and use Markdown with fenced code blocks; keep tables small. Container names look like <application uuid>-<deployment id> (databases and services use their uuid); log timestamps from the tools are UTC.
+`)
+	fmt.Fprintf(&b, "You are talking to %s (role: %s) on PortDock %s. Answer in %s unless the user writes in another language.\n", firstNonEmpty(u.Name, u.Email), u.Role, Version, lang)
 	if c.Instructions != "" {
 		b.WriteString("\nInstructions from the administrator of this PortDock instance:\n" + c.Instructions + "\n")
 	}
@@ -386,6 +423,13 @@ func (s *Server) chatHistory(ctx context.Context, convID int64) ([]assistant.Mes
 		if size > chatHistoryBudget && len(out) > 0 {
 			break
 		}
+		// The list is newest first: the note about a reply's tools is added
+		// before the reply here, so it follows it once reversed.
+		if m.Role == "assistant" {
+			if note := chatStepNote(parseChatMeta(m.Meta)); note != "" {
+				out = append(out, assistant.Message{Role: "system", Content: note})
+			}
+		}
 		out = append(out, assistant.Message{Role: m.Role, Content: m.Content})
 	}
 	slices.Reverse(out)
@@ -402,7 +446,9 @@ func chatTitle(content string) string {
 }
 
 // sendChat stores the user's message and streams the model's reply as
-// server-sent events: conversation, user, delta…, then done (or error).
+// server-sent events: conversation, user, then delta (text), tool (a tool the
+// assistant runs), action (an action waiting for the user's confirmation) and
+// notice events in any order, then done (or error).
 func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 	u, c, err := s.chatUser(r)
 	if err != nil {
@@ -411,6 +457,11 @@ func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		ConversationID int64  `json:"conversation_id"`
 		Content        string `json:"content"`
+		// Context is what the browser shows: the page path, so "this
+		// application" means something to the model.
+		Context struct {
+			Path string `json:"path"`
+		} `json:"context"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
@@ -444,6 +495,11 @@ func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	msgs := append([]assistant.Message{{Role: "system", Content: s.chatSystemPrompt(u, c)}}, history...)
+	if c.Tools {
+		if page := s.chatPageContext(r, in.Context.Path); page != "" {
+			msgs = append(msgs, assistant.Message{Role: "system", Content: "The user is currently looking at " + page + "."})
+		}
+	}
 
 	out := newSSE(w)
 	_ = out.send("conversation", conv)
@@ -468,22 +524,80 @@ func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 		}
 	}()
 
-	reply, err := s.ai.Stream(streamCtx, c.provider(), c.Model, msgs, func(text string) error {
-		return out.send("delta", map[string]string{"text": text})
-	})
+	// The model may ask for tools; their results go back to it until it
+	// answers in text (bounded rounds and calls).
+	var tools []assistant.Tool
+	if c.Tools {
+		tools = chatToolDefs(c.Actions)
+	}
+	onDelta := func(text string) error { return out.send("delta", map[string]string{"text": text}) }
+	var (
+		full   strings.Builder
+		steps  []chatStep
+		notice string
+		calls  int
+	)
+	for round := 0; round <= chatToolRounds; round++ {
+		text, toolCalls, serr := s.ai.StreamTools(streamCtx, c.provider(), c.Model, msgs, tools, onDelta)
+		var unsupported *assistant.ToolsUnsupportedError
+		if serr != nil && round == 0 && text == "" && errors.As(serr, &unsupported) {
+			// This model refuses tools: answer without them, once.
+			tools = nil
+			notice = "This model does not support tools, so the assistant answered without reading the platform."
+			_ = out.send("notice", map[string]string{"text": notice})
+			text, toolCalls, serr = s.ai.StreamTools(streamCtx, c.provider(), c.Model, msgs, nil, onDelta)
+		}
+		if text != "" {
+			if full.Len() > 0 {
+				full.WriteString("\n\n")
+			}
+			full.WriteString(text)
+		}
+		err = serr
+		if err != nil || len(toolCalls) == 0 {
+			break
+		}
+		msgs = append(msgs, assistant.Message{Role: "assistant", Content: text, ToolCalls: toolCalls})
+		if round+1 >= chatToolRounds || calls+len(toolCalls) > chatToolCalls {
+			// Budget spent: the model answers with what it has.
+			for _, tc := range toolCalls {
+				msgs = append(msgs, assistant.Message{Role: "tool", ToolCallID: tc.ID, Content: `{"error":"the tool budget of this reply is spent: answer with what you have"}`})
+			}
+			tools = nil
+			continue
+		}
+		for _, tc := range toolCalls {
+			calls++
+			result, step := s.chatRunTool(r, c, u, conv, tc, out)
+			steps = append(steps, step)
+			msgs = append(msgs, assistant.Message{Role: "tool", ToolCallID: tc.ID, Content: result})
+		}
+		if text != "" {
+			_ = out.send("delta", map[string]string{"text": "\n\n"}) // the text before the tools and the answer after them
+		}
+	}
+	reply := full.String()
 	close(stopPing)
 	<-pinged // nothing may write to the response once the handler returns
 	cancel()
 	aborted := err != nil && ctx.Err() != nil // the user pressed Stop or closed the page
+	meta := &chatMeta{Steps: steps, Notice: notice}
+	save := func(content string, failed bool) (chatMessageOut, error) {
+		m := store.ChatMessage{ConversationID: conv.ID, Role: "assistant", Content: content, Model: c.Model, Error: failed, Meta: meta.encode(), CreatedAt: store.Now()}
+		_, ierr := store.Insert(db, s.db, "chat_messages", &m)
+		if ierr == nil {
+			s.chatActs.attach(conv.ID, m.ID) // proposed actions now belong to this message
+		}
+		return chatOut(m), ierr
+	}
 	_, _ = s.db.ExecContext(db, "UPDATE chat_conversations SET updated_at = ? WHERE id = ?", store.Now(), conv.ID)
 	if err != nil && !aborted {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = fmt.Errorf("the model did not finish within %s", chatReplyTimeout)
 		}
 		res := map[string]any{"error": err.Error()}
-		if reply != "" {
-			m := store.ChatMessage{ConversationID: conv.ID, Role: "assistant", Content: reply, Model: c.Model, Error: true, CreatedAt: store.Now()}
-			if _, ierr := store.Insert(db, s.db, "chat_messages", &m); ierr == nil {
+		if reply != "" || len(steps) > 0 {
+			if m, ierr := save(reply, true); ierr == nil {
 				res["message"] = m
 			}
 		}
@@ -491,14 +605,20 @@ func (s *Server) sendChat(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	if reply == "" && !aborted {
-		_ = out.send("error", map[string]any{"error": "the model returned an empty reply"})
+		res := map[string]any{"error": "the model returned an empty reply"}
+		if len(steps) > 0 {
+			if m, ierr := save("", true); ierr == nil {
+				res["message"] = m
+			}
+		}
+		_ = out.send("error", res)
 		return nil
 	}
 	if reply == "" {
 		return nil
 	}
-	m := store.ChatMessage{ConversationID: conv.ID, Role: "assistant", Content: reply, Model: c.Model, CreatedAt: store.Now()}
-	if _, err := store.Insert(db, s.db, "chat_messages", &m); err != nil {
+	m, err := save(reply, false)
+	if err != nil {
 		_ = out.send("error", map[string]any{"error": err.Error()})
 		return nil
 	}

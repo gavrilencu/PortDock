@@ -195,6 +195,13 @@ Backend-ul rulează comenzile Docker prin shell; pe Windows folosește Git Bash/
 - **Instrucțiuni** opționale adăugate la prompt-ul de sistem (convențiile echipei, tonul).
 - Fiecare utilizator are **istoricul** conversațiilor lui (vizibil doar lui). Răspunsurile apar pe măsură ce sunt generate, cu Stop, copiere și formatare Markdown; fereastra se poate minimiza și mări.
 
+**Asistentul vede platforma.** Cu drepturile utilizatorului autentificat (rolurile de proiect se aplică întocmai), asistentul poate citi: proiecte, aplicații, deploy-uri și logurile lor, containerele de pe toate serverele (loguri cu filtru pe erori, `inspect`, consum de resurse), baze de date și backup-uri, servicii, servere, domenii, joburi, versiuni, alerte, monitoare de disponibilitate și jurnalul de audit, plus documentația PortDock (inclusă în binar și căutată local). Îi poți spune „analizează containerul `shop-web-1`” și el citește logurile, starea și consumul containerului înainte să răspundă. Pașii pe care îi face apar în chat, iar pagina pe care ești deschisă îi este transmisă, ca „această aplicație” să însemne ceva.
+
+- **Acțiuni doar cu confirmare:** poate propune deploy, rollback, repornirea sau pornirea unei aplicații, a unui container, a unei baze de date sau a unui serviciu, backup la o bază de date și rularea unui job. Acțiunea apare ca un card în chat și rulează doar când apeși **Confirmă**; rezultatul se scrie în jurnalul de audit (`assistant.action`).
+- **Niciodată:** ștergere, eliminare, oprire sau `prune`, schimbarea variabilelor, domeniilor, setărilor, utilizatorilor sau tokenurilor, comenzi pe servere. Limitele sunt impuse de server (o listă albă a cererilor permise), nu de model.
+- **Secretele nu ajung la model:** valorile variabilelor, parolele, tokenurile și URL-urile de conexiune sunt omise sau mascate în tot ce citește asistentul.
+- Administratorii pot opri citirea platformei sau acțiunile din **Settings → AI assistant → Access to the platform**. Modelele fără suport pentru unelte primesc răspunsuri fără acces la platformă, cu o notă în chat.
+
 Mesajele sunt trimise la OpenRouter și la furnizorul modelului ales: nu lipi secrete în chat.
 
 **Modele locale (fără internet).** Alege **Your own server (OpenAI-compatible)** și mesajele rămân în rețeaua voastră.

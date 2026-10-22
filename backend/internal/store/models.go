@@ -745,5 +745,8 @@ type ChatMessage struct {
 	Content        string `db:"content" json:"content"`
 	Model          string `db:"model" json:"model"`
 	Error          bool   `db:"error" json:"error,omitempty"`
-	CreatedAt      string `db:"created_at" json:"created_at"`
+	// Meta is JSON kept by the API: the tools the assistant used for this
+	// reply and the actions it proposed, with their outcome.
+	Meta      string `db:"meta" json:"-"`
+	CreatedAt string `db:"created_at" json:"created_at"`
 }
