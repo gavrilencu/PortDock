@@ -33,10 +33,56 @@ type Model struct {
 	Description     string `json:"description,omitempty"`
 }
 
-// Message is a chat message sent to the model.
+// Message is a chat message sent to the model. An assistant message may carry
+// the tool calls the model asked for; a tool message answers one of them.
 type Message struct {
-	Role    string `json:"role"` // system | user | assistant
-	Content string `json:"content"`
+	Role       string     `json:"role"` // system | user | assistant | tool
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolCall is a function call requested by the model.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // "function"
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall names the function and carries its arguments as JSON text.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// Tool is a function the model may call, in the OpenAI format that OpenRouter,
+// Ollama, vLLM and the other compatible servers understand.
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction describes one function: its name, what it does and a JSON
+// schema of its arguments.
+type ToolFunction struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
+// ToolsUnsupportedError reports a model (or server) that refuses requests with
+// tools, so the caller can ask again without them.
+type ToolsUnsupportedError struct{ Err error }
+
+func (e *ToolsUnsupportedError) Error() string { return e.Err.Error() }
+func (e *ToolsUnsupportedError) Unwrap() error { return e.Err }
+
+func toolsUnsupported(err error) bool {
+	msg := strings.ToLower(err.Error())
+	if !strings.Contains(msg, "tool") {
+		return false
+	}
+	return strings.Contains(msg, "http 400") || strings.Contains(msg, "not support") || strings.Contains(msg, "unsupported") || strings.Contains(msg, "unknown field") || strings.Contains(msg, "invalid")
 }
 
 // KeyInfo describes an OpenRouter API key.
@@ -247,12 +293,48 @@ func (c *Client) Complete(ctx context.Context, p Provider, model string, msgs []
 // as it is generated. It returns the whole reply; on error (or cancellation)
 // the part received so far is returned with the error.
 func (c *Client) Stream(ctx context.Context, p Provider, model string, msgs []Message, onDelta func(string) error) (string, error) {
-	res, err := c.do(ctx, http.MethodPost, "/chat/completions", p, map[string]any{"model": model, "messages": msgs, "stream": true})
+	text, _, err := c.StreamTools(ctx, p, model, msgs, nil, onDelta)
+	return text, err
+}
+
+// StreamTools is Stream with tools the model may call. The text of the reply is
+// streamed through onDelta; the tool calls the model asked for are returned
+// once the stream ends (their arguments arrive in pieces and are assembled
+// here). A model that refuses tools returns a *ToolsUnsupportedError.
+func (c *Client) StreamTools(ctx context.Context, p Provider, model string, msgs []Message, tools []Tool, onDelta func(string) error) (string, []ToolCall, error) {
+	body := map[string]any{"model": model, "messages": msgs, "stream": true}
+	if len(tools) > 0 {
+		body["tools"] = tools
+		body["tool_choice"] = "auto"
+	}
+	res, err := c.do(ctx, http.MethodPost, "/chat/completions", p, body)
 	if err != nil {
-		return "", err
+		if len(tools) > 0 && toolsUnsupported(err) {
+			return "", nil, &ToolsUnsupportedError{Err: err}
+		}
+		return "", nil, err
 	}
 	defer res.Body.Close()
 	var full strings.Builder
+	calls := map[int]*ToolCall{} // by index, as the deltas refer to them
+	var order []int
+	finish := func() []ToolCall {
+		out := make([]ToolCall, 0, len(order))
+		for i, idx := range order {
+			tc := *calls[idx]
+			if strings.TrimSpace(tc.Function.Name) == "" {
+				continue
+			}
+			if tc.ID == "" {
+				tc.ID = fmt.Sprintf("call_%d", i+1)
+			}
+			if tc.Type == "" {
+				tc.Type = "function"
+			}
+			out = append(out, tc)
+		}
+		return out
+	}
 	sc := bufio.NewScanner(res.Body)
 	sc.Buffer(make([]byte, 64<<10), 4<<20)
 	for sc.Scan() {
@@ -266,12 +348,21 @@ func (c *Client) Stream(ctx context.Context, p Provider, model string, msgs []Me
 		}
 		data = strings.TrimSpace(data)
 		if data == "[DONE]" {
-			return full.String(), nil
+			return full.String(), finish(), nil
 		}
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content   string `json:"content"`
+					ToolCalls []struct {
+						Index    *int   `json:"index"`
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -283,23 +374,50 @@ func (c *Client) Stream(ctx context.Context, p Provider, model string, msgs []Me
 			continue
 		}
 		if chunk.Error != nil {
-			return full.String(), fmt.Errorf("%s: %s", p.Name(), chunk.Error.Message)
+			return full.String(), finish(), fmt.Errorf("%s: %s", p.Name(), chunk.Error.Message)
 		}
 		for _, ch := range chunk.Choices {
+			for _, tc := range ch.Delta.ToolCalls {
+				var idx int
+				switch {
+				case tc.Index != nil:
+					idx = *tc.Index
+				case tc.ID != "" || len(order) == 0:
+					idx = len(order) // a new call from a server that sends no index
+				default:
+					idx = order[len(order)-1] // more arguments of the last call
+				}
+				cur := calls[idx]
+				if cur == nil {
+					cur = &ToolCall{Type: "function"}
+					calls[idx] = cur
+					order = append(order, idx)
+				}
+				if tc.ID != "" {
+					cur.ID = tc.ID
+				}
+				if tc.Type != "" {
+					cur.Type = tc.Type
+				}
+				if cur.Function.Name == "" {
+					cur.Function.Name = tc.Function.Name
+				}
+				cur.Function.Arguments += tc.Function.Arguments
+			}
 			if ch.Delta.Content == "" {
 				continue
 			}
 			full.WriteString(ch.Delta.Content)
 			if err := onDelta(ch.Delta.Content); err != nil {
-				return full.String(), err
+				return full.String(), finish(), err
 			}
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return full.String(), err
+		return full.String(), finish(), err
 	}
 	if ctx.Err() != nil {
-		return full.String(), ctx.Err()
+		return full.String(), finish(), ctx.Err()
 	}
-	return full.String(), nil
+	return full.String(), finish(), nil
 }

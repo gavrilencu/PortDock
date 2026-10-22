@@ -48,6 +48,13 @@ func (r *recorder) WriteHeader(code int)        { r.code = code }
 
 // call runs an API request with the credentials of r and decodes the answer into out.
 func (s *Server) call(r *http.Request, method, path string, body, out any) error {
+	// Requests made for the AI assistant may only read, plus the few actions
+	// the user confirmed (chattools.go).
+	if chatGuarded(r.Context()) {
+		if err := chatCallAllowed(method, path); err != nil {
+			return err
+		}
+	}
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)

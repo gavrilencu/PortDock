@@ -209,6 +209,8 @@ var migrations = []string{
 	`ALTER TABLE servers ADD COLUMN overlay_endpoint TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE applications ADD COLUMN load_balance INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE databases ADD COLUMN overlay_port INTEGER NOT NULL DEFAULT 0`,
+	// the AI assistant's tools: what a reply did, and the actions it proposed
+	`ALTER TABLE chat_messages ADD COLUMN meta TEXT NOT NULL DEFAULT ''`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

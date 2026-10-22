@@ -1,4 +1,4 @@
-.PHONY: dev-api dev-ui build test docker
+.PHONY: dev-api dev-ui build test docker docs-sync
 
 # Backend on :8000 with permissive CORS; data kept in ./.data
 dev-api:
@@ -19,3 +19,9 @@ test:
 
 docker:
 	docker compose build
+
+# The AI assistant embeds the documentation (backend/internal/assistant/docs);
+# TestDocsInSync fails when these copies drift from the sources.
+docs-sync:
+	cp README.md backend/internal/assistant/docs/README.md
+	cp backend/internal/templates/services/README.md backend/internal/assistant/docs/service-templates.md

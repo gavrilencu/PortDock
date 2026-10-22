@@ -65,6 +65,9 @@ type Server struct {
 	uptime  *uptime.Checker
 	drains  *logdrain.Manager
 	overlay *overlay.Manager
+	// chatActs holds the actions the assistant proposed, until the user
+	// confirms or cancels them in the chat.
+	chatActs *chatActions
 }
 
 type Deps struct {
@@ -113,7 +116,7 @@ func New(d Deps) *Server {
 	}
 	s := &Server{cfg: d.Config, db: d.DB, box: d.Box, auth: d.Auth, pool: d.Pool, hub: d.Hub,
 		engine: d.Engine, sched: d.Scheduler, notify: d.Notifier, github: d.GitHub, ui: d.UI, sec: newSecurity(), cache: newTTLCache(), monitor: d.Monitor, audit: d.Audit, updates: &updateCache{}, ai: assistant.New(), uptime: d.Uptime,
-		backups: d.InstanceBackups, restart: d.Restart, drains: d.LogDrains, overlay: d.Overlay}
+		backups: d.InstanceBackups, restart: d.Restart, drains: d.LogDrains, overlay: d.Overlay, chatActs: newChatActions()}
 	s.ai.Referer = func() string { return s.engine.PublicURL(context.Background()) }
 	// An OpenRouter-compatible gateway (or a fake one in tests) can replace openrouter.ai.
 	if u := strings.TrimRight(config.Env("OPENROUTER_URL", ""), "/"); u != "" {
@@ -624,6 +627,9 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/chat/conversations/{id}", s.getChatConversation)
 	a("DELETE /api/chat/conversations/{id}", s.deleteChatConversation)
 	a("POST /api/chat/send", s.sendChat)
+	// actions the assistant proposed run only after the user confirms them
+	a("POST /api/chat/actions/{id}/confirm", s.confirmChatAction)
+	a("POST /api/chat/actions/{id}/cancel", s.cancelChatAction)
 
 	admin("GET /api/users", s.listUsers)
 	admin("POST /api/users", s.createUser)

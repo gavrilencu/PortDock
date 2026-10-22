@@ -4,13 +4,13 @@
 // conversation and a reply that is still streaming.
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, CircleAlert, History, Maximize2, MessageSquare, MessagesSquare, Minimize2, Minus, Plus, RotateCcw, Sparkles, Square, SquarePen, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Ban, Check, CircleAlert, History, Maximize2, MessageSquare, MessagesSquare, Minimize2, Minus, Plus, RotateCcw, ShieldCheck, Sparkles, Square, SquarePen, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "../../lib/api";
 import { intlLocale, t, tk, tMaybe, tx } from "../../lib/i18n";
-import type { ChatConversation, ChatMessage, ChatStatus } from "../../lib/types";
+import type { ChatConversation, ChatMessage, ChatStatus, ChatStep, ChatStepStatus } from "../../lib/types";
 import { cn, timeAgo } from "../../lib/utils";
-import { Button, Empty, ErrorBox, Skeleton, useConfirm } from "../ui";
+import { Button, Empty, ErrorBox, Skeleton, Spinner, useConfirm } from "../ui";
 import { CopyIconButton, Markdown } from "./Markdown";
 
 const STORE = "portdock.assistant.";
@@ -19,6 +19,65 @@ const MAX_CHARS = 20_000;
 const MAX_INPUT_HEIGHT = 132;
 
 const SUGGESTIONS = [tk("How do I add a custom domain with HTTPS?"), tk("Why could my deployment fail?"), tk("How do I roll back to a previous version?")];
+/** When the assistant can read the platform. */
+const SUGGESTIONS_TOOLS = [tk("Which containers have problems right now?"), tk("Show me the errors in the logs of my containers"), tk("Why did the last deployment fail?"), tk("How do I add a custom domain with HTTPS?")];
+
+/** How each tool of the assistant is shown, with the arguments it names. */
+const TOOL_TITLES: Record<string, [string, string[]]> = {
+  search_docs: [tk("Searching the documentation for “{query}”"), ["query"]],
+  instance_info: [tk("Reading the instance overview"), []],
+  list_projects: [tk("Listing the projects"), []],
+  list_applications: [tk("Listing the applications"), []],
+  get_application: [tk("Reading application {app}"), ["app"]],
+  list_deployments: [tk("Listing the deployments of {app}"), ["app"]],
+  get_deployment: [tk("Reading deployment #{deployment_id}"), ["deployment_id"]],
+  application_logs: [tk("Reading the logs of application {app}"), ["app"]],
+  list_versions: [tk("Listing the versions of {app}"), ["app"]],
+  list_domains: [tk("Listing the domains of {app}"), ["app"]],
+  list_jobs: [tk("Listing the jobs of {app}"), ["app"]],
+  list_databases: [tk("Listing the databases"), []],
+  get_database: [tk("Reading database {database}"), ["database"]],
+  list_services: [tk("Listing the services"), []],
+  list_servers: [tk("Listing the servers"), []],
+  server_status: [tk("Reading the status of the servers"), []],
+  list_containers: [tk("Listing the containers"), []],
+  container_logs: [tk("Reading the logs of container {container}"), ["container"]],
+  container_inspect: [tk("Inspecting container {container}"), ["container"]],
+  container_stats: [tk("Reading the resource usage of the containers"), []],
+  resource_metrics: [tk("Reading the metrics of {kind} #{id}"), ["kind", "id"]],
+  list_alerts: [tk("Listing the alerts"), []],
+  list_monitors: [tk("Listing the uptime monitors"), []],
+  recent_activity: [tk("Reading the recent activity"), []],
+  deploy_application: [tk("Deploy application {app}"), ["app"]],
+  rollback_deployment: [tk("Roll back to deployment #{deployment_id}"), ["deployment_id"]],
+  restart_application: [tk("Restart application {app}"), ["app"]],
+  start_application: [tk("Start application {app}"), ["app"]],
+  restart_container: [tk("Restart container {container}"), ["container"]],
+  start_container: [tk("Start container {container}"), ["container"]],
+  restart_database: [tk("Restart database {database}"), ["database"]],
+  restart_service: [tk("Restart service {service}"), ["service"]],
+  backup_database: [tk("Back up database #{database_id}"), ["database_id"]],
+  run_job: [tk("Run job {job} of {app}"), ["job", "app"]],
+};
+
+function stepTitle(s: ChatStep): string {
+  const def = TOOL_TITLES[s.tool];
+  if (!def) return s.title || s.tool;
+  const vars: Record<string, string> = {};
+  for (const k of def[1]) vars[k] = String(s.args?.[k] ?? "");
+  return t(def[0], vars);
+}
+
+const STEP_STATUS: Record<ChatStepStatus, string> = {
+  running: tk("Working…"),
+  done: tk("Done"),
+  error: tk("Failed"),
+  pending: tk("Waiting for your confirmation"),
+  confirmed: tk("Done"),
+  failed: tk("Failed"),
+  cancelled: tk("Cancelled"),
+  expired: tk("Expired — ask the assistant again"),
+};
 
 /** A message as shown here: saved messages plus local-only states of this session. */
 interface Msg extends ChatMessage {
@@ -56,7 +115,7 @@ export function useChatStatus() {
 export function ChatWidget() {
   const { data } = useChatStatus();
   if (!data?.allowed) return null;
-  return <Assistant model={data.model ?? ""} />;
+  return <Assistant model={data.model ?? ""} tools={!!data.tools} actions={!!data.actions} />;
 }
 
 // ---------- Streaming ----------
@@ -140,7 +199,7 @@ async function readEvents(body: ReadableStream<Uint8Array>, on: (event: string, 
 
 // ---------- Widget ----------
 
-function Assistant({ model }: { model: string }) {
+function Assistant({ model, tools, actions }: { model: string; tools: boolean; actions: boolean }) {
   const qc = useQueryClient();
   const [open, setOpenState] = useState(() => readStore("open") === "1");
   const [expanded, setExpandedState] = useState(() => readStore("expanded") === "1");
@@ -156,6 +215,13 @@ function Assistant({ model }: { model: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   /** Text of the reply being streamed; null while idle. */
   const [stream, setStream] = useState<string | null>(null);
+  /** Tools used and actions proposed by the reply being streamed. */
+  const [liveSteps, setLiveSteps] = useState<ChatStep[]>([]);
+  const [liveNotice, setLiveNotice] = useState<string | null>(null);
+  const liveStepsRef = useRef<ChatStep[]>([]);
+  const liveNoticeRef = useRef<string | null>(null);
+  /** Action being confirmed or cancelled right now. */
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [unread, setUnread] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
@@ -284,6 +350,35 @@ function Assistant({ model }: { model: string }) {
 
   const upsertConversation = (c: ChatConversation) => qc.setQueryData<ChatConversation[]>(["chat-conversations"], (old) => (old ? [c, ...old.filter((x) => x.id !== c.id)] : old));
 
+  /** Writes the outcome of a proposed action into the message that holds it. */
+  const applyStep = (updated: ChatStep) =>
+    setMessages((ms) =>
+      ms.map((m) => {
+        const steps = m.meta?.steps;
+        if (!steps?.some((s) => s.action_id === updated.action_id)) return m;
+        return { ...m, meta: { ...m.meta, steps: steps.map((s) => (s.action_id === updated.action_id ? { ...s, ...updated } : s)) } };
+      }),
+    );
+
+  /** Confirms or cancels an action the assistant proposed; it runs on the server with the user's own rights. */
+  const decide = useCallback(async (step: ChatStep, verb: "confirm" | "cancel") => {
+    if (!step.action_id) return;
+    setBusyAction(step.action_id);
+    try {
+      const res = await api.post<{ status: ChatStepStatus; detail?: string; step?: ChatStep }>(`/chat/actions/${step.action_id}/${verb}`);
+      applyStep({ ...step, ...res.step, status: res.status, detail: res.detail ?? res.step?.detail });
+      if (verb === "confirm") {
+        if (res.status === "confirmed") toast.success(t("Done: {action}", { action: stepTitle(step) }));
+        else toast.error(t("Failed: {action}", { action: stepTitle(step) }), { description: res.detail });
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 410) applyStep({ ...step, status: "expired", detail: e.message });
+      else toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyAction(null);
+    }
+  }, []);
+
   const send = async (raw: string) => {
     const content = raw.trim();
     if (!content || content.length > MAX_CHARS || abortRef.current) return;
@@ -301,11 +396,16 @@ function Assistant({ model }: { model: string }) {
       content: streamRef.current,
       model,
       created_at: now(),
+      ...(liveStepsRef.current.length || liveNoticeRef.current ? { meta: { steps: liveStepsRef.current, notice: liveNoticeRef.current ?? undefined } } : {}),
       ...extra,
     });
 
     stickRef.current = true;
     streamRef.current = "";
+    liveStepsRef.current = [];
+    liveNoticeRef.current = null;
+    setLiveSteps([]);
+    setLiveNotice(null);
     setStream("");
     setMessages((ms) => [...ms, { id: userTempId, conversation_id: conversationId, role: "user", content, model: "", created_at: now() }]);
 
@@ -317,6 +417,8 @@ function Assistant({ model }: { model: string }) {
       frameRef.current = 0;
       if (!alive()) return;
       setStream(null);
+      setLiveSteps([]);
+      setLiveNotice(null);
       if (m) setMessages((ms) => [...ms, m]);
       if (!openRef.current) setUnread(true);
     };
@@ -326,7 +428,8 @@ function Assistant({ model }: { model: string }) {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({ conversation_id: conversationId, content }),
+        // The page path lets "this application" mean something to the assistant.
+        body: JSON.stringify({ conversation_id: conversationId, content, context: { path: location.pathname } }),
         signal: ctrl.signal,
       });
       if (!res.ok) throw await responseError(res);
@@ -354,6 +457,18 @@ function Assistant({ model }: { model: string }) {
               frameRef.current = 0;
               if (alive() && !settled) setStream(streamRef.current);
             });
+        } else if (event === "tool" || event === "action") {
+          const step = data as ChatStep;
+          const cur = liveStepsRef.current;
+          const i = cur.findIndex((s) => s.id === step.id);
+          liveStepsRef.current = i < 0 ? [...cur, step] : cur.map((s, j) => (j === i ? step : s));
+          if (alive()) setLiveSteps(liveStepsRef.current);
+        } else if (event === "notice") {
+          const n = data as { text?: string };
+          if (n.text) {
+            liveNoticeRef.current = n.text;
+            if (alive()) setLiveNotice(n.text);
+          }
         } else if (event === "done") {
           settle(data as ChatMessage);
           return true;
@@ -550,6 +665,7 @@ function Assistant({ model }: { model: string }) {
                 <MessagesSkeleton />
               ) : messages.length === 0 && !streaming ? (
                 <Welcome
+                  tools={tools}
                   onPick={(q) => {
                     focusRef.current = "input";
                     send(q);
@@ -558,9 +674,14 @@ function Assistant({ model }: { model: string }) {
               ) : (
                 <div className="space-y-4">
                   {messages.map((m) => (
-                    <MessageItem key={m.id} m={m} onRetry={!streaming && (m.failed || (m === last && m.error)) ? onRetry : undefined} />
+                    <MessageItem key={m.id} m={m} onRetry={!streaming && (m.failed || (m === last && m.error)) ? onRetry : undefined} onDecide={decide} busyAction={busyAction} canDecide={!streaming} />
                   ))}
-                  {stream !== null && <div className="min-w-0">{stream.trim() ? <Markdown text={stream} /> : <TypingDots />}</div>}
+                  {stream !== null && (
+                    <div className="min-w-0">
+                      <Steps steps={liveSteps} notice={liveNotice} canDecide={false} busyAction={null} />
+                      {stream.trim() ? <Markdown text={stream} /> : <TypingDots />}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -620,6 +741,14 @@ function Assistant({ model }: { model: string }) {
             </div>
             <p className="mt-2 px-1 text-center text-2xs leading-4 text-faint">
               {model ? tx("Replies are generated by {model} via OpenRouter and can be wrong.", { model: <span className="font-mono">{model}</span> }) : t("Replies are generated via OpenRouter and can be wrong.")}
+              {tools && (
+                <>
+                  {" "}
+                  {actions
+                    ? t("It reads your platform with your permissions; actions run only after you confirm them, and it can never delete anything.")
+                    : t("It reads your platform with your permissions and cannot change anything.")}
+                </>
+              )}
             </p>
           </div>
         </>
@@ -648,7 +777,7 @@ function IconButton({ title, onClick, pressed, disabled, className, children }: 
   );
 }
 
-function Welcome({ onPick }: { onPick: (question: string) => void }) {
+function Welcome({ tools, onPick }: { tools: boolean; onPick: (question: string) => void }) {
   return (
     <div className="flex min-h-full flex-col justify-center py-2">
       <div className="mb-5 text-center">
@@ -656,10 +785,12 @@ function Welcome({ onPick }: { onPick: (question: string) => void }) {
           <Sparkles className="size-5" />
         </span>
         <div className="text-sm font-semibold">{t("How can I help?")}</div>
-        <p className="mx-auto mt-1 max-w-72 text-[13px] leading-relaxed text-subtle">{t("Ask anything about your applications, deployments, domains or PortDock itself.")}</p>
+        <p className="mx-auto mt-1 max-w-72 text-[13px] leading-relaxed text-subtle">
+          {tools ? t("Ask about your applications, containers, deployments or domains — the assistant can look at them for you.") : t("Ask anything about your applications, deployments, domains or PortDock itself.")}
+        </p>
       </div>
       <div className="space-y-2">
-        {SUGGESTIONS.map((s) => (
+        {(tools ? SUGGESTIONS_TOOLS : SUGGESTIONS).map((s) => (
           <button
             key={s}
             type="button"
@@ -705,7 +836,61 @@ function MessagesSkeleton() {
 
 const hoverReveal = "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100";
 
-const MessageItem = memo(function MessageItem({ m, onRetry }: { m: Msg; onRetry?: (m: Msg) => void }) {
+type Decide = (step: ChatStep, verb: "confirm" | "cancel") => void;
+
+/** The tools a reply used and the actions it proposed, with their outcome. */
+function Steps({ steps, notice, canDecide, busyAction, onDecide }: { steps: ChatStep[]; notice?: string | null; canDecide: boolean; busyAction: string | null; onDecide?: Decide }) {
+  if (!steps.length && !notice) return null;
+  return (
+    <div className="mb-2 space-y-1">
+      {notice && (
+        <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-2.5 py-1.5 text-xs leading-relaxed text-muted">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span className="[overflow-wrap:anywhere]">{tMaybe(notice)}</span>
+        </div>
+      )}
+      {steps.map((s) => (
+        <StepRow key={s.action_id || s.id} s={s} canDecide={canDecide} busy={!!s.action_id && busyAction === s.action_id} onDecide={onDecide} />
+      ))}
+    </div>
+  );
+}
+
+function StepRow({ s, canDecide, busy, onDecide }: { s: ChatStep; canDecide: boolean; busy: boolean; onDecide?: Decide }) {
+  const pending = s.status === "pending";
+  const bad = s.status === "error" || s.status === "failed";
+  const good = s.status === "done" || s.status === "confirmed";
+  const tone = bad ? "text-danger" : good ? "text-success" : pending ? "text-info" : "text-subtle";
+  const icon = s.status === "running" ? <Spinner className="size-3.5" /> : good ? <Check className="size-3.5" /> : bad ? <CircleAlert className="size-3.5" /> : pending ? <ShieldCheck className="size-3.5" /> : <Ban className="size-3.5" />;
+  const detail = s.detail && s.status !== "done" ? (s.detail.length > 300 ? `${s.detail.slice(0, 300)}…` : s.detail) : "";
+  return (
+    <div className={cn("rounded-lg border px-2.5 py-1.5 text-xs", pending ? "border-info/30 bg-info-soft" : "border-border bg-surface-2/60")}>
+      <div className="flex items-start gap-2">
+        <span className={cn("mt-0.5 shrink-0", tone)}>{icon}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="font-medium text-fg [overflow-wrap:anywhere]">{stepTitle(s)}</span>
+            <span className={cn("text-2xs", tone)}>{t(STEP_STATUS[s.status] ?? s.status)}</span>
+          </div>
+          {detail && <div className="mt-0.5 font-mono text-2xs leading-4 text-muted [overflow-wrap:anywhere]">{tMaybe(detail)}</div>}
+          {pending && onDecide && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <Button size="xs" variant="primary" icon={<Check />} loading={busy} disabled={!canDecide} onClick={() => onDecide(s, "confirm")}>
+                {t("Confirm")}
+              </Button>
+              <Button size="xs" variant="ghost" disabled={busy || !canDecide} onClick={() => onDecide(s, "cancel")}>
+                {t("Cancel")}
+              </Button>
+              {!canDecide && <span className="text-2xs text-subtle">{t("Available once the reply is complete")}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MessageItem = memo(function MessageItem({ m, onRetry, onDecide, busyAction, canDecide }: { m: Msg; onRetry?: (m: Msg) => void; onDecide?: Decide; busyAction?: string | null; canDecide?: boolean }) {
   const time = m.created_at ? new Date(m.created_at).toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" }) : "";
   if (m.role === "user")
     return (
@@ -741,6 +926,7 @@ const MessageItem = memo(function MessageItem({ m, onRetry }: { m: Msg; onRetry?
     );
   return (
     <div className="group min-w-0">
+      <Steps steps={m.meta?.steps ?? []} notice={m.meta?.notice} canDecide={canDecide ?? true} busyAction={busyAction ?? null} onDecide={onDecide} />
       {m.content && <Markdown text={m.content} />}
       {m.error && (
         <div className={cn("flex items-start gap-2 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger", m.content && "mt-2.5")}>
