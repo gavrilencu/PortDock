@@ -727,6 +727,7 @@ func (s *Server) Handler() http.Handler {
 	admin("POST /api/github/apps/{id}/sync", s.syncGitHubApp)
 	admin("POST /api/github/apps/{id}/webhook-secret", s.rotateGitHubWebhookSecret)
 	admin("DELETE /api/github/apps/{id}", s.deleteGitHubApp)
+	public("GET /api/github/manifest/{state}", s.githubManifestPage) // checks the admin session itself
 	public("GET /api/github/callback", s.githubCallback)
 	public("GET /api/github/setup", s.githubSetup)
 	a("GET /api/github/repositories", s.listGitHubRepositories)

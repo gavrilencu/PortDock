@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -87,7 +88,19 @@ type manifestState struct {
 	HTMLURL string `json:"html_url"`
 	APIURL  string `json:"api_url"`
 	Created int64  `json:"created"`
+	// Action and Manifest feed the hand-off page that posts the manifest to GitHub.
+	Action   string `json:"action,omitempty"`
+	Manifest string `json:"manifest,omitempty"`
 }
+
+// manifestPage posts the manifest to GitHub. It is served by the API with its
+// own policy because the interface's CSP (form-action 'self') blocks any form
+// sent to another origin.
+var manifestPage = template.Must(template.New("manifest").Parse(`<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Redirecting to GitHub…</title>
+<style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#444}button{font:inherit;padding:.5rem 1rem;cursor:pointer}</style></head>
+<body><form id="f" method="post" action="{{.Action}}"><input type="hidden" name="manifest" value="{{.Manifest}}"><p>Redirecting to GitHub…</p><noscript><button type="submit">Continue to GitHub</button></noscript></form>
+<script nonce="{{.Nonce}}">document.getElementById("f").submit()</script></body></html>`))
 
 func normalizeHTMLURL(raw string) (string, error) {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
@@ -121,17 +134,45 @@ func (s *Server) createGitHubManifest(w http.ResponseWriter, r *http.Request) er
 		name = "PortDock " + secrets.RandomPassword(5)
 	}
 	state := secrets.RandomToken(16)
-	st, _ := json.Marshal(manifestState{HTMLURL: htmlURL, APIURL: github.APIURLFor(htmlURL), Created: time.Now().Unix()})
-	if err := s.db.SetSetting(r.Context(), "gh_state:"+state, string(st)); err != nil {
-		return err
-	}
 	action := htmlURL + "/settings/apps/new"
 	if org := strings.TrimSpace(in.Organization); org != "" {
 		action = htmlURL + "/organizations/" + url.PathEscape(org) + "/settings/apps/new"
 	}
+	action += "?state=" + state
 	manifest, _ := json.Marshal(github.Manifest(name, s.publicURL(r.Context())))
+	st, _ := json.Marshal(manifestState{HTMLURL: htmlURL, APIURL: github.APIURLFor(htmlURL), Created: time.Now().Unix(), Action: action, Manifest: string(manifest)})
+	if err := s.db.SetSetting(r.Context(), "gh_state:"+state, string(st)); err != nil {
+		return err
+	}
 	s.activity(r, "github.manifest", name)
-	return ok(w, map[string]string{"action_url": action + "?state=" + state, "manifest": string(manifest), "state": state})
+	return ok(w, map[string]string{
+		"action_url": action, "manifest": string(manifest), "state": state,
+		// The browser opens this page, which posts the manifest to GitHub.
+		"redirect_url": "/api/github/manifest/" + state,
+	})
+}
+
+// githubManifestPage sends the browser on to GitHub with the manifest, under a
+// policy that allows posting the form to that GitHub host only.
+func (s *Server) githubManifestPage(w http.ResponseWriter, r *http.Request) error {
+	u, err := s.auth.Authenticate(r)
+	if err != nil || !u.IsAdmin() {
+		http.Redirect(w, r, "/login?next=/settings%3Ftab%3Dgit", http.StatusFound)
+		return nil
+	}
+	state := r.PathValue("state")
+	raw := s.db.Setting(r.Context(), "gh_state:"+state)
+	var st manifestState
+	if state == "" || raw == "" || json.Unmarshal([]byte(raw), &st) != nil || st.Action == "" ||
+		time.Since(time.Unix(st.Created, 0)) > time.Hour {
+		return s.redirectUI(w, r, "error="+url.QueryEscape("The GitHub App setup session expired. Please start again."))
+	}
+	nonce := secrets.RandomToken(16)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+nonce+
+		"'; form-action "+st.HTMLURL+"; base-uri 'none'; frame-ancestors 'none'")
+	return manifestPage.Execute(w, map[string]string{"Action": st.Action, "Manifest": st.Manifest, "Nonce": nonce})
 }
 
 func (s *Server) redirectUI(w http.ResponseWriter, r *http.Request, query string) error {
