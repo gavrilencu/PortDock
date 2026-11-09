@@ -168,18 +168,6 @@ export function BranchSelect({ appId, installationId, repo, value, onChange, def
 
 // ---------- Settings: Git sources ----------
 
-function submitManifest(action: string, manifest: string) {
-  const form = document.createElement("form");
-  form.method = "post";
-  form.action = action;
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "manifest";
-  input.value = manifest;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-}
 
 export function GitSourcesSettings() {
   const qc = useQueryClient();
@@ -201,8 +189,10 @@ export function GitSourcesSettings() {
   }, [params, setParams, qc]);
 
   const start = useMutation({
-    mutationFn: () => api.post<{ action_url: string; manifest: string }>("/github/apps/manifest", connect),
-    onSuccess: (r) => submitManifest(r.action_url, r.manifest),
+    mutationFn: () => api.post<{ redirect_url: string }>("/github/apps/manifest", connect),
+    // The interface's CSP (form-action 'self') forbids posting a form to GitHub, so
+    // a server page with its own policy posts the manifest instead.
+    onSuccess: (r) => window.location.assign(r.redirect_url),
     onError: (e) => toast.error(e.message),
   });
   const register = useMutation({
