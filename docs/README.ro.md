@@ -138,6 +138,7 @@ Un singur binar care conține API-ul, UI-ul, workerii de deploy, monitorul și s
 - **Containere de pe toate serverele** într-o singură pagină (*Containere*): containere, imagini și volume ale fiecărui server conectat, cu serverul, resursa PortDock, CPU și memorie, loguri, terminal și acțiuni; pagina proiectului arată pe ce server rulează fiecare resursă.
 - **Proxy corporativ și Nexus** (*Setări → Rețea și proxy*): proxy HTTP(S) cu utilizator/parolă și NO_PROXY, folosit pentru PortDock, build-uri și containere (cu excepție per aplicație); mirror pentru Docker Hub (Nexus, Artifactory, Harbor) aplicat în `daemon.json` pe fiecare server cu reload fără oprirea containerelor; mirror-uri npm / PyPI / Go / Maven pentru build-uri; buton de test al conexiunii.
 - **Consolă SQL** în browser pentru PostgreSQL, MySQL, MariaDB, SQL Server și ClickHouse: tabele, rezultate, export CSV; membrii fără rol de admin au acces doar de citire (sesiune care nu poate scrie), iar fiecare interogare ajunge în audit log.
+- **Clustere Kubernetes ca servere**: o aplicație devine un Deployment cu rolling update, un Service, un Ingress și certificate de la cert-manager; vezi [Clustere Kubernetes](#clustere-kubernetes).
 - UI în timp real (evenimente SSE), temă dark/light.
 
 ## Pornire rapidă (producție)
@@ -152,6 +153,42 @@ sudo bash install.sh https://portdock.example.com   # sau fără argument: http:
 Deschide URL-ul, creează contul de owner. Serverul local e adăugat automat; apasă **Servers → localhost → Run setup** ca să pornești Traefik.
 
 Resetare parolă: `docker exec portdock portdock -reset-password admin@example.com`
+
+### Într-un cluster Kubernetes
+
+Fără Docker; clusterul este serverul:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/portdock.yaml
+kubectl -n portdock rollout status statefulset/portdock
+kubectl -n portdock port-forward svc/portdock 8000:8000   # apoi deschide http://localhost:8000
+```
+
+### Clustere Kubernetes
+
+Un cluster Kubernetes poate fi un server, alături de serverele Docker. PortDock lucrează într-**un singur namespace**, cu `kubectl` și credențialele pe care i le dai, și nu instalează nimic pe cluster.
+
+1. Acolo unde `kubectl` ajunge la cluster, rulează:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/connect.sh | bash
+   ```
+
+   Creează namespace-ul `portdock` (altul: `… | bash -s -- namespace-ul-meu`), un service account care administrează doar acel namespace și afișează un kubeconfig cu token-ul lui. `kubectl delete namespace portdock` retrage accesul.
+2. **Servers → Connect server → Kubernetes cluster**: lipește kubeconfig-ul. Opțional: clasa de ingress, un `ClusterIssuer` din cert-manager, clasa de stocare și dimensiunea volumelor.
+3. **Check the cluster**, pe pagina serverului, arată ce a găsit: namespace-ul și drepturile, controllerul de ingress, cert-manager și API-ul de metrici.
+
+Kubeconfig-ul se păstrează criptat și nu mai este afișat. Trebuie să conțină el însuși credențialele (token sau certificat `*-data`): cele care rulează un program pentru autentificare (`exec`, ca fișierele EKS, GKE și AKS) sunt refuzate.
+
+Ce face un deploy pe cluster:
+
+- **Imaginea**: una gata făcută e luată direct de cluster. O aplicație din Git se construiește ca de obicei pe un server Docker (serverul de build al aplicației sau cel pe care rulează PortDock) și se urcă în registry-ul ei, de unde o ia clusterul.
+- **Fără întrerupere**: podurile noi trebuie să treacă health check-ul înainte ca cele vechi să se oprească. O versiune care nu pornește este retrasă, iar una care nu poate porni deloc (imagine inexistentă, crash loop) eșuează în câteva secunde, cu evenimentele și logurile podului în logul de deploy.
+- **Variabilele** sunt un Secret al acelui deploy; **domeniile** sunt un Ingress și se aplică imediat; **versiunile** rămân în registry; **volumele** sunt câte un PersistentVolumeClaim.
+- **Comenzile pre-deploy și joburile programate** rulează ca Job într-un pod identic cu al aplicației.
+- Logurile, terminalul în pod, start / stop / restart, pagina de containere, topologia și istoricul de metrici funcționează ca pe Docker.
+
+**Încă nu pe Kubernetes** (folosește un server Docker): baze de date, servicii cu un click și aplicații Docker Compose; preview-uri pentru pull request-uri; deploy canary; redirect-uri www și certificate încărcate; log drains și scanări DAST. **Protecția accesului** (SSO, parolă, adrese permise, rate limit) nu este încă aplicată pe Kubernetes: o aplicație care o are nu este publicată deloc acolo, în loc să fie publicată fără ea.
 
 ### Servere remote
 
@@ -401,6 +438,7 @@ backend/
                         builderi, compose, baze de date, backup, servicii, monitor
   internal/executor     rulare comenzi local / SSH (pool, PTY, host key pinning)
   internal/docker       wrapper Docker CLI (containere, stats, imagini, volume, rețele, metrici)
+  internal/kube         wrapper kubectl: un cluster ca server, podurile lui ca și containere, manifeste
   internal/proxy        Traefik: pornire + label-uri de rutare/TLS
   internal/templates    motoare DB și șabloane de servicii
   internal/store        SQLite, schema, mapper generic
@@ -417,7 +455,8 @@ Toate operațiile pe servere trec prin `Executor` (local sau SSH) și CLI-ul Doc
 
 - Bazele de date (în afară de replicile PostgreSQL) și serviciile one-click rulează pe un singur server. Aplicațiile pot rula pe mai multe servere, dar echilibrarea traficului între ele se face prin DNS (mai multe înregistrări A) sau printr-un load balancer extern.
 - Preview-urile pentru PR-uri rulează doar pe serverul principal.
-- Fără Docker Swarm/Kubernetes.
+- Pe clustere Kubernetes rulează aplicațiile dintr-o imagine sau din Git; bazele de date, serviciile cu un click, aplicațiile Docker Compose, preview-urile, deploy-ul canary și protecția accesului au nevoie de un server Docker. Imaginile se construiesc pe un server Docker, nu în cluster.
+- Fără Docker Swarm.
 - Recuperarea la un moment dat există pentru PostgreSQL; celelalte engine-uri au backup logic (dump), cu teste automate de restaurare.
 
 ## Licență

@@ -124,12 +124,12 @@ func phase(c inspectJSON, now time.Time) string {
 
 // managedContainers inspects every PortDock-managed container of a server in one round trip.
 func managedContainers(ctx context.Context, x executor.Executor) ([]inspectJSON, error) {
-	out, err := executor.Output(ctx, x, "ids=$("+docker.IDsCmd("ps", true, "label="+docker.LabelManaged+"=true")+"); [ -n \"$ids\" ] && docker inspect $ids || echo '[]'")
+	out, err := docker.InspectAll(ctx, x, "label="+docker.LabelManaged+"=true")
 	if err != nil {
 		return nil, err
 	}
 	var list []inspectJSON
-	if err := json.Unmarshal([]byte(out), &list); err != nil {
+	if err := json.Unmarshal(out, &list); err != nil {
 		return nil, err
 	}
 	for i := range list {
@@ -363,12 +363,28 @@ func (s *Server) containerEnv(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	reveal := s.authorizeContainer(r, x, cid, permWrite) == nil
-	out, err := executor.Output(r.Context(), x, "docker inspect --format '{{json .Config.Env}}' "+executor.Quote(cid))
-	if err != nil {
-		return badRequest("%v", err)
-	}
 	var env []string
-	_ = json.Unmarshal([]byte(out), &env)
+	if docker.IsDocker(x) {
+		out, err := executor.Output(r.Context(), x, "docker inspect --format '{{json .Config.Env}}' "+executor.Quote(cid))
+		if err != nil {
+			return badRequest("%v", err)
+		}
+		_ = json.Unmarshal([]byte(out), &env)
+	} else {
+		// A pod lists the variables set on it; those of its Secret stay there.
+		raw, err := docker.Inspect(r.Context(), x, cid)
+		if err != nil {
+			return badRequest("%v", err)
+		}
+		var doc []struct {
+			Config struct {
+				Env []string `json:"Env"`
+			} `json:"Config"`
+		}
+		if json.Unmarshal(raw, &doc) == nil && len(doc) > 0 {
+			env = doc[0].Config.Env
+		}
+	}
 	type item struct {
 		Key    string `json:"key"`
 		Value  string `json:"value"`

@@ -204,15 +204,25 @@ func (s *Server) validateApp(ctx context.Context, a *store.Application) error {
 		clean = append(clean, d)
 	}
 	a.Domains = strings.Join(clean, ",")
-	if _, err := store.ByID[store.Server](ctx, s.db, "servers", a.ServerID); err != nil {
+	srv, err := store.ByID[store.Server](ctx, s.db, "servers", a.ServerID)
+	if err != nil {
 		return badRequest("server not found")
+	}
+	if srv.IsKubernetes() {
+		if err := deploy.CheckKubeApp(*a); err != nil {
+			return badRequest("%v", err)
+		}
 	}
 	if a.BuildServerID == a.ServerID {
 		a.BuildServerID = 0
 	}
 	if a.BuildServerID != 0 {
-		if _, err := store.ByID[store.Server](ctx, s.db, "servers", a.BuildServerID); err != nil {
+		bs, err := store.ByID[store.Server](ctx, s.db, "servers", a.BuildServerID)
+		if err != nil {
 			return badRequest("build server not found")
+		}
+		if bs.IsKubernetes() {
+			return badRequest("images are built on a Docker server: choose one as the build server")
 		}
 	}
 	if a.RegistryID != 0 {
@@ -278,9 +288,15 @@ func (s *Server) applyAppServers(r *http.Request, a store.Application, ids *[]in
 		return nil
 	}
 	ctx := r.Context()
+	primary, _ := store.ByID[store.Server](ctx, s.db, "servers", a.ServerID)
 	for _, id := range *ids {
-		if _, err := store.ByID[store.Server](ctx, s.db, "servers", id); err != nil {
+		srv, err := store.ByID[store.Server](ctx, s.db, "servers", id)
+		if err != nil {
 			return badRequest("server #%d not found", id)
+		}
+		// A cluster spreads the replicas over its nodes itself.
+		if id != a.ServerID && (srv.IsKubernetes() || primary.IsKubernetes()) {
+			return badRequest("an application on a Kubernetes cluster runs on that cluster only, and a cluster cannot be an additional server")
 		}
 	}
 	before := s.engine.AppServerIDs(ctx, a)

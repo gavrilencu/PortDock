@@ -50,6 +50,9 @@ func (e *Engine) ValidateServer(ctx context.Context, srv store.Server) (store.Se
 		if err != nil {
 			return err
 		}
+		if c, ok := clusterOf(x); ok {
+			return e.checkCluster(ctx, c, &srv, prev != "reachable")
+		}
 		if _, err := executor.Output(ctx, x, "echo ok"); err != nil {
 			e.pool.Forget(srv.ID)
 			return fmt.Errorf("connection failed: %w", err)
@@ -95,7 +98,11 @@ func (e *Engine) SetupServer(ctx context.Context, srv store.Server, withNixpacks
 	x, err := e.pool.For(ctx, srv)
 	if err != nil {
 		log.Printf("❌ %v", err)
+		e.hub.Publish(ServerTopic(srv.ID), "status", "failed")
 		return err
+	}
+	if c, ok := clusterOf(x); ok {
+		return e.setupCluster(ctx, srv, c, log)
 	}
 	run := func(title, cmd string) error {
 		log.Printf("━━━ %s", title)

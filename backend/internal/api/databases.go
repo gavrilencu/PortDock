@@ -213,8 +213,10 @@ func (s *Server) createDatabase(w http.ResponseWriter, r *http.Request) error {
 	if !found {
 		return badRequest("unknown engine %q", db.Engine)
 	}
-	if _, err := store.ByID[store.Server](r.Context(), s.db, "servers", db.ServerID); err != nil {
+	if srv, err := store.ByID[store.Server](r.Context(), s.db, "servers", db.ServerID); err != nil {
 		return badRequest("server not found")
+	} else if srv.IsKubernetes() {
+		return badRequest("databases cannot run on a Kubernetes cluster yet: choose a Docker server")
 	}
 	if err := s.requireEnv(r, db.EnvironmentID, permWrite); err != nil {
 		return err
@@ -709,8 +711,10 @@ func (s *Server) createService(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	svc := in.Service
-	if _, err := store.ByID[store.Server](r.Context(), s.db, "servers", svc.ServerID); err != nil {
+	if srv, err := store.ByID[store.Server](r.Context(), s.db, "servers", svc.ServerID); err != nil {
 		return badRequest("server not found")
+	} else if srv.IsKubernetes() {
+		return badRequest("one-click services are Docker Compose stacks and cannot run on a Kubernetes cluster yet: choose a Docker server")
 	}
 	if err := s.requireEnv(r, svc.EnvironmentID, permWrite); err != nil {
 		return err

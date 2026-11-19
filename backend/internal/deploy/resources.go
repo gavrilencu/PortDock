@@ -27,6 +27,13 @@ import (
 func (e *Engine) AppAction(ctx context.Context, app store.Application, action string) error {
 	found := 0
 	err := e.eachTarget(ctx, app, func(t target) error {
+		if c, ok := clusterOf(t.x); ok {
+			deployed, err := e.kubeAppAction(ctx, c, app, action)
+			if deployed {
+				found++
+			}
+			return err
+		}
 		if app.BuildPack == "compose" {
 			_, err := executor.Output(ctx, t.x, fmt.Sprintf("docker compose -p %s %s", q(composeProject(app.UUID)), action))
 			found++
@@ -68,6 +75,9 @@ func (e *Engine) AppContainers(ctx context.Context, app store.Application) ([]do
 
 // removeAppFrom deletes containers, routes, images and files of app on one server.
 func (e *Engine) removeAppFrom(ctx context.Context, x executor.Executor, app store.Application) error {
+	if c, ok := clusterOf(x); ok {
+		return kubeRemoveApp(ctx, c, app.UUID)
+	}
 	e.removeAllRoutes(ctx, x, app.UUID)
 	script := fmt.Sprintf(
 		"docker compose -p %[1]s down -v --remove-orphans >/dev/null 2>&1; "+

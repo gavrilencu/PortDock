@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -196,7 +197,8 @@ type termMsg struct {
 	Cols int    `json:"cols"`
 }
 
-func (s *Server) terminal(w http.ResponseWriter, r *http.Request, x executor.Executor, cmd string) error {
+// terminal relays a WebSocket to the interactive session that open starts.
+func (s *Server) terminal(w http.ResponseWriter, r *http.Request, open func(ctx context.Context, rows, cols int) (executor.Session, error)) error {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: s.cfg.DevMode})
 	if err != nil {
 		return nil // Accept already wrote the error response
@@ -213,7 +215,7 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request, x executor.Exe
 	if v, err := strconv.Atoi(r.URL.Query().Get("cols")); err == nil && v > 0 {
 		cols = v
 	}
-	sess, err := x.PTY(ctx, cmd, rows, cols)
+	sess, err := open(ctx, rows, cols)
 	if err != nil {
 		_ = c.Write(ctx, websocket.MessageText, []byte("\r\n\x1b[31mCould not open terminal: "+err.Error()+"\x1b[0m\r\n"))
 		c.Close(websocket.StatusInternalError, "pty failed")
@@ -271,8 +273,9 @@ func (s *Server) containerTerminal(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	s.activity(r, "terminal.container", srv.Name+"/"+cid)
-	cmd := "docker exec -it " + executor.Quote(cid) + " sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'"
-	return s.terminal(w, r, x, cmd)
+	return s.terminal(w, r, func(ctx context.Context, rows, cols int) (executor.Session, error) {
+		return docker.Terminal(ctx, x, cid, rows, cols)
+	})
 }
 
 func (s *Server) serverTerminal(w http.ResponseWriter, r *http.Request) error {
@@ -281,5 +284,10 @@ func (s *Server) serverTerminal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.activity(r, "terminal.server", srv.Name)
-	return s.terminal(w, r, x, `cd ~ 2>/dev/null; exec "${SHELL:-/bin/sh}" -l`)
+	return s.terminal(w, r, func(ctx context.Context, rows, cols int) (executor.Session, error) {
+		if !docker.IsDocker(x) {
+			return nil, errors.New("a Kubernetes cluster has no shell of its own: open a terminal in one of its pods")
+		}
+		return x.PTY(ctx, `cd ~ 2>/dev/null; exec "${SHELL:-/bin/sh}" -l`, rows, cols)
+	})
 }

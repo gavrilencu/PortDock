@@ -140,7 +140,8 @@ func (m *Manager) Resources(ctx context.Context) ([]Resource, error) {
 }
 
 func (m *Manager) servers(ctx context.Context) ([]store.Server, error) {
-	return store.Select[store.Server](ctx, m.db, "SELECT * FROM servers WHERE status = 'reachable' ORDER BY id")
+	// The agent reads the Docker socket: clusters are left to their own log collection.
+	return store.Select[store.Server](ctx, m.db, "SELECT * FROM servers WHERE status = 'reachable' AND kind != ? ORDER BY id", store.KindKubernetes)
 }
 
 // Reconcile starts, reconfigures or removes the agents.

@@ -40,6 +40,11 @@ func isCloudflare(ip net.IP) bool {
 // serverIPs returns the public addresses a domain should point to for srv.
 func (s *Server) serverIPs(ctx context.Context, srv store.Server) []net.IP {
 	var out []net.IP
+	if srv.IsKubernetes() {
+		// Domains point to the cluster's ingress controller, whose address
+		// PortDock does not know: DNS is only checked to resolve.
+		return nil
+	}
 	if srv.IsLocal || srv.Host == "" || srv.Host == "localhost" {
 		for _, k := range []string{"public_ipv4", "public_ipv6"} {
 			if ip := net.ParseIP(strings.TrimSpace(s.db.Setting(ctx, k))); ip != nil {

@@ -83,6 +83,9 @@ func (e *Engine) ApplyRoutes(ctx context.Context, app store.Application) error {
 		return err
 	}
 	return e.eachTarget(ctx, app, func(t target) error {
+		if c, ok := clusterOf(t.x); ok {
+			return e.kubeApplyRoutes(ctx, c, t.srv, app, routes)
+		}
 		if len(routes) > 0 && t.srv.ProxyEnabled {
 			if err := proxy.Ensure(ctx, t.x, e.ProxyOptions(ctx), false); err != nil {
 				return fmt.Errorf("start proxy: %w", err)

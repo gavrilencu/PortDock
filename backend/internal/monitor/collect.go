@@ -3,9 +3,12 @@
 package monitor
 
 import (
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/portdock/portdock/internal/docker"
 )
 
 // sampleScript gathers everything for one server in a single round trip.
@@ -120,6 +123,39 @@ func parseSize(s string) float64 {
 func splitPair(s string) (float64, float64) {
 	a, b, _ := strings.Cut(s, "/")
 	return parseSize(a), parseSize(b)
+}
+
+// sampleBackend samples a server that is not a Docker host (a Kubernetes
+// cluster): its pods and what the metrics API says they use. A cluster has no
+// single host to measure, so the server's own row carries only its capacity,
+// and network and restart counters are not available.
+func sampleBackend(ctx context.Context, b docker.Backend) (Sample, error) {
+	var s Sample
+	cs, err := b.Containers(ctx, true, "label="+docker.LabelManaged+"=true")
+	if err != nil {
+		return s, err
+	}
+	usage := map[string]docker.Stat{}
+	if stats, err := b.ContainerStats(ctx); err == nil {
+		for _, st := range stats {
+			usage[st.Name] = st
+		}
+	}
+	for _, c := range cs {
+		if c.Labels[docker.LabelResource] == "" {
+			continue
+		}
+		sample := ContainerSample{ID: c.ID, Kind: c.Labels[docker.LabelKind], Resource: c.Labels[docker.LabelResource], Running: c.State == "running"}
+		if st, ok := usage[c.Name]; ok {
+			sample.CPU, _ = strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(st.CPUPerc), "%"), 64)
+			sample.Mem, sample.MemLimit = splitPair(st.MemUsage)
+		}
+		s.Containers = append(s.Containers, sample)
+	}
+	if m, err := b.HostMetrics(ctx); err == nil {
+		s.Host.CPUs, s.Host.MemTotal = m.CPUs, float64(m.MemTotal)
+	}
+	return s, nil
 }
 
 // Parse turns the output of sampleScript into a Sample.

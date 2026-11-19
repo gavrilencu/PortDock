@@ -148,8 +148,30 @@ type Server struct {
 	OverlayPublicKey  string `db:"overlay_public_key" json:"overlay_public_key"`
 	OverlayPrivateKey string `db:"overlay_private_key" json:"-"`
 	OverlayEndpoint   string `db:"overlay_endpoint" json:"overlay_endpoint"`
+	// Kind is "docker" (a Docker host, local or over SSH) or "kubernetes": one
+	// namespace of a cluster, driven with kubectl (package kube). Kubeconfig
+	// (encrypted) holds the cluster's address and credentials; it is empty when
+	// PortDock runs in a pod of the cluster and uses its service account.
+	Kind          string `db:"kind" json:"kind"`
+	Kubeconfig    string `db:"kubeconfig" json:"-"`
+	KubeNamespace string `db:"kube_namespace" json:"kube_namespace"`
+	// KubeIngressClass and KubeStorageClass are empty for the cluster's defaults.
+	// KubeClusterIssuer is the cert-manager ClusterIssuer of HTTPS domains, and
+	// KubeVolumeSize the size of the volumes created for applications.
+	KubeIngressClass  string `db:"kube_ingress_class" json:"kube_ingress_class"`
+	KubeClusterIssuer string `db:"kube_cluster_issuer" json:"kube_cluster_issuer"`
+	KubeStorageClass  string `db:"kube_storage_class" json:"kube_storage_class"`
+	KubeVolumeSize    string `db:"kube_volume_size" json:"kube_volume_size"`
 	CreatedAt         string `db:"created_at" json:"created_at"`
+
+	HasKubeconfig bool `db:"-" json:"has_kubeconfig"`
 }
+
+// KindKubernetes is the Kind of a server that is a Kubernetes cluster.
+const KindKubernetes = "kubernetes"
+
+// IsKubernetes reports whether the server is a Kubernetes cluster.
+func (s Server) IsKubernetes() bool { return s.Kind == KindKubernetes }
 
 type Project struct {
 	ID          int64  `db:"id" json:"id"`

@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -140,12 +141,81 @@ func jsonLines[T any](out string) ([]T, error) {
 	return res, sc.Err()
 }
 
+// Backend is implemented by an executor that is not a Docker host (a
+// Kubernetes cluster, package kube): it answers the container operations
+// itself, with its pods as containers. Every function of this package that
+// lists, inspects or follows containers asks it first, so callers handle both
+// kinds of server the same way. What only a Docker host has (images, networks,
+// prune) is empty or refused there.
+type Backend interface {
+	EngineVersion(ctx context.Context) (string, error)
+	Containers(ctx context.Context, all bool, filters ...string) ([]Container, error)
+	ContainerAction(ctx context.Context, action, id string) error
+	ContainerInspect(ctx context.Context, id string) (json.RawMessage, error)
+	ContainerState(ctx context.Context, name string) (state, health string, err error)
+	ContainerLogs(ctx context.Context, id string, tail int, follow, timestamps bool, w io.Writer) error
+	ContainerStats(ctx context.Context, ids ...string) ([]Stat, error)
+	HostMetrics(ctx context.Context) (Metrics, error)
+	Terminal(ctx context.Context, id string, rows, cols int) (executor.Session, error)
+}
+
+// ErrDockerOnly is returned for what only a Docker host can do.
+var ErrDockerOnly = errors.New("this is only available on Docker servers")
+
+// IsDocker reports whether e is a Docker host.
+func IsDocker(e executor.Executor) bool {
+	_, other := e.(Backend)
+	return !other
+}
+
+// Terminal opens an interactive shell in a container.
+func Terminal(ctx context.Context, e executor.Executor, id string, rows, cols int) (executor.Session, error) {
+	if b, ok := e.(Backend); ok {
+		return b.Terminal(ctx, id, rows, cols)
+	}
+	return e.PTY(ctx, "docker exec -it "+q(id)+" sh -c 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'", rows, cols)
+}
+
+// InspectAll returns the `docker inspect` documents of every container
+// matching the label filters, as one JSON array.
+func InspectAll(ctx context.Context, e executor.Executor, filters ...string) (json.RawMessage, error) {
+	if b, ok := e.(Backend); ok {
+		cs, err := b.Containers(ctx, true, filters...)
+		if err != nil {
+			return nil, err
+		}
+		all := []json.RawMessage{}
+		for _, c := range cs {
+			raw, err := b.ContainerInspect(ctx, c.ID)
+			if err != nil {
+				continue // the pod went away meanwhile
+			}
+			var one []json.RawMessage
+			if json.Unmarshal(raw, &one) == nil {
+				all = append(all, one...)
+			}
+		}
+		return json.Marshal(all)
+	}
+	out, err := executor.Output(ctx, e, "ids=$("+IDsCmd("ps", true, filters...)+"); [ -n \"$ids\" ] && docker inspect $ids || echo '[]'")
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(out), nil
+}
+
 func Version(ctx context.Context, e executor.Executor) (string, error) {
+	if b, ok := e.(Backend); ok {
+		return b.EngineVersion(ctx)
+	}
 	return executor.Output(ctx, e, "docker version --format '{{.Server.Version}}'")
 }
 
 // PS lists containers. Filters are passed as docker `--filter` values, e.g. "label=portdock.resource=abc".
 func PS(ctx context.Context, e executor.Executor, all bool, filters ...string) ([]Container, error) {
+	if b, ok := e.(Backend); ok {
+		return b.Containers(ctx, all, filters...)
+	}
 	cmd := "docker ps --no-trunc --format '{{json .}}'"
 	if all {
 		cmd += " -a"
@@ -214,6 +284,9 @@ func legacyNote(e executor.Executor, found bool) {
 
 // ContainerAction runs start/stop/restart/pause/unpause/kill/rm on a container.
 func ContainerAction(ctx context.Context, e executor.Executor, action, id string) error {
+	if b, ok := e.(Backend); ok {
+		return b.ContainerAction(ctx, action, id)
+	}
 	var cmd string
 	switch action {
 	case "start", "stop", "restart", "pause", "unpause", "kill":
@@ -228,6 +301,9 @@ func ContainerAction(ctx context.Context, e executor.Executor, action, id string
 }
 
 func Inspect(ctx context.Context, e executor.Executor, id string) (json.RawMessage, error) {
+	if b, ok := e.(Backend); ok {
+		return b.ContainerInspect(ctx, id)
+	}
 	out, err := executor.Output(ctx, e, "docker inspect "+q(id))
 	if err != nil {
 		return nil, err
@@ -237,6 +313,9 @@ func Inspect(ctx context.Context, e executor.Executor, id string) (json.RawMessa
 
 // State returns the container's state (running, exited, ...) and health ("" when no healthcheck).
 func State(ctx context.Context, e executor.Executor, name string) (state, health string, err error) {
+	if b, ok := e.(Backend); ok {
+		return b.ContainerState(ctx, name)
+	}
 	out, err := executor.Output(ctx, e, "docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' "+q(name))
 	if err != nil {
 		return "", "", err
@@ -247,6 +326,9 @@ func State(ctx context.Context, e executor.Executor, name string) (state, health
 
 // Logs streams container logs to w until ctx is cancelled (when follow is true).
 func Logs(ctx context.Context, e executor.Executor, id string, tail int, follow, timestamps bool, w io.Writer) error {
+	if b, ok := e.(Backend); ok {
+		return b.ContainerLogs(ctx, id, tail, follow, timestamps, w)
+	}
 	cmd := "docker logs --tail " + strconv.Itoa(tail)
 	if follow {
 		cmd += " -f"
@@ -270,6 +352,9 @@ type Stat struct {
 }
 
 func Stats(ctx context.Context, e executor.Executor, ids ...string) ([]Stat, error) {
+	if b, ok := e.(Backend); ok {
+		return b.ContainerStats(ctx, ids...)
+	}
 	cmd := "docker stats --no-stream --format '{{json .}}'"
 	for _, id := range ids {
 		cmd += " " + q(id)
@@ -301,6 +386,9 @@ type Image struct {
 }
 
 func Images(ctx context.Context, e executor.Executor) ([]Image, error) {
+	if !IsDocker(e) {
+		return []Image{}, nil // images live on the cluster's nodes and in the registry
+	}
 	out, err := executor.Output(ctx, e, "docker images --format '{{json .}}'")
 	if err != nil {
 		return nil, err
@@ -324,6 +412,9 @@ type Volume struct {
 }
 
 func Volumes(ctx context.Context, e executor.Executor) ([]Volume, error) {
+	if !IsDocker(e) {
+		return []Volume{}, nil
+	}
 	out, err := executor.Output(ctx, e, "docker volume ls --format '{{json .}}'")
 	if err != nil {
 		return nil, err
@@ -348,6 +439,9 @@ type Network struct {
 }
 
 func Networks(ctx context.Context, e executor.Executor) ([]Network, error) {
+	if !IsDocker(e) {
+		return []Network{}, nil
+	}
 	out, err := executor.Output(ctx, e, "docker network ls --format '{{json .}}'")
 	if err != nil {
 		return nil, err
@@ -365,17 +459,26 @@ func Networks(ctx context.Context, e executor.Executor) ([]Network, error) {
 }
 
 func RemoveImage(ctx context.Context, e executor.Executor, id string) error {
+	if !IsDocker(e) {
+		return ErrDockerOnly
+	}
 	_, err := executor.Output(ctx, e, "docker rmi -f "+q(id))
 	return err
 }
 
 func RemoveVolume(ctx context.Context, e executor.Executor, name string) error {
+	if !IsDocker(e) {
+		return ErrDockerOnly
+	}
 	_, err := executor.Output(ctx, e, "docker volume rm -f "+q(name))
 	return err
 }
 
 // Prune removes unused data. Scope: containers | images | volumes | builder | networks | all.
 func Prune(ctx context.Context, e executor.Executor, scope string) (string, error) {
+	if !IsDocker(e) {
+		return "", ErrDockerOnly
+	}
 	var cmd string
 	switch scope {
 	case "containers":
@@ -398,6 +501,9 @@ func Prune(ctx context.Context, e executor.Executor, scope string) (string, erro
 
 // EnsureNetwork creates an attachable bridge network if it does not exist.
 func EnsureNetwork(ctx context.Context, e executor.Executor, name string) error {
+	if !IsDocker(e) {
+		return nil // pods of a namespace reach each other through Services
+	}
 	_, err := executor.Output(ctx, e, fmt.Sprintf("docker network inspect %s >/dev/null 2>&1 || docker network create --attachable %s", q(name), q(name)))
 	return err
 }
@@ -420,6 +526,9 @@ type Metrics struct {
 
 // ServerMetrics gathers host-level metrics with standard Linux tools.
 func ServerMetrics(ctx context.Context, e executor.Executor) (Metrics, error) {
+	if b, ok := e.(Backend); ok {
+		return b.HostMetrics(ctx)
+	}
 	script := `nproc; cat /proc/loadavg; grep -E '^(MemTotal|MemAvailable):' /proc/meminfo | awk '{print $2}'; ` +
 		`df -Pk / | tail -1 | awk '{print $2, $3}'; cut -d' ' -f1 /proc/uptime; ` +
 		`(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME") || echo unknown; uname -r; ` +

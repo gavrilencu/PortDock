@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/portdock/portdock/internal/auth"
+	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/store"
 )
@@ -97,8 +99,32 @@ func (s *Server) ensureLocalServer(r *http.Request) error {
 	if n > 0 {
 		return nil
 	}
+	if kube.InCluster() {
+		return s.ensureClusterServer(r)
+	}
 	srv := store.Server{Name: "localhost", Description: "The server running PortDock", Host: "localhost", Port: 22,
-		User: "root", IsLocal: true, Status: "unknown", ProxyEnabled: true, ProxyStatus: "unknown", CreatedAt: store.Now()}
+		User: "root", IsLocal: true, Kind: "docker", Status: "unknown", ProxyEnabled: true, ProxyStatus: "unknown", CreatedAt: store.Now()}
+	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
+		return err
+	}
+	go func() { _, _ = s.engine.ValidateServer(context.Background(), srv) }()
+	return nil
+}
+
+// ensureClusterServer registers the cluster PortDock runs in as the default
+// server, reached with the pod's service account. There is no Docker in a pod,
+// so there is no local server. Applications go to PORTDOCK_KUBE_NAMESPACE.
+func (s *Server) ensureClusterServer(r *http.Request) error {
+	var n int
+	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE kind = ?", store.KindKubernetes).Scan(&n)
+	if n > 0 {
+		return nil
+	}
+	srv := store.Server{Name: "cluster", Description: "The Kubernetes cluster running PortDock", Host: "in-cluster", Kind: store.KindKubernetes,
+		KubeNamespace: config.Env("KUBE_NAMESPACE", "portdock-apps"), Status: "unknown", ProxyStatus: "disabled", CreatedAt: store.Now()}
+	if err := validateServer(&srv); err != nil {
+		return err
+	}
 	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
 	}
