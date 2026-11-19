@@ -173,6 +173,23 @@ func TestDockerPackageDispatch(t *testing.T) {
 		doc[0].State.Health.Status != "healthy" || doc[0].RestartCount != 2 || len(doc[0].Config.Env) != 1 || doc[0].Config.Env[0] != "LOG_LEVEL=info" {
 		t.Fatalf("inspect document: %s", raw)
 	}
+	// Every pod at once (the topology map): one kubectl call, the same documents,
+	// without the pod that is being deleted or the job that completed.
+	before := len(*calls)
+	all, err := docker.InspectAll(ctx, cl, "label=portdock.resource=abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs []struct {
+		ID     string `json:"Id"`
+		Config struct{ Labels map[string]string }
+	}
+	if err := json.Unmarshal(all, &docs); err != nil || len(docs) != 3 || docs[0].ID != "pd-abc-7d9f-x1" || docs[0].Config.Labels[docker.LabelResource] != "abc" {
+		t.Fatalf("InspectAll: %v %s", err, all)
+	}
+	if got := len(*calls) - before; got != 1 {
+		t.Fatalf("InspectAll made %d kubectl calls, want 1", got)
+	}
 	state, health, err := docker.State(ctx, cl, "pd-abc-7d9f-x1")
 	if err != nil || state != "running" || health != "healthy" {
 		t.Fatalf("State = %q %q %v", state, health, err)

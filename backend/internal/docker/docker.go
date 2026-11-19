@@ -179,6 +179,12 @@ func Terminal(ctx context.Context, e executor.Executor, id string, rows, cols in
 // InspectAll returns the `docker inspect` documents of every container
 // matching the label filters, as one JSON array.
 func InspectAll(ctx context.Context, e executor.Executor, filters ...string) (json.RawMessage, error) {
+	// A backend that can read them all at once is asked once, not per container.
+	if b, ok := e.(interface {
+		InspectContainers(ctx context.Context, filters ...string) (json.RawMessage, error)
+	}); ok {
+		return b.InspectContainers(ctx, filters...)
+	}
 	if b, ok := e.(Backend); ok {
 		cs, err := b.Containers(ctx, true, filters...)
 		if err != nil {

@@ -792,6 +792,43 @@ func (c *Cluster) ContainerInspect(ctx context.Context, name string) (json.RawMe
 	if err != nil {
 		return nil, err
 	}
+	return json.Marshal([]map[string]any{p.inspect(raw)})
+}
+
+// InspectContainers returns the inspect documents of every pod matching the
+// label filters, from one request (the topology map reads them all at once).
+func (c *Cluster) InspectContainers(ctx context.Context, filters ...string) (json.RawMessage, error) {
+	sel, err := selector(filters)
+	if err != nil {
+		return nil, err
+	}
+	a := []string{"get", "pods", "-o", "json", "--request-timeout=30s"}
+	if sel != "" {
+		a = append(a, "-l", sel)
+	}
+	out, err := c.output(ctx, nil, a...)
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(out), &list); err != nil {
+		return nil, fmt.Errorf("read the pods: %w", err)
+	}
+	docs := []map[string]any{}
+	for _, raw := range list.Items {
+		var p pod
+		if json.Unmarshal(raw, &p) != nil || p.Metadata.DeletionTimestamp != "" || p.Status.Phase == "Succeeded" {
+			continue
+		}
+		docs = append(docs, p.inspect(raw))
+	}
+	return json.Marshal(docs)
+}
+
+// inspect renders the pod as a `docker inspect` document; raw is the pod itself.
+func (p pod) inspect(raw json.RawMessage) map[string]any {
 	state, status := p.state()
 	env := []string{}
 	var image string
@@ -826,7 +863,7 @@ func (c *Cluster) ContainerInspect(ctx context.Context, name string) (json.RawMe
 		}
 		st["Health"] = map[string]any{"Status": health}
 	}
-	doc := []map[string]any{{
+	return map[string]any{
 		"Id":           p.Metadata.Name,
 		"Name":         "/" + p.Metadata.Name,
 		"Created":      p.Metadata.CreationTimestamp,
@@ -841,8 +878,7 @@ func (c *Cluster) ContainerInspect(ctx context.Context, name string) (json.RawMe
 		},
 		"Node": p.Spec.NodeName,
 		"Pod":  raw,
-	}}
-	return json.Marshal(doc)
+	}
 }
 
 // ContainerState implements docker.Backend: the state of a pod, and its

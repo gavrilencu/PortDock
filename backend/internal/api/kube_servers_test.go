@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/portdock/portdock/internal/executor"
@@ -36,9 +37,14 @@ users:
 func TestKubernetesServerAPI(t *testing.T) {
 	e := newTestEnv(t)
 	// The cluster answers: kubectl is scripted, and gets the kubeconfig file the pool wrote.
-	var kubeconfigs []string
+	var (
+		mu          sync.Mutex
+		kubeconfigs []string
+	)
 	e.api.pool.Cluster = func(srv store.Server, kubeconfig string) (executor.Executor, error) {
+		mu.Lock()
 		kubeconfigs = append(kubeconfigs, kubeconfig)
+		mu.Unlock()
 		return kube.NewWithRunner(srv.KubeNamespace, func(_ context.Context, _ io.Reader, out, _ io.Writer, args ...string) error {
 			switch {
 			case strings.Contains(strings.Join(args, " "), "get --raw /version"):
@@ -102,8 +108,11 @@ func TestKubernetesServerAPI(t *testing.T) {
 	if strings.Contains(row.Kubeconfig, "super-secret") || row.Kubeconfig == "" {
 		t.Fatalf("the kubeconfig must be stored encrypted: %q", row.Kubeconfig)
 	}
-	if len(kubeconfigs) == 0 || !strings.Contains(kubeconfigs[0], "super-secret-service-account-token") {
-		t.Fatalf("the pool must hand the decrypted kubeconfig to the cluster: %v", kubeconfigs)
+	mu.Lock()
+	got := append([]string{}, kubeconfigs...)
+	mu.Unlock()
+	if len(got) == 0 || !strings.Contains(got[0], "super-secret-service-account-token") {
+		t.Fatalf("the pool must hand the decrypted kubeconfig to the cluster: %d", len(got))
 	}
 	for _, path := range []string{"/api/servers", "/api/servers/" + strconv.FormatInt(id, 10)} {
 		req, _ := http.NewRequest("GET", e.srv.URL+path, nil)
