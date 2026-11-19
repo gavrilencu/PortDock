@@ -60,6 +60,16 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 **Then:** open the dashboard, create the owner account, and start the proxy from **Servers → localhost → Run setup**. Every [release](https://github.com/gavrilencu/PortDock/releases) lists the exact commands for that version.
 
+**Option 3 — in a Kubernetes cluster** (no Docker; the cluster is the server):
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/portdock.yaml
+kubectl -n portdock rollout status statefulset/portdock
+kubectl -n portdock port-forward svc/portdock 8000:8000   # then open http://localhost:8000
+```
+
+To deploy to a cluster from a PortDock that runs on a server instead, connect it in one command: see [Kubernetes clusters](#documentation).
+
 ## Features
 
 <table>
@@ -77,6 +87,7 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 - Persistent storage, access protection (single sign-on, password, IP allow list, rate limit)
 - Configuration as code: `portdock.yaml` applied with the `pdctl` CLI, a Terraform provider and an OpenAPI 3.1 description of the API
 - Several servers per application, dedicated build servers, private registries
+- Kubernetes clusters as servers: an application becomes a Deployment with a rolling update, a Service, an Ingress and cert-manager certificates
 
 </td>
 <td width="50%" valign="top">
@@ -192,6 +203,54 @@ If you know Coolify, Dokploy or CapRover, PortDock will feel familiar — with v
 2. Add the public key to `~/.ssh/authorized_keys` on the server (the `root` user is recommended).
 3. Press **Run setup** on the new server: it installs Docker, the `portdock` network and the Traefik proxy.
 4. Optional: set a *wildcard domain* (`*.apps.example.com` → server IP) for automatic domains and previews.
+
+</details>
+
+<details>
+<summary><b>Kubernetes clusters</b></summary>
+
+A Kubernetes cluster can be a server, next to Docker servers. PortDock works in **one namespace** of it, with `kubectl` and the credentials you give it, and installs nothing on the cluster. An application deployed there becomes a Deployment, a Service, an Ingress and a Secret.
+
+**Connect a cluster**
+
+1. Where `kubectl` reaches the cluster, as someone who may create namespaces and role bindings:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/connect.sh | bash
+   ```
+
+   It creates the namespace `portdock` (another one: `… | bash -s -- my-namespace`), a service account that administers that namespace only, and prints a kubeconfig with its token. `kubectl delete namespace portdock` revokes the access.
+2. **Servers → Connect server → Kubernetes cluster**: paste the kubeconfig. Optionally set the ingress class, a cert-manager `ClusterIssuer`, the storage class and the size of volumes.
+3. **Check the cluster** on the server's page reports what was found: the namespace and its permissions, the ingress controller, cert-manager and the metrics API.
+
+The kubeconfig is stored encrypted and never shown again. It must hold its credentials itself (a token, or a client certificate as `*-data`): a kubeconfig that runs a program to sign in (`exec`, as the files of EKS, GKE and AKS do) or points to files is refused, because it would act on the machine PortDock runs on.
+
+| The cluster needs | For |
+|---|---|
+| an ingress controller (ingress-nginx, Traefik…) | domains |
+| [cert-manager](https://cert-manager.io) and a `ClusterIssuer` | a certificate per HTTPS domain (without it, the ingress controller's own certificate is served) |
+| a default `StorageClass` | persistent storage |
+| metrics-server | CPU and memory of pods |
+| a container registry both sides reach | applications built from Git |
+
+**What a deployment does**
+
+- **Image.** A prebuilt image is pulled by the cluster. An application from Git is built as usual on a Docker server (its build server, or the one PortDock runs on) and pushed to its registry (*Configuration → Registry*), where the cluster pulls it with a pull secret PortDock creates.
+- **No downtime.** New pods must answer the health check (the health path over HTTP, or the port) before old ones stop. A version that does not start is rolled back, and one that cannot start at all (an image that cannot be pulled, a crash loop) fails within seconds, with the pod's events and logs in the deployment log.
+- **Variables** are a Secret of that deployment, so a version that is rolled back keeps the variables it started with.
+- **Domains** are an Ingress, with a port and a path prefix per domain. Changes apply at once, without a deployment.
+- **Versions** stay in the registry; a prebuilt image is pinned to the digest the cluster pulled. Rolling back builds nothing.
+- **Persistent storage**: a PersistentVolumeClaim per volume, kept across deployments. An application with volumes stops its old pod before starting the new one (a volume cannot follow a pod to another node), so it has a short interruption.
+- **Replicas** are spread by the cluster over its nodes; CPU and memory limits become the pod's limits.
+- **Pre-deploy commands and scheduled jobs** run as a Job in a pod like the application's (same image, variables and volumes); the post-deploy command runs in a pod of the new version.
+- Other applications of the namespace reach it at `http://<application-name>:<port>`.
+- Logs, the terminal in a pod, start / stop / restart, the containers page, the topology map and the metrics history work as on Docker servers.
+
+**Not on Kubernetes yet** — use a Docker server for these: databases, one-click services and Docker Compose applications; pull request previews; canary deployments; www redirects and uploaded certificates; log drains and dynamic scans (DAST); host port mappings, custom Docker options and server directories as volumes. An application runs on one cluster, not on a cluster and other servers.
+
+**Access protection** (single sign-on, password, allowed addresses, rate limit) is not enforced on Kubernetes yet. An application that has it is not published at all there, rather than published without it.
+
+**PortDock inside the cluster.** `deploy/kubernetes/portdock.yaml` (Quick start, option 3) runs PortDock as a StatefulSet with its data on a volume. The cluster is there as a server from the start, reached with the pod's service account, and applications go to the namespace `portdock-apps`. There is no Docker in a pod: applications from Git need a Docker server added in *Servers* and chosen as their build server. Update with `kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z`.
 
 </details>
 
@@ -777,7 +836,7 @@ The backend runs Docker commands through a shell; on Windows use Git Bash or WSL
 |---|---|
 | Backend | Go, `net/http`, SQLite (pure-Go driver, WAL), `x/crypto/ssh`, WebSocket, SSE |
 | Frontend | React 19, Vite, TypeScript, Tailwind CSS 4, TanStack Query, React Router, xterm.js |
-| Runtime | Docker and Docker Compose, Traefik v3 (reverse proxy, Let's Encrypt, HTTP/3) |
+| Runtime | Docker and Docker Compose, Traefik v3 (reverse proxy, Let's Encrypt, HTTP/3); Kubernetes through `kubectl` |
 
 ### Architecture
 
@@ -789,6 +848,7 @@ backend/
                         versions, databases, backups, services, certificates, routes
   internal/executor     local / SSH command execution (pool, PTY, host key pinning)
   internal/docker       Docker CLI wrapper
+  internal/kube         kubectl wrapper: a cluster as a server, its pods as containers, manifests
   internal/proxy        Traefik: proxy container, file-provider routes, TLS
   internal/assistant    OpenRouter client for the AI assistant
   internal/github       GitHub App client and build pack detection
@@ -802,11 +862,14 @@ frontend/src
 
 Every server operation goes through an `Executor` (local or SSH) and the Docker CLI, so local and remote servers behave the same. Routing is written as Traefik file-provider configuration, which is why domain changes apply instantly.
 
+A Kubernetes cluster is an `Executor` too (`kube.Cluster`), one that refuses shell commands and answers the container operations of `internal/docker` with its pods. Code that lists containers, reads logs or checks a status therefore works on both, and code that has not been ported fails with a clear error instead of running `docker` somewhere it was not meant to. `go test ./internal/deploy -run TestKubeE2E` deploys to a real cluster (see the test for how to start one).
+
 ### Known limitations
 
 - Databases run on a single server (PostgreSQL can add replicas on other servers) and one-click services too. Applications can run on several servers; balance traffic between them with DNS or an external load balancer.
 - Pull request previews run on the primary server only.
-- No Docker Swarm or Kubernetes.
+- On Kubernetes clusters, applications from an image or from Git are supported; databases, one-click services, Docker Compose applications, previews, canary deployments and access protection need a Docker server (see *Kubernetes clusters* above). Images are built on a Docker server, not in the cluster.
+- No Docker Swarm.
 - Point-in-time recovery is available for PostgreSQL; the other engines are backed up with logical dumps (test-restored automatically if you schedule it).
 
 ## Contributing

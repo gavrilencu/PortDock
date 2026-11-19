@@ -139,7 +139,8 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 			return err
 		}
 	}
-	servers, err := store.Select[store.Server](ctx, m.db, "SELECT * FROM servers WHERE status = 'reachable'")
+	// A cluster has its own network between nodes and takes no agent.
+	servers, err := store.Select[store.Server](ctx, m.db, "SELECT * FROM servers WHERE status = 'reachable' AND kind != ?", store.KindKubernetes)
 	if err != nil {
 		return err
 	}

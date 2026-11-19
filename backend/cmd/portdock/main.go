@@ -25,6 +25,7 @@ import (
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/github"
 	"github.com/portdock/portdock/internal/instancebackup"
+	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/logdrain"
 	"github.com/portdock/portdock/internal/overlay"
 	"github.com/portdock/portdock/internal/monitor"
@@ -135,6 +136,7 @@ func run(resetPassword, disable2FA string) error {
 
 	hub := stream.NewHub()
 	pool := executor.NewPool(db, box)
+	pool.Cluster = kube.Factory(cfg.DataDir) // servers that are Kubernetes clusters
 	notifier := notify.New(db, box)
 	gh := github.New(db, box)
 	engine := deploy.New(cfg, db, box, pool, hub, notifier, gh)

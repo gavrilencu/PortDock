@@ -34,6 +34,7 @@ import { LogViewer } from "../components/LogViewer";
 import { Terminal } from "../components/LazyTerminal";
 import { formatBytes, formatUptime, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
+import { KubeFields } from "./Servers";
 import { t } from "../lib/i18n";
 
 type Tab = "overview" | "monitoring" | "containers" | "images" | "volumes" | "networks" | "terminal" | "settings";
@@ -58,6 +59,8 @@ export function ServerPage() {
   if (isLoading) return <Loading />;
   if (error) return <ErrorBox error={error} />;
   const s = data!;
+  // A cluster has pods, but no images, networks or shell of its own to manage.
+  const kube = s.kind === "kubernetes";
 
   return (
     <>
@@ -68,7 +71,13 @@ export function ServerPage() {
             {s.name} <StatusBadge status={s.status} />
           </span>
         }
-        subtitle={s.is_local ? t("The machine running PortDock") : `${s.user}@${s.host}:${s.port}`}
+        subtitle={
+          kube
+            ? t("Kubernetes cluster {host}, namespace {namespace}", { host: s.host.replace(/^https?:\/\//, ""), namespace: s.kube_namespace })
+            : s.is_local
+              ? t("The machine running PortDock")
+              : `${s.user}@${s.host}:${s.port}`
+        }
         breadcrumbs={
           <>
             <Link to="/servers" className="hover:text-fg">{t("Servers")}</Link> / <span className="text-fg">{s.name}</span>
@@ -88,11 +97,11 @@ export function ServerPage() {
         tabs={[
           { id: "overview", label: t("Overview"), icon: <LayoutGrid /> },
           { id: "monitoring", label: t("Monitoring"), icon: <Activity /> },
-          { id: "containers", label: t("Containers"), icon: <Boxes /> },
-          { id: "images", label: t("Images"), icon: <Layers />, hidden: !isAdmin },
-          { id: "volumes", label: t("Volumes"), icon: <HardDrive />, hidden: !isAdmin },
-          { id: "networks", label: t("Networks"), icon: <Network />, hidden: !isAdmin },
-          { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !isAdmin },
+          { id: "containers", label: kube ? t("Pods") : t("Containers"), icon: <Boxes /> },
+          { id: "images", label: t("Images"), icon: <Layers />, hidden: !isAdmin || kube },
+          { id: "volumes", label: t("Volumes"), icon: <HardDrive />, hidden: !isAdmin || kube },
+          { id: "networks", label: t("Networks"), icon: <Network />, hidden: !isAdmin || kube },
+          { id: "terminal", label: t("Terminal"), icon: <SquareTerminal />, hidden: !isAdmin || kube },
           { id: "settings", label: t("Settings"), icon: <Settings2 />, hidden: !isAdmin },
         ]}
       />
@@ -140,6 +149,75 @@ function Overview({ s }: { s: Server }) {
     if (setupStream.status) qc.invalidateQueries({ queryKey: ["server", s.id] });
   }, [setupStream.status, qc, s.id]);
   const m = metrics.data;
+
+  if (s.kind === "kubernetes") {
+    return (
+      <div className="space-y-6">
+        {m && (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+            <Stat label={t("Pods")} icon={<Boxes />} value={`${m.running_containers}/${m.containers}`} sub={t("running, in the namespace")} />
+            <Stat label={t("CPU")} icon={<Cpu />} value={m.cpus ? String(m.cpus) : "—"} sub={m.cpus ? t("cores on the cluster's nodes") : t("the credentials cannot list the nodes")} />
+            <Stat label={t("Memory")} icon={<MemoryStick />} value={m.mem_total ? formatBytes(m.mem_total) : "—"} sub={m.mem_total ? t("on the cluster's nodes") : t("the credentials cannot list the nodes")} />
+          </div>
+        )}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card title={t("Cluster")}>
+            <dl className="space-y-3 p-5 text-sm">
+              {[
+                [t("Status"), <StatusBadge status={s.status} />],
+                ["Kubernetes", s.docker_version || "—"],
+                [t("API server"), s.host],
+                [t("Namespace"), s.kube_namespace],
+                [t("Nodes"), m?.os ?? "—"],
+                [t("Last check"), timeAgo(s.last_check_at)],
+              ].map(([k, v], i) => (
+                <div key={i} className="flex justify-between gap-4">
+                  <dt className="text-muted">{k}</dt>
+                  <dd className="min-w-0 break-all text-right">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
+          <Card title={t("Domains and storage")} description={t("The cluster's ingress controller routes the domains; cert-manager issues their certificates.")}>
+            <dl className="space-y-3 p-5 text-sm">
+              {[
+                [t("Ingress class"), s.kube_ingress_class || t("the cluster's default")],
+                [t("Certificate issuer"), s.kube_cluster_issuer || t("none: the ingress controller's certificate")],
+                [t("Storage class"), s.kube_storage_class || t("the cluster's default")],
+                [t("Volume size"), s.kube_volume_size || "5Gi"],
+                [t("Wildcard domain"), s.wildcard_domain || "—"],
+              ].map(([k, v], i) => (
+                <div key={i} className="flex justify-between gap-4">
+                  <dt className="text-muted">{k}</dt>
+                  <dd className="text-right">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
+        </div>
+        <AdminOnly>
+          <Card title={t("Cluster check")} description={t("Checks the connection, the namespace and its permissions, the ingress controller, cert-manager and the metrics API. Nothing is installed on the cluster.")}>
+            <div className="space-y-4 p-5">
+              <div className="flex justify-end">
+                <Button
+                  variant="primary"
+                  icon={<Wrench className="size-4" />}
+                  loading={setup.isPending}
+                  onClick={() => {
+                    setSetupKey((k) => k + 1);
+                    setTimeout(() => setup.mutate(), 300);
+                  }}
+                >
+                  {t("Check the cluster")}
+                </Button>
+              </div>
+              {setupKey > 0 && <LogViewer lines={setupStream.lines} live={!setupStream.status} className="h-80" />}
+            </div>
+          </Card>
+        </AdminOnly>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -247,7 +325,7 @@ function Containers({ s }: { s: Server }) {
   return (
     <div className="space-y-6">
       <Card
-        title={t("Containers ({n})", { n: list.length })}
+        title={s.kind === "kubernetes" ? t("Pods ({n})", { n: list.length }) : t("Containers ({n})", { n: list.length })}
         actions={
           <div className="flex gap-1 rounded-lg border border-border p-0.5">
             {(["all", "managed"] as const).map((f) => (
@@ -450,11 +528,14 @@ function ServerSettings({ s }: { s: Server }) {
   const confirm = useConfirm();
   const keys = useQuery({ queryKey: ["ssh-keys"], queryFn: () => api.get<SSHKey[]>("/ssh-keys") });
   const [f, setF] = useState(s);
+  const [kubeconfig, setKubeconfig] = useState("");
   useEffect(() => setF(s), [s]);
+  const kube = s.kind === "kubernetes";
   const save = useMutation({
-    mutationFn: () => api.patch<Server>(`/servers/${s.id}`, f),
+    mutationFn: () => api.patch<Server>(`/servers/${s.id}`, kube && kubeconfig.trim() ? { ...f, kubeconfig } : f),
     onSuccess: (d) => {
       qc.setQueryData(["server", s.id], d);
+      setKubeconfig("");
       toast.success(t("Server saved"));
     },
     onError: (e) => toast.error(e.message),
@@ -481,7 +562,29 @@ function ServerSettings({ s }: { s: Server }) {
           <Field label={t("Description")}>
             <Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           </Field>
-          {!s.is_local && (
+          {kube && (
+            <>
+              <Field label={t("Namespace")} hint={t("Can only change while no application runs on this server.")}>
+                <Input value={f.kube_namespace} onChange={(e) => setF({ ...f, kube_namespace: e.target.value })} />
+              </Field>
+              <div className="hidden md:block" />
+              <KubeFields value={f} onChange={(v) => setF({ ...f, ...v })} />
+              <Field
+                label="Kubeconfig"
+                hint={s.has_kubeconfig ? t("Stored encrypted and never shown. Paste a new one to replace it.") : t("PortDock runs in this cluster and uses its service account. Paste a kubeconfig to use other credentials.")}
+                className="md:col-span-2"
+              >
+                <textarea
+                  className="h-28 w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs shadow-xs focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-[var(--ring)]"
+                  value={kubeconfig}
+                  onChange={(e) => setKubeconfig(e.target.value)}
+                  placeholder={s.has_kubeconfig ? "••••••••" : ""}
+                  spellCheck={false}
+                />
+              </Field>
+            </>
+          )}
+          {!s.is_local && !kube && (
             <>
               <Field label={t("Host")}>
                 <Input value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} />
@@ -506,11 +609,13 @@ function ServerSettings({ s }: { s: Server }) {
           <Field label={t("Wildcard domain")} hint={t("Used for automatic app & preview domains.")}>
             <Input value={f.wildcard_domain} onChange={(e) => setF({ ...f, wildcard_domain: e.target.value })} placeholder="apps.example.com" />
           </Field>
-          <div className="flex items-end">
-            <Switch checked={f.proxy_enabled} onChange={(v) => setF({ ...f, proxy_enabled: v })} label={t("Manage Traefik proxy")} description={t("Disable if you run your own reverse proxy.")} />
-          </div>
+          {!kube && (
+            <div className="flex items-end">
+              <Switch checked={f.proxy_enabled} onChange={(v) => setF({ ...f, proxy_enabled: v })} label={t("Manage Traefik proxy")} description={t("Disable if you run your own reverse proxy.")} />
+            </div>
+          )}
           <div className="flex justify-end gap-2 md:col-span-2">
-            {!s.is_local && (
+            {!s.is_local && !kube && (
               <Button onClick={() => resetKey.mutate()} loading={resetKey.isPending}>
                 {t("Reset host key")}
               </Button>
@@ -521,7 +626,7 @@ function ServerSettings({ s }: { s: Server }) {
           </div>
         </div>
       </Card>
-      <Card title={t("Maintenance")} description={t("Reclaim disk space. PortDock also prunes build cache older than 72h daily.")}>
+      <Card title={t("Maintenance")} description={t("Reclaim disk space. PortDock also prunes build cache older than 72h daily.")} className={kube ? "hidden" : undefined}>
         <div className="flex flex-wrap gap-2 p-5">
           <PruneButton serverId={s.id} scope="containers" label={t("Remove stopped containers")} />
           <PruneButton serverId={s.id} scope="builder" label={t("Prune build cache")} />
@@ -536,7 +641,9 @@ function ServerSettings({ s }: { s: Server }) {
       {!s.is_local && (
         <Card title={t("Danger zone")} className="border-danger/30">
           <div className="flex items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted">{t("Remove the server from PortDock. Containers on the server are not touched.")}</p>
+            <p className="text-sm text-muted">
+              {kube ? t("Remove the cluster from PortDock. What runs in its namespace is not touched.") : t("Remove the server from PortDock. Containers on the server are not touched.")}
+            </p>
             <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={async () => (await confirm({ title: t("Remove {name}?", { name: s.name }), danger: true, confirmText: t("Remove"), typeToConfirm: s.name })) && del.mutate()}>
               {t("Remove server")}
             </Button>

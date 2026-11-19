@@ -14,6 +14,7 @@ import (
 
 	"github.com/portdock/portdock/internal/config"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/updater"
 )
@@ -112,7 +113,9 @@ func (s *Server) updateStatus(ctx context.Context, admin bool) map[string]any {
 	defer cancel()
 	supported, reason := true, ""
 	d := updater.NewDocker()
-	if !d.Available(dctx) {
+	if kube.InCluster() {
+		supported, reason = false, "PortDock runs in Kubernetes: update it with kubectl -n portdock set image statefulset/portdock portdock=<image>:<version>"
+	} else if !d.Available(dctx) {
 		supported, reason = false, "PortDock does not run in Docker with the Docker socket mounted."
 	} else if _, err := updater.SelfContainer(dctx, d); err != nil {
 		supported, reason = false, err.Error()

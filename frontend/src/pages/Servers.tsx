@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Plus, Server as ServerIcon } from "lucide-react";
+import { Boxes, KeyRound, Plus, Server as ServerIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import type { Server, SSHKey } from "../lib/types";
@@ -20,7 +20,7 @@ export function ServersPage() {
     <>
       <PageHeader
         title={t("Servers")}
-        subtitle={t("Compute capacity available to your organization. Connect any Linux host over SSH.")}
+        subtitle={t("Compute capacity available to your organization. Connect any Linux host over SSH, or a Kubernetes cluster.")}
         actions={
           <AdminOnly>
             <Button variant="primary" icon={<Plus />} onClick={() => setOpen(true)}>
@@ -38,26 +38,35 @@ export function ServersPage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-surface-2 text-muted">
-                    <ServerIcon className="size-5" />
+                    {s.kind === "kubernetes" ? <Boxes className="size-5" /> : <ServerIcon className="size-5" />}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2 font-semibold">
-                      {s.name} {s.is_local && <Badge>{t("Local")}</Badge>}
+                      {s.name} {s.is_local && <Badge>{t("Local")}</Badge>} {s.kind === "kubernetes" && <Badge>Kubernetes</Badge>}
                     </div>
-                    <div className="font-mono text-xs text-muted">{s.is_local ? t("this machine") : `${s.user}@${s.host}:${s.port}`}</div>
+                    <div className="truncate font-mono text-xs text-muted">
+                      {s.kind === "kubernetes" ? s.host.replace(/^https?:\/\//, "") : s.is_local ? t("this machine") : `${s.user}@${s.host}:${s.port}`}
+                    </div>
                   </div>
                 </div>
                 <StatusBadge status={s.status} />
               </div>
               <div className="mt-5 grid grid-cols-3 gap-3 border-t border-border pt-4 text-xs">
                 <div>
-                  <div className="text-subtle">Docker</div>
-                  <div className="mt-0.5 font-medium">{s.docker_version || "—"}</div>
+                  <div className="text-subtle">{s.kind === "kubernetes" ? "Kubernetes" : "Docker"}</div>
+                  <div className="mt-0.5 truncate font-medium">{s.docker_version || "—"}</div>
                 </div>
-                <div>
-                  <div className="text-subtle">{t("Proxy")}</div>
-                  <div className="mt-0.5 font-medium capitalize">{s.proxy_status}</div>
-                </div>
+                {s.kind === "kubernetes" ? (
+                  <div>
+                    <div className="text-subtle">{t("Namespace")}</div>
+                    <div className="mt-0.5 truncate font-medium">{s.kube_namespace}</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-subtle">{t("Proxy")}</div>
+                    <div className="mt-0.5 font-medium capitalize">{s.proxy_status}</div>
+                  </div>
+                )}
                 <div>
                   <div className="text-subtle">{t("Last check")}</div>
                   <div className="mt-0.5 font-medium">{timeAgo(s.last_check_at)}</div>
@@ -73,11 +82,35 @@ export function ServersPage() {
   );
 }
 
+type KubeSettings = Pick<Server, "kube_ingress_class" | "kube_cluster_issuer" | "kube_storage_class" | "kube_volume_size">;
+
+/** The settings of a cluster that applications are deployed with. */
+export function KubeFields({ value, onChange }: { value: KubeSettings; onChange: (v: Partial<KubeSettings>) => void }) {
+  return (
+    <>
+      <Field label={t("Ingress class")} hint={t("Empty: the cluster's default (nginx, traefik…).")}>
+        <Input value={value.kube_ingress_class} onChange={(e) => onChange({ kube_ingress_class: e.target.value })} placeholder="nginx" />
+      </Field>
+      <Field label={t("Certificate issuer")} hint={t("A cert-manager ClusterIssuer, for a certificate per HTTPS domain.")}>
+        <Input value={value.kube_cluster_issuer} onChange={(e) => onChange({ kube_cluster_issuer: e.target.value })} placeholder="letsencrypt" />
+      </Field>
+      <Field label={t("Storage class")} hint={t("Empty: the cluster's default.")}>
+        <Input value={value.kube_storage_class} onChange={(e) => onChange({ kube_storage_class: e.target.value })} />
+      </Field>
+      <Field label={t("Volume size")} hint={t("Size of each new application volume (default 5Gi).")}>
+        <Input value={value.kube_volume_size} onChange={(e) => onChange({ kube_volume_size: e.target.value })} placeholder="5Gi" />
+      </Field>
+    </>
+  );
+}
+
 function AddServerModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const nav = useNavigate();
   const keys = useQuery({ queryKey: ["ssh-keys"], queryFn: () => api.get<SSHKey[]>("/ssh-keys"), enabled: open });
   const [f, setF] = useState({ name: "", host: "", port: 22, user: "root", ssh_key_id: 0, wildcard_domain: "", proxy_enabled: true });
+  const [kind, setKind] = useState<"docker" | "kubernetes">("docker");
+  const [k, setK] = useState({ kubeconfig: "", kube_namespace: "portdock", kube_ingress_class: "", kube_cluster_issuer: "", kube_storage_class: "", kube_volume_size: "" });
   const [newKey, setNewKey] = useState<{ name: string; private_key: string } | null>(null);
   const keyId = f.ssh_key_id || keys.data?.[0]?.id || 0;
   const selectedKey = keys.data?.find((k) => k.id === keyId);
@@ -93,7 +126,8 @@ function AddServerModal({ open, onClose }: { open: boolean; onClose: () => void 
     onError: (e) => toast.error(e.message),
   });
   const create = useMutation({
-    mutationFn: () => api.post<Server>("/servers", { ...f, ssh_key_id: keyId }),
+    mutationFn: () =>
+      api.post<Server>("/servers", kind === "kubernetes" ? { kind, name: f.name, wildcard_domain: f.wildcard_domain, ...k } : { ...f, ssh_key_id: keyId }),
     onSuccess: (s) => {
       qc.invalidateQueries({ queryKey: ["servers"] });
       onClose();
@@ -110,19 +144,73 @@ function AddServerModal({ open, onClose }: { open: boolean; onClose: () => void 
       onClose={onClose}
       size="lg"
       title={t("Connect a server")}
-      description={t("PortDock connects over SSH (root or a user with Docker + sudo access).")}
+      description={
+        kind === "kubernetes"
+          ? t("PortDock deploys applications to one namespace of the cluster, with the credentials of the kubeconfig.")
+          : t("PortDock connects over SSH (root or a user with Docker + sudo access).")
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button variant="primary" loading={create.isPending} disabled={!f.name || !f.host || !keyId} onClick={() => create.mutate()}>
+          <Button variant="primary" loading={create.isPending} disabled={!f.name || (kind === "kubernetes" ? !k.kubeconfig.trim() : !f.host || !keyId)} onClick={() => create.mutate()}>
             {t("Add & validate")}
           </Button>
         </>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        {(["docker", "kubernetes"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setKind(v)}
+            className={`flex items-center gap-3 rounded-lg border p-3 text-left text-sm transition-colors ${kind === v ? "border-accent bg-accent/5" : "border-border hover:border-border-strong"}`}
+          >
+            {v === "docker" ? <ServerIcon className="size-5 shrink-0 text-muted" /> : <Boxes className="size-5 shrink-0 text-muted" />}
+            <span>
+              <span className="block font-medium">{v === "docker" ? t("Linux server") : t("Kubernetes cluster")}</span>
+              <span className="block text-xs text-muted">{v === "docker" ? t("Docker, over SSH") : t("One namespace, with a kubeconfig")}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      {kind === "kubernetes" && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-info/30 bg-info/5 p-4 text-sm md:col-span-2">
+            <p className="mb-2 text-muted">{t("Run this where kubectl reaches the cluster: it creates the namespace and a service account limited to it, and prints the kubeconfig to paste below.")}</p>
+            <CopyField value={`curl -fsSL https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/connect.sh | bash -s -- ${k.kube_namespace || "portdock"}`} />
+          </div>
+          <Field label={t("Name")}>
+            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="prod-cluster" autoFocus />
+          </Field>
+          <Field label={t("Namespace")} hint={t("Created if it does not exist. Everything PortDock deploys stays in it.")}>
+            <Input value={k.kube_namespace} onChange={(e) => setK({ ...k, kube_namespace: e.target.value })} placeholder="portdock" />
+          </Field>
+          <Field
+            label="Kubeconfig"
+            hint={t("With an embedded token or certificate (a service account is best). Files of cloud providers that run a program to sign in are refused. Stored encrypted.")}
+            className="md:col-span-2"
+          >
+            <textarea
+              className="h-36 w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs shadow-xs focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-[var(--ring)]"
+              value={k.kubeconfig}
+              onChange={(e) => setK({ ...k, kubeconfig: e.target.value })}
+              placeholder={"apiVersion: v1\nkind: Config\nclusters: …"}
+              spellCheck={false}
+            />
+          </Field>
+          <KubeFields value={k} onChange={(v) => setK({ ...k, ...v })} />
+          <Field label={t("Wildcard domain")} hint={t("Optional: apps get <name>.<domain> automatically. Point *.domain to the cluster's ingress.")} className="md:col-span-2">
+            <Input value={f.wildcard_domain} onChange={(e) => setF({ ...f, wildcard_domain: e.target.value })} placeholder="apps.example.com" />
+          </Field>
+          <p className="text-xs text-muted md:col-span-2">
+            {t("Images are built on a Docker server and pushed to the application's registry, where the cluster pulls them. Databases, one-click services and Docker Compose applications stay on Docker servers.")}
+          </p>
+        </div>
+      )}
+      <div className={kind === "kubernetes" ? "hidden" : "grid gap-4 md:grid-cols-2"}>
         <Field label={t("Name")}>
           <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="prod-1" autoFocus />
         </Field>

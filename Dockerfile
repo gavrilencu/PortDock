@@ -33,8 +33,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -trimpat
 # ---- runtime ----
 FROM ${BASE_REGISTRY}/alpine:3
 # wireguard-tools, iproute2 and iptables: the image also runs the agent of the
-# private network on each server (portdock wg-agent).
-RUN apk add --no-cache docker-cli docker-cli-buildx docker-cli-compose git openssh-client ca-certificates tzdata bash curl wireguard-tools-wg iproute2 iptables
+# private network on each server (portdock wg-agent). kubectl drives the
+# servers that are Kubernetes clusters.
+RUN apk add --no-cache docker-cli docker-cli-buildx docker-cli-compose git openssh-client ca-certificates tzdata bash curl wireguard-tools-wg iproute2 iptables kubectl
 # Nixpacks (static musl build) so the local server can use the Nixpacks build pack.
 ARG NIXPACKS_VERSION=v1.41.0
 ARG TARGETARCH

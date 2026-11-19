@@ -125,6 +125,14 @@ export interface Server {
   wildcard_domain: string;
   last_check_at: string;
   created_at: string;
+  /** "docker" (a Docker host) or "kubernetes" (a namespace of a cluster). */
+  kind: "docker" | "kubernetes" | "";
+  kube_namespace: string;
+  kube_ingress_class: string;
+  kube_cluster_issuer: string;
+  kube_storage_class: string;
+  kube_volume_size: string;
+  has_kubeconfig: boolean;
 }
 
 export interface Environment {

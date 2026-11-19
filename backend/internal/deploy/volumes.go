@@ -113,7 +113,11 @@ func (e *Engine) VolumeUsage(ctx context.Context, app store.Application) []Volum
 		if u.ServerName == "" {
 			u.ServerName = fmt.Sprintf("server #%d", id)
 		}
-		if err == nil {
+		if c, ok := clusterOf(x); ok && err == nil {
+			var names []string
+			names, err = c.LabelValues(ctx, "persistentvolumeclaim", docker.LabelResource+"="+app.UUID, docker.LabelVolume)
+			u.Volumes = append(u.Volumes, names...)
+		} else if err == nil {
 			var res string
 			res, err = executor.Output(ctx, x, "docker volume ls --format '{{.Label \""+docker.LabelVolume+"\"}}' --filter "+q("label="+docker.LabelResource+"="+app.UUID)+" --filter "+q("label="+docker.LabelPR+"=0"))
 			u.Volumes = append(u.Volumes, strings.Fields(res)...)
@@ -131,6 +135,9 @@ func (e *Engine) VolumeUsage(ctx context.Context, app store.Application) []Volum
 // is left in place and reported.
 func (e *Engine) RemoveVolumeData(ctx context.Context, app store.Application, name string) error {
 	return e.eachTarget(ctx, app, func(t target) error {
+		if c, ok := clusterOf(t.x); ok {
+			return kubeRemoveVolumes(ctx, c, app.UUID, docker.LabelVolume+"="+name)
+		}
 		_, err := executor.Output(ctx, t.x, volumesCmd(app.UUID, docker.LabelVolume+"="+name)+" | xargs -r docker volume rm")
 		if err != nil && strings.Contains(err.Error(), "in use") {
 			return errors.New("the volume is still used by a container; redeploy the application without it, then delete the data")
@@ -142,6 +149,9 @@ func (e *Engine) RemoveVolumeData(ctx context.Context, app store.Application, na
 // removeAppVolumes deletes every Docker volume of app on one server; its
 // containers must be gone already.
 func removeAppVolumes(ctx context.Context, x executor.Executor, appUUID string, filters ...string) error {
+	if c, ok := clusterOf(x); ok {
+		return kubeRemoveVolumes(ctx, c, appUUID, filters...)
+	}
 	return x.Run(ctx, volumesCmd(appUUID, filters...)+" | xargs -r docker volume rm -f >/dev/null 2>&1; true", executor.RunOpts{})
 }
 

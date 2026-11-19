@@ -14,6 +14,7 @@ import (
 
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/netcfg"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/registry"
@@ -59,6 +60,10 @@ type job struct {
 	reg     *store.Registry     // push/pull registry (nil: images stay on the servers)
 	net     netcfg.Config       // corporate proxy and mirrors
 	single  bool                // the application runs on one server (canary deployments)
+	// cluster is set when the application runs on Kubernetes: x and srv are then
+	// the Docker server that builds its image, or the cluster itself when
+	// nothing has to be built.
+	cluster *kube.Cluster
 }
 
 func (j *job) run(ctx context.Context, cmd string) error {
@@ -83,7 +88,33 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		targets = targets[:1] // previews run on the primary server only
 	}
 	build := targets[0]
-	if app.BuildServerID != 0 && app.BuildServerID != app.ServerID && app.BuildPack != "compose" && app.SourceType != "image" && d.RollbackOf == 0 {
+	cluster, err := kubeTarget(targets)
+	if err != nil {
+		return err
+	}
+	switch {
+	case cluster != nil:
+		if d.PRNumber > 0 {
+			return errors.New("pull request previews are not available on Kubernetes yet")
+		}
+		if err := CheckKubeApp(app); err != nil {
+			return err
+		}
+		if app.SourceType != "image" && app.RegistryID == 0 {
+			return errors.New("an application built from Git needs a container registry on Kubernetes: its image is pushed there and pulled by the cluster (choose one in Configuration → Registry)")
+		}
+		// A cluster builds nothing: the image is built (and scanned) on a Docker
+		// server. A prebuilt image or an earlier version needs neither.
+		if (app.SourceType != "image" && d.RollbackOf == 0) || app.ScanOnDeploy {
+			b, err := e.kubeBuildTarget(ctx, app)
+			switch {
+			case err == nil:
+				build = b
+			case app.SourceType != "image" && d.RollbackOf == 0:
+				return err
+			}
+		}
+	case app.BuildServerID != 0 && app.BuildServerID != app.ServerID && app.BuildPack != "compose" && app.SourceType != "image" && d.RollbackOf == 0:
 		x, srv, err := e.pool.ForID(ctx, app.BuildServerID)
 		if err != nil {
 			return fmt.Errorf("connect to build server: %w", err)
@@ -94,7 +125,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		_, _ = e.db.ExecContext(ctx, "UPDATE applications SET status = 'deploying' WHERE id = ?", app.ID)
 		e.hub.Event("application", app.ID, "deploying")
 	}
-	j := &job{e: e, app: app, srv: build.srv, x: build.x, d: d, log: log}
+	j := &job{e: e, app: app, srv: build.srv, x: build.x, d: d, log: log, cluster: cluster}
 	if j.reg, err = e.Registry(ctx, app.RegistryID); err != nil {
 		return err
 	}
@@ -190,6 +221,31 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		return err
 	}
 	d.Image = image
+	if cluster != nil {
+		// The cluster pulls the image itself; it is scanned where it was built.
+		if app.ScanOnDeploy && d.RollbackOf == 0 {
+			if docker.IsDocker(build.x) {
+				if err := j.scanBeforeRollout(ctx, build.x, image); err != nil {
+					return err
+				}
+			} else {
+				log.Printf("⚠ The image was not scanned: no Docker server to scan it on.")
+			}
+		}
+		if err := j.kubeDeploy(ctx, cluster, targets[0].srv, image, pull); err != nil {
+			return err
+		}
+		if docker.IsDocker(build.x) {
+			j.cleanupImages(context.WithoutCancel(ctx))
+		}
+		if d.RollbackOf == 0 {
+			j.recordKubeVersion(context.WithoutCancel(ctx), cluster, image)
+		}
+		if app.DastOnDeploy {
+			log.Printf("ℹ Dynamic scans (OWASP ZAP) are not available on Kubernetes yet.")
+		}
+		return nil
+	}
 	if len(targets) > 1 || build.srv.ID != targets[0].srv.ID || pull {
 		log.Step("Distributing image")
 		if err := j.distribute(ctx, image, build, targets, pull); err != nil {
@@ -276,6 +332,9 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 	if d.RollbackOf != 0 {
 		j.log.Step("Rollback")
 		j.log.Printf("Re-using image %s from deployment #%d", d.Image, d.RollbackOf)
+		if j.cluster != nil {
+			return d.Image, false, nil // the cluster pulls it from the registry
+		}
 		if !hasImage(ctx, j.x, d.Image) && (j.reg == nil || !strings.HasPrefix(d.Image, j.reg.Host+"/")) {
 			if app.SourceType == "image" || app.BuildPack == "image" {
 				return d.Image, true, nil
@@ -304,6 +363,13 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 	image = j.imageRepo() + ":" + short12(d.CommitSHA)
 	if !d.ForceRebuild && hasImage(ctx, j.x, image) {
 		j.log.Printf("Image %s already exists for this commit, skipping build (use force rebuild to override).", image)
+		if j.cluster != nil {
+			// The cluster only has the registry: an image built by a deployment
+			// that failed before its push would never get there.
+			if err := j.push(ctx, image); err != nil {
+				return "", false, err
+			}
+		}
 		return image, false, nil
 	}
 	j.log.Step("Building image (" + app.BuildPack + ")")
@@ -507,6 +573,15 @@ func (j *job) writeEnvFile(ctx context.Context) (string, error) {
 	if j.d.PRNumber > 0 {
 		file = fmt.Sprintf("%s/.env.pr%d", dir, j.d.PRNumber)
 	}
+	if err := executor.WriteFile(ctx, j.x, file, []byte(envFile(j.runtimeVars(ctx))), "0600"); err != nil {
+		return "", err
+	}
+	return file, nil
+}
+
+// runtimeVars are the variables the application runs with: its own, those
+// PortDock adds (PORTDOCK_*, PORT), the corporate proxy and OpenTelemetry.
+func (j *job) runtimeVars(ctx context.Context) map[string]string {
 	vars := j.env.Runtime
 	vars["PORTDOCK_APP"] = j.app.Name
 	vars["PORTDOCK_BRANCH"] = j.d.Branch
@@ -534,10 +609,7 @@ func (j *job) writeEnvFile(ctx context.Context) (string, error) {
 	for k, v := range j.e.otelEnv(ctx, j.app, j.d, "", has) {
 		vars[k] = v
 	}
-	if err := executor.WriteFile(ctx, j.x, file, []byte(envFile(vars)), "0600"); err != nil {
-		return "", err
-	}
-	return file, nil
+	return vars
 }
 
 // envFile renders KEY=value lines (docker --env-file does not support quoting or newlines).

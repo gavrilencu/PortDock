@@ -1,0 +1,171 @@
+# PortDock on Kubernetes: the dashboard runs in the cluster and deploys
+# applications to it with its own service account. No kubeconfig, no Docker.
+#
+#   kubectl apply -f https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/portdock.yaml
+#   kubectl -n portdock rollout status statefulset/portdock
+#   kubectl -n portdock port-forward svc/portdock 8000:8000      # then open http://localhost:8000
+#
+# Create the owner account: the cluster is already there as a server, with
+# applications going to the namespace "portdock-apps".
+#
+# To serve the dashboard on a domain, add an Ingress to the Service "portdock"
+# (an example is at the end) and set PORTDOCK_PUBLIC_URL to its https:// address.
+#
+# What needs Docker is not available this way: building images from Git needs
+# a Docker server (add one in Servers and choose it as the application's build
+# server), and databases, one-click services and Docker Compose applications
+# run on Docker servers.
+#
+# Update: kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portdock
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: portdock-apps
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portdock
+  namespace: portdock
+---
+# PortDock administers the namespace of the applications, and nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: portdock
+  namespace: portdock-apps
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: portdock
+  namespace: portdock
+---
+# Read-only, cluster-wide: the capacity of the nodes and the ingress classes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: portdock-reader
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "namespaces"]
+  verbs: ["get", "list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingressclasses"]
+  verbs: ["get", "list"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["clusterissuers"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: portdock-reader-portdock
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: portdock-reader
+subjects:
+- kind: ServiceAccount
+  name: portdock
+  namespace: portdock
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portdock
+  namespace: portdock
+spec:
+  selector:
+    app: portdock
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+---
+# One replica: PortDock keeps its state in a SQLite file on the volume.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: portdock
+  namespace: portdock
+spec:
+  serviceName: portdock
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portdock
+  template:
+    metadata:
+      labels:
+        app: portdock
+    spec:
+      serviceAccountName: portdock
+      containers:
+      - name: portdock
+        image: ghcr.io/gavrilencu/portdock:latest
+        ports:
+        - containerPort: 8000
+        env:
+        # The address people open the dashboard at (webhooks, links in notifications).
+        - name: PORTDOCK_PUBLIC_URL
+          value: http://localhost:8000
+        # The namespace applications are deployed to.
+        - name: PORTDOCK_KUBE_NAMESPACE
+          value: portdock-apps
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: data
+          mountPath: /data/portdock
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+# ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: portdock
+#   namespace: portdock
+#   annotations:
+#     cert-manager.io/cluster-issuer: letsencrypt
+# spec:
+#   rules:
+#   - host: portdock.example.com
+#     http:
+#       paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: portdock
+#             port:
+#               number: 8000
+#   tls:
+#   - hosts: [portdock.example.com]
+#     secretName: portdock-tls

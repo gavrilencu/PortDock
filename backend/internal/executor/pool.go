@@ -17,13 +17,47 @@ type Pool struct {
 	mu    sync.Mutex
 	conns map[int64]*SSH
 	sig   map[int64]string // connection signature to detect config changes
+	// Cluster builds the executor of a Kubernetes server from its decrypted
+	// kubeconfig. It is set at startup: package kube builds on this one.
+	Cluster  func(srv store.Server, kubeconfig string) (Executor, error)
+	clusters map[int64]Executor
 }
 
 func NewPool(db *store.DB, box *secrets.Box) *Pool {
-	return &Pool{db: db, box: box, conns: map[int64]*SSH{}, sig: map[int64]string{}}
+	return &Pool{db: db, box: box, conns: map[int64]*SSH{}, sig: map[int64]string{}, clusters: map[int64]Executor{}}
+}
+
+// cluster returns the executor of a Kubernetes server, rebuilt when its
+// kubeconfig or namespace changed.
+func (p *Pool) cluster(srv store.Server) (Executor, error) {
+	if p.Cluster == nil {
+		return nil, errors.New("Kubernetes clusters are not available in this build")
+	}
+	var cfg string
+	if srv.Kubeconfig != "" {
+		var err error
+		if cfg, err = p.box.Decrypt(srv.Kubeconfig); err != nil {
+			return nil, err
+		}
+	}
+	sig := "kubernetes|" + srv.KubeNamespace + "|" + secrets.Hash(cfg)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c, ok := p.clusters[srv.ID]; ok && p.sig[srv.ID] == sig {
+		return c, nil
+	}
+	c, err := p.Cluster(srv, cfg)
+	if err != nil {
+		return nil, err
+	}
+	p.clusters[srv.ID], p.sig[srv.ID] = c, sig
+	return c, nil
 }
 
 func (p *Pool) For(ctx context.Context, srv store.Server) (Executor, error) {
+	if srv.IsKubernetes() {
+		return p.cluster(srv)
+	}
 	if srv.IsLocal {
 		return Local{}, nil
 	}
@@ -69,6 +103,11 @@ func (p *Pool) Forget(serverID int64) {
 	if c, ok := p.conns[serverID]; ok {
 		_ = c.Close()
 		delete(p.conns, serverID)
+	}
+	if c, ok := p.clusters[serverID]; ok {
+		_ = c.Close()
+		delete(p.clusters, serverID)
+		delete(p.sig, serverID)
 	}
 }
 

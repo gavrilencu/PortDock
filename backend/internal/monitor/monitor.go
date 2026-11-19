@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
 	"github.com/portdock/portdock/internal/notify"
 	"github.com/portdock/portdock/internal/store"
@@ -126,6 +127,13 @@ func (m *Monitor) collect(ctx context.Context, srv store.Server, refs map[string
 	}
 	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
+	if b, ok := x.(docker.Backend); ok {
+		s, err := sampleBackend(cctx, b)
+		if err != nil {
+			return err
+		}
+		return m.insert(ctx, m.rows(srv.ID, s, refs, m.now()))
+	}
 	out, err := executor.Output(cctx, x, sampleScript)
 	if err != nil && out == "" {
 		return err

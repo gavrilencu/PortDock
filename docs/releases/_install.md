@@ -30,6 +30,17 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 Then open the dashboard, create the owner account, and start the proxy from **Servers → localhost → Run setup**.
 
+**Option 3: in a Kubernetes cluster** (no Docker; the cluster is the server):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/{{REPO}}/{{VERSION}}/deploy/kubernetes/portdock.yaml \
+  | sed 's#portdock:latest#portdock:{{VERSION}}#' | kubectl apply -f -
+kubectl -n portdock rollout status statefulset/portdock
+kubectl -n portdock port-forward svc/portdock 8000:8000   # then open http://localhost:8000
+```
+
+To deploy to a cluster from a PortDock that runs on a server, run `curl -fsSL https://raw.githubusercontent.com/{{REPO}}/{{VERSION}}/deploy/kubernetes/connect.sh | bash` where `kubectl` reaches the cluster and paste the kubeconfig it prints in **Servers → Connect server → Kubernetes cluster**.
+
 ## Update an existing installation
 
 In PortDock, click **Update available** at the bottom of the sidebar, or go to **Settings → Updates**. A backup is taken first, and the previous version comes back automatically if the new one doesn't start. Your applications keep running during the update.

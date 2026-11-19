@@ -155,6 +155,9 @@ func (e *Engine) jobCommand(ctx context.Context, j store.AppJob, app store.Appli
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if c, ok := clusterOf(x); ok {
+		return e.kubeJob(ctx, c, j, app, run, timeout, out)
+	}
 	opts := executor.RunOpts{Stdout: out, Stderr: out}
 	if app.BuildPack == "compose" {
 		service := j.Service

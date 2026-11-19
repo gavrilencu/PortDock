@@ -4,11 +4,13 @@ import (
 	"context"
 	"github.com/portdock/portdock/internal/auth"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/docker"
 	"github.com/portdock/portdock/internal/executor"
+	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/proxy"
 	"github.com/portdock/portdock/internal/store"
 )
@@ -73,10 +75,29 @@ func (s *Server) deleteSSHKey(w http.ResponseWriter, r *http.Request) error {
 
 // ---- servers ----
 
+// serverOut prepares a server for a response: the kubeconfig of a cluster is
+// never sent, only whether there is one.
+func serverOut(srv store.Server) store.Server {
+	srv.HasKubeconfig = srv.Kubeconfig != ""
+	if srv.Kind == "" {
+		srv.Kind = "docker"
+	}
+	return srv
+}
+
+// serverInput is a server as the API receives it: the kubeconfig is write-only.
+type serverInput struct {
+	*store.Server
+	Kubeconfig *string `json:"kubeconfig"`
+}
+
 func (s *Server) listServers(w http.ResponseWriter, r *http.Request) error {
 	srvs, err := store.Select[store.Server](r.Context(), s.db, "SELECT * FROM servers ORDER BY is_local DESC, id")
 	if err != nil {
 		return err
+	}
+	for i := range srvs {
+		srvs[i] = serverOut(srvs[i])
 	}
 	return ok(w, srvs)
 }
@@ -106,7 +127,51 @@ func (s *Server) getServer(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, srv)
+	return ok(w, serverOut(srv))
+}
+
+var (
+	kubeNameRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$`)
+	kubeSizeRe = regexp.MustCompile(`^[1-9][0-9]{0,5}(Mi|Gi|Ti)$`)
+)
+
+// validateCluster checks the settings of a server that is a Kubernetes cluster.
+func validateCluster(srv *store.Server) error {
+	srv.KubeNamespace = strings.TrimSpace(srv.KubeNamespace)
+	if srv.KubeNamespace == "" {
+		srv.KubeNamespace = "portdock"
+	}
+	if err := kube.CheckNamespace(srv.KubeNamespace); err != nil {
+		return badRequest("%v", err)
+	}
+	for _, f := range []struct {
+		name string
+		val  *string
+	}{{"ingress class", &srv.KubeIngressClass}, {"cluster issuer", &srv.KubeClusterIssuer}, {"storage class", &srv.KubeStorageClass}} {
+		*f.val = strings.TrimSpace(*f.val)
+		if *f.val != "" && !kubeNameRe.MatchString(*f.val) {
+			return badRequest("invalid %s %q: lowercase letters, digits, '-' and '.'", f.name, *f.val)
+		}
+	}
+	srv.KubeVolumeSize = strings.TrimSpace(srv.KubeVolumeSize)
+	if srv.KubeVolumeSize != "" && !kubeSizeRe.MatchString(srv.KubeVolumeSize) {
+		return badRequest("invalid volume size %q: a number followed by Mi, Gi or Ti (e.g. 5Gi)", srv.KubeVolumeSize)
+	}
+	// A cluster has no SSH connection and no proxy of PortDock's: its ingress
+	// controller routes the domains.
+	srv.IsLocal, srv.SSHKeyID, srv.Port, srv.User, srv.ProxyEnabled = false, 0, 0, "", false
+	return nil
+}
+
+// setKubeconfig validates and stores the kubeconfig of a cluster; its
+// cluster's address becomes the server's host.
+func (s *Server) setKubeconfig(srv *store.Server, raw string) error {
+	server, err := kube.CheckKubeconfig(raw)
+	if err != nil {
+		return badRequest("%v", err)
+	}
+	srv.Kubeconfig, srv.Host = s.box.Encrypt(raw), server
+	return nil
 }
 
 func validateServer(srv *store.Server) error {
@@ -115,6 +180,11 @@ func validateServer(srv *store.Server) error {
 	if srv.Name == "" {
 		return badRequest("name is required")
 	}
+	if srv.IsKubernetes() {
+		return validateCluster(srv)
+	}
+	srv.Kind = "docker"
+	srv.Kubeconfig, srv.KubeNamespace, srv.KubeIngressClass, srv.KubeClusterIssuer, srv.KubeStorageClass, srv.KubeVolumeSize = "", "", "", "", "", ""
 	if !srv.IsLocal {
 		if srv.Host == "" {
 			return badRequest("host is required")
@@ -134,22 +204,44 @@ func validateServer(srv *store.Server) error {
 
 func (s *Server) createServer(w http.ResponseWriter, r *http.Request) error {
 	srv := store.Server{Port: 22, User: "root", ProxyEnabled: true}
-	if err := readJSON(r, &srv); err != nil {
+	in := serverInput{Server: &srv}
+	if err := readJSON(r, &in); err != nil {
 		return err
 	}
 	srv.ID, srv.Status, srv.ProxyStatus, srv.CreatedAt = 0, "unknown", "unknown", store.Now()
 	srv.IsLocal = false
 	// The private network is set in its own settings.
 	srv.OverlayJoin, srv.OverlayIP, srv.OverlayPublicKey, srv.OverlayPrivateKey, srv.OverlayEndpoint = false, "", "", "", ""
+	if srv.IsKubernetes() {
+		switch {
+		case in.Kubeconfig != nil && strings.TrimSpace(*in.Kubeconfig) != "":
+			if err := s.setKubeconfig(&srv, *in.Kubeconfig); err != nil {
+				return err
+			}
+		case kube.InCluster():
+			// PortDock runs in a pod of the cluster and uses its service account.
+			srv.Host = "in-cluster"
+		default:
+			return badRequest("a kubeconfig is required")
+		}
+	}
 	if err := validateServer(&srv); err != nil {
 		return err
+	}
+	if srv.IsKubernetes() {
+		var n int
+		_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE kind = ? AND host = ? AND kube_namespace = ?",
+			store.KindKubernetes, srv.Host, srv.KubeNamespace).Scan(&n)
+		if n > 0 {
+			return badRequest("the namespace %q of this cluster is already a server", srv.KubeNamespace)
+		}
 	}
 	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
 	}
 	s.activity(r, "server.create", srv.Name)
 	srv, _ = s.engine.ValidateServer(r.Context(), srv)
-	return ok(w, srv)
+	return ok(w, serverOut(srv))
 }
 
 func (s *Server) updateServer(w http.ResponseWriter, r *http.Request) error {
@@ -159,20 +251,39 @@ func (s *Server) updateServer(w http.ResponseWriter, r *http.Request) error {
 	}
 	id, local, created := srv.ID, srv.IsLocal, srv.CreatedAt
 	orig := srv
-	if err := readJSON(r, &srv); err != nil {
+	in := serverInput{Server: &srv}
+	if err := readJSON(r, &in); err != nil {
 		return err
 	}
 	srv.ID, srv.IsLocal, srv.CreatedAt = id, local, created
 	srv.OverlayJoin, srv.OverlayIP, srv.OverlayPublicKey, srv.OverlayPrivateKey, srv.OverlayEndpoint = orig.OverlayJoin, orig.OverlayIP, orig.OverlayPublicKey, orig.OverlayPrivateKey, orig.OverlayEndpoint
+	// A Docker server does not become a cluster, nor the reverse: what runs
+	// on it would be lost from sight.
+	srv.Kind = orig.Kind
+	if srv.IsKubernetes() {
+		srv.Host = orig.Host
+		if in.Kubeconfig != nil && strings.TrimSpace(*in.Kubeconfig) != "" {
+			if err := s.setKubeconfig(&srv, *in.Kubeconfig); err != nil {
+				return err
+			}
+		}
+	}
 	if err := validateServer(&srv); err != nil {
 		return err
+	}
+	if srv.IsKubernetes() && (srv.KubeNamespace != orig.KubeNamespace || srv.Host != orig.Host) {
+		var n int
+		_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM applications WHERE server_id = ?", srv.ID).Scan(&n)
+		if n > 0 {
+			return badRequest("%d application(s) run in the namespace %q of this cluster: move or delete them before pointing the server elsewhere", n, orig.KubeNamespace)
+		}
 	}
 	if err := store.Update(r.Context(), s.db, "servers", &srv); err != nil {
 		return err
 	}
 	s.pool.Forget(srv.ID)
 	s.activity(r, "server.update", srv.Name)
-	return ok(w, srv)
+	return ok(w, serverOut(srv))
 }
 
 func (s *Server) deleteServer(w http.ResponseWriter, r *http.Request) error {
@@ -190,6 +301,9 @@ func (s *Server) deleteServer(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	_ = s.pool.ResetHostKey(r.Context(), srv.ID)
+	if srv.IsKubernetes() {
+		kube.RemoveConfig(s.cfg.DataDir, srv.ID)
+	}
 	s.activity(r, "server.delete", srv.Name)
 	return ok(w, map[string]bool{"ok": true})
 }
@@ -200,7 +314,7 @@ func (s *Server) validateServer(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	srv, _ = s.engine.ValidateServer(r.Context(), srv)
-	return ok(w, srv)
+	return ok(w, serverOut(srv))
 }
 
 func (s *Server) setupServer(w http.ResponseWriter, r *http.Request) error {
@@ -447,6 +561,9 @@ func (s *Server) proxyAction(w http.ResponseWriter, r *http.Request) error {
 	x, srv, err := s.serverExec(r)
 	if err != nil {
 		return err
+	}
+	if srv.IsKubernetes() {
+		return badRequest("a Kubernetes cluster routes domains with its own ingress controller")
 	}
 	switch r.PathValue("action") {
 	case "start":
