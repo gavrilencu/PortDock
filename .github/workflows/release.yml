@@ -143,6 +143,9 @@ jobs:
           image="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
           echo >> release-notes.md
           sed -e "s#{{VERSION}}#${GITHUB_REF_NAME}#g" -e "s#{{IMAGE}}#${image}#g" -e "s#{{REPO}}#${REPO}#g" -e "s#{{DIGEST}}#${DIGEST}#g" docs/releases/_install.md >> release-notes.md
+      # Each file must match one pattern only: the action does not remove
+      # duplicates, and a file listed twice is uploaded twice at once, so the
+      # uploads collide (pdctl-* already includes pdctl-checksums.txt).
       - uses: softprops/action-gh-release@v3
         with:
           body_path: release-notes.md
@@ -151,5 +154,4 @@ jobs:
           files: |
             portdock-${{ github.ref_name }}.spdx.json
             pdctl-*
-            pdctl-checksums.txt
             terraform-provider-portdock_*
