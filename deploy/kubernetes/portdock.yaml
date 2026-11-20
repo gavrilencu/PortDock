@@ -1,6 +1,11 @@
 # PortDock on Kubernetes: the dashboard runs in the cluster and deploys
 # applications to it with its own service account. No kubeconfig, no Docker.
 #
+# On a fresh server, install-kubernetes.sh (attached to every release) does it
+# all instead: k3s, cert-manager, a registry, Docker for the builds, PortDock on
+# your domain with the servers test and prod. This file is for a cluster you
+# already run.
+#
 #   kubectl apply -f https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/portdock.yaml
 #   kubectl -n portdock rollout status statefulset/portdock
 #   kubectl -n portdock port-forward svc/portdock 8000:8000      # then open http://localhost:8000

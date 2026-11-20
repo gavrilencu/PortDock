@@ -8,6 +8,7 @@ import type { Server, SSHKey } from "../lib/types";
 import { AdminOnly } from "../components/Layout";
 import { Badge, Button, CopyField, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge } from "../components/ui";
 import { useServers } from "../components/shared";
+import { useRegistries } from "../components/registries";
 import { timeAgo } from "../lib/utils";
 import { t, tx } from "../lib/i18n";
 
@@ -82,12 +83,23 @@ export function ServersPage() {
   );
 }
 
-type KubeSettings = Pick<Server, "kube_ingress_class" | "kube_cluster_issuer" | "kube_storage_class" | "kube_volume_size">;
+type KubeSettings = Pick<Server, "kube_ingress_class" | "kube_cluster_issuer" | "kube_storage_class" | "kube_volume_size" | "kube_registry_id">;
 
 /** The settings of a cluster that applications are deployed with. */
 export function KubeFields({ value, onChange }: { value: KubeSettings; onChange: (v: Partial<KubeSettings>) => void }) {
+  const regs = useRegistries();
   return (
     <>
+      <Field label={t("Registry of the cluster")} hint={t("Applications built from Git without a registry of their own push their images here, and the cluster pulls them from it.")} className="md:col-span-2">
+        <Select value={value.kube_registry_id || 0} onChange={(e) => onChange({ kube_registry_id: Number(e.target.value) })}>
+          <option value={0}>{t("None: each application chooses one")}</option>
+          {regs.data?.registries.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name} ({r.host})
+            </option>
+          ))}
+        </Select>
+      </Field>
       <Field label={t("Ingress class")} hint={t("Empty: the cluster's default (nginx, traefik…).")}>
         <Input value={value.kube_ingress_class} onChange={(e) => onChange({ kube_ingress_class: e.target.value })} placeholder="nginx" />
       </Field>
@@ -110,7 +122,7 @@ function AddServerModal({ open, onClose }: { open: boolean; onClose: () => void 
   const keys = useQuery({ queryKey: ["ssh-keys"], queryFn: () => api.get<SSHKey[]>("/ssh-keys"), enabled: open });
   const [f, setF] = useState({ name: "", host: "", port: 22, user: "root", ssh_key_id: 0, wildcard_domain: "", proxy_enabled: true });
   const [kind, setKind] = useState<"docker" | "kubernetes">("docker");
-  const [k, setK] = useState({ kubeconfig: "", kube_namespace: "portdock", kube_ingress_class: "", kube_cluster_issuer: "", kube_storage_class: "", kube_volume_size: "" });
+  const [k, setK] = useState({ kubeconfig: "", kube_namespace: "portdock", kube_ingress_class: "", kube_cluster_issuer: "", kube_storage_class: "", kube_volume_size: "", kube_registry_id: 0 });
   const [newKey, setNewKey] = useState<{ name: string; private_key: string } | null>(null);
   const keyId = f.ssh_key_id || keys.data?.[0]?.id || 0;
   const selectedKey = keys.data?.find((k) => k.id === keyId);

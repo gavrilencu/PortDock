@@ -49,6 +49,15 @@ export const ro: Record<string, string> = {
   "PortDock runs in this cluster and uses its service account. Paste a kubeconfig to use other credentials.":
     "PortDock rulează în acest cluster și folosește service account-ul lui. Lipește un kubeconfig ca să folosești alte credențiale.",
   "Remove the cluster from PortDock. What runs in its namespace is not touched.": "Scoate clusterul din PortDock. Ce rulează în namespace-ul lui nu este atins.",
+  // The registry of a cluster: pages/Servers.tsx, pages/Server.tsx, pages/Application.tsx.
+  "Registry of the cluster": "Registry-ul clusterului",
+  "Applications built from Git without a registry of their own push their images here, and the cluster pulls them from it.":
+    "Aplicațiile construite din Git care nu au un registry propriu își urcă imaginile aici, iar clusterul le ia de aici.",
+  "None: each application chooses one": "Niciunul: fiecare aplicație își alege unul",
+  "none: each application chooses one": "niciunul: fiecare aplicație își alege unul",
+  "The registry of the cluster ({name})": "Registry-ul clusterului ({name})",
+  "Built images are pushed to the registry of the cluster, where the cluster pulls them.":
+    "Imaginile construite sunt urcate în registry-ul clusterului, de unde le ia clusterul.",
 };
 
 export const ru: Record<string, string> = {
@@ -101,4 +110,12 @@ export const ru: Record<string, string> = {
   "PortDock runs in this cluster and uses its service account. Paste a kubeconfig to use other credentials.":
     "PortDock работает в этом кластере и использует его сервисный аккаунт. Вставьте kubeconfig, чтобы использовать другие учётные данные.",
   "Remove the cluster from PortDock. What runs in its namespace is not touched.": "Удалить кластер из PortDock. То, что работает в его пространстве имён, не затрагивается.",
+  "Registry of the cluster": "Реестр кластера",
+  "Applications built from Git without a registry of their own push their images here, and the cluster pulls them from it.":
+    "Приложения, собираемые из Git без собственного реестра, загружают сюда свои образы, а кластер берёт их отсюда.",
+  "None: each application chooses one": "Нет: каждое приложение выбирает свой",
+  "none: each application chooses one": "нет: каждое приложение выбирает свой",
+  "The registry of the cluster ({name})": "Реестр кластера ({name})",
+  "Built images are pushed to the registry of the cluster, where the cluster pulls them.":
+    "Собранные образы загружаются в реестр кластера, откуда кластер их берёт.",
 };

@@ -64,6 +64,20 @@ func kubeTarget(targets []target) (*kube.Cluster, error) {
 	return cluster, nil
 }
 
+// ClusterRegistry is the registry an application built from Git, without a
+// registry of its own, pushes to on the cluster srv: the cluster's registry,
+// where the cluster then pulls it. 0 when there is none, or when the
+// application does not build (a prebuilt image chooses its registry itself).
+func ClusterRegistry(app store.Application, srv store.Server) int64 {
+	if app.RegistryID != 0 || !srv.IsKubernetes() || srv.KubeRegistryID == 0 {
+		return 0
+	}
+	if app.SourceType == "image" || app.BuildPack == "compose" {
+		return 0
+	}
+	return srv.KubeRegistryID
+}
+
 // CheckKubeApp refuses the settings an application cannot have on a
 // Kubernetes cluster yet.
 func CheckKubeApp(app store.Application) error {

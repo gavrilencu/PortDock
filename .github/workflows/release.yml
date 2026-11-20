@@ -130,6 +130,16 @@ jobs:
             (cd tfp && zip -q "../terraform-provider-portdock_${v}_${os}_${arch}.zip" "terraform-provider-portdock_v${v}${ext}" && rm "terraform-provider-portdock_v${v}${ext}")
           done
           sha256sum terraform-provider-portdock_*.zip > "terraform-provider-portdock_${v}_SHA256SUMS"
+      # The all-in-one Kubernetes installer, with this version and repository
+      # built in: curl -fsSL …/releases/download/<tag>/install-kubernetes.sh | sudo bash
+      - name: Kubernetes installer
+        run: |
+          sed -e "s#^VERSION=\"\${PORTDOCK_VERSION:-}\"\$#VERSION=\"\${PORTDOCK_VERSION:-${GITHUB_REF_NAME}}\"#" \
+              -e "s#^REPO=\"\${PORTDOCK_REPO:-[^}]*}\"\$#REPO=\"\${PORTDOCK_REPO:-${GITHUB_REPOSITORY}}\"#" \
+              deploy/kubernetes/install.sh > install-kubernetes.sh
+          grep -qx "VERSION=\"\${PORTDOCK_VERSION:-${GITHUB_REF_NAME}}\"" install-kubernetes.sh
+          grep -qx "REPO=\"\${PORTDOCK_REPO:-${GITHUB_REPOSITORY}}\"" install-kubernetes.sh
+          bash -n install-kubernetes.sh
       # The description comes from docs/releases/<tag>.md when it exists, followed
       # by the install instructions (docs/releases/_install.md) for this version;
       # GitHub appends the generated list of changes.
@@ -155,3 +165,4 @@ jobs:
             portdock-${{ github.ref_name }}.spdx.json
             pdctl-*
             terraform-provider-portdock_*
+            install-kubernetes.sh

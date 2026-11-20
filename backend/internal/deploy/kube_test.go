@@ -738,6 +738,46 @@ func TestKubeRefusals(t *testing.T) {
 	}
 }
 
+// An application built from Git without a registry of its own uses the
+// registry of its cluster; one with its own registry, or a prebuilt image,
+// keeps its own choice.
+func TestClusterRegistryFallback(t *testing.T) {
+	srv := store.Server{Kind: store.KindKubernetes, KubeRegistryID: 7}
+	for _, c := range []struct {
+		name string
+		app  store.Application
+		srv  store.Server
+		want int64
+	}{
+		{"git, no registry", store.Application{SourceType: "git", BuildPack: "dockerfile"}, srv, 7},
+		{"git, own registry", store.Application{SourceType: "git", BuildPack: "dockerfile", RegistryID: 3}, srv, 0},
+		{"prebuilt image", store.Application{SourceType: "image", BuildPack: "image"}, srv, 0},
+		{"compose", store.Application{SourceType: "git", BuildPack: "compose"}, srv, 0},
+		{"cluster without registry", store.Application{SourceType: "git", BuildPack: "dockerfile"}, store.Server{Kind: store.KindKubernetes}, 0},
+		{"Docker server", store.Application{SourceType: "git", BuildPack: "dockerfile"}, store.Server{Kind: "docker", KubeRegistryID: 7}, 0},
+	} {
+		if got := ClusterRegistry(c.app, c.srv); got != c.want {
+			t.Errorf("%s: %d, want %d", c.name, got, c.want)
+		}
+	}
+
+	// In a deployment, the registry check passes with the cluster's registry:
+	// what stops this one is the missing Docker server to build on.
+	f := newKubeFixture(t)
+	reg := store.Registry{Name: "cluster registry", Kind: "generic", Host: "registry.corp", CreatedAt: store.Now()}
+	if _, err := store.Insert(context.Background(), f.e.db, "registries", &reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.db.ExecContext(context.Background(), "UPDATE servers SET kube_registry_id = ? WHERE id = ?", reg.ID, f.srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	git := f.app(store.Application{Name: "api", SourceType: "git", BuildPack: "dockerfile", GitRepository: "https://git.corp/team/api.git", GitBranch: "main", Port: 3000})
+	d := f.deploy(git, Options{})
+	if d.Status != "failed" || strings.Contains(d.Logs, "container registry") || !strings.Contains(d.Logs, "no Docker server to build the image on") {
+		t.Fatalf("a Git application on a cluster with a registry: %s\n%s", d.Status, d.Logs)
+	}
+}
+
 func TestKubeTargetIsExclusive(t *testing.T) {
 	c := kube.NewWithRunner("apps", nil)
 	if got, err := kubeTarget([]target{{x: executor.Local{}}}); got != nil || err != nil {

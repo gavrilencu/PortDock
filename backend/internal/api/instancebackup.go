@@ -145,7 +145,7 @@ func (s *Server) setupRestore(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return badRequest("send the backup as multipart/form-data")
 	}
-	var passphrase string
+	var passphrase, token string
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -158,7 +158,14 @@ func (s *Server) setupRestore(w http.ResponseWriter, r *http.Request) error {
 		case "passphrase":
 			b, _ := io.ReadAll(io.LimitReader(part, 4096))
 			passphrase = string(b)
+		case "setup_token":
+			b, _ := io.ReadAll(io.LimitReader(part, 4096))
+			token = string(b)
 		case "file":
+			// Restoring a backup claims the instance like creating the owner does.
+			if err := checkSetupToken(token); err != nil {
+				return err
+			}
 			if passphrase == "" {
 				return badRequest("the passphrase must come before the file")
 			}

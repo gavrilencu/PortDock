@@ -53,6 +53,8 @@ export const ro: Record<string, string> = {
   "password sign-in is disabled for your organization; use single sign-on":
     "autentificarea cu parolă este dezactivată pentru organizația ta; folosește single sign-on",
   "registration is closed; ask an administrator to invite you": "înregistrarea este închisă; cere unui administrator să te invite",
+  "this instance is protected by a setup token: open the link the installer printed, or enter the token it shows":
+    "această instanță este protejată de un token de configurare: deschide linkul afișat de installer sau introdu token-ul pe care îl arată",
   "this account has been disabled; contact an administrator": "acest cont a fost dezactivat; contactează un administrator",
   "two-factor authentication must be enabled for your account": "autentificarea în doi pași trebuie activată pentru contul tău",
   "your organization requires two-factor authentication": "organizația ta impune autentificarea în doi pași",
@@ -256,6 +258,8 @@ export const ru: Record<string, string> = {
   "password sign-in is disabled for your organization; use single sign-on":
     "вход по паролю отключён для вашей организации; используйте единый вход (SSO)",
   "registration is closed; ask an administrator to invite you": "регистрация закрыта; попросите администратора пригласить вас",
+  "this instance is protected by a setup token: open the link the installer printed, or enter the token it shows":
+    "этот экземпляр защищён токеном настройки: откройте ссылку, которую вывел установщик, или введите показанный им токен",
   "this account has been disabled; contact an administrator": "эта учётная запись отключена; обратитесь к администратору",
   "two-factor authentication must be enabled for your account": "для вашей учётной записи необходимо включить двухфакторную аутентификацию",
   "your organization requires two-factor authentication": "ваша организация требует двухфакторную аутентификацию",

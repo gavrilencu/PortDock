@@ -593,6 +593,9 @@ function ServersSection({
   const list = servers.data ?? [];
   const multi = serverIds.length > 0;
   const builds = f.source_type === "git" && f.build_pack !== "compose";
+  const primary = list.find((s) => s.id === f.server_id);
+  // On a cluster with a registry, an application built from Git without one uses it.
+  const clusterReg = builds && primary?.kind === "kubernetes" ? regs.data?.registries.find((r) => r.id === primary.kube_registry_id) : undefined;
   const reg = regs.data?.registries.find((r) => r.id === f.registry_id);
   const defaultRepo = reg ? `${reg.host}/${[reg.namespace, app.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|[-._]+$/g, "") || "app"].filter(Boolean).join("/")}` : "";
   return (
@@ -649,7 +652,9 @@ function ServersSection({
             label={t("Container registry")}
             hint={
               builds
-                ? multi || f.build_server_id
+                ? clusterReg && !reg
+                  ? t("Built images are pushed to the registry of the cluster, where the cluster pulls them.")
+                  : multi || f.build_server_id
                   ? reg
                     ? t("Built images are pushed here; every server pulls them.")
                     : t("Without a registry the image is streamed from the build server to each server over SSH.")
@@ -658,7 +663,7 @@ function ServersSection({
             }
           >
             <Select value={f.registry_id || 0} onChange={(e) => set("registry_id", Number(e.target.value))}>
-              <option value={0}>{builds ? t("None — keep images on the servers") : t("None — public image")}</option>
+              <option value={0}>{clusterReg ? t("The registry of the cluster ({name})", { name: clusterReg.name }) : builds ? t("None — keep images on the servers") : t("None — public image")}</option>
               {regs.data?.registries.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}

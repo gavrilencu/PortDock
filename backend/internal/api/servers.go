@@ -174,6 +174,17 @@ func (s *Server) setKubeconfig(srv *store.Server, raw string) error {
 	return nil
 }
 
+// checkClusterRegistry refuses a cluster registry that does not exist.
+func (s *Server) checkClusterRegistry(ctx context.Context, srv store.Server) error {
+	if srv.KubeRegistryID == 0 {
+		return nil
+	}
+	if _, err := store.ByID[store.Registry](ctx, s.db, "registries", srv.KubeRegistryID); err != nil {
+		return badRequest("registry not found")
+	}
+	return nil
+}
+
 func validateServer(srv *store.Server) error {
 	srv.Name = strings.TrimSpace(srv.Name)
 	srv.Host = strings.TrimSpace(srv.Host)
@@ -185,6 +196,7 @@ func validateServer(srv *store.Server) error {
 	}
 	srv.Kind = "docker"
 	srv.Kubeconfig, srv.KubeNamespace, srv.KubeIngressClass, srv.KubeClusterIssuer, srv.KubeStorageClass, srv.KubeVolumeSize = "", "", "", "", "", ""
+	srv.KubeRegistryID = 0
 	if !srv.IsLocal {
 		if srv.Host == "" {
 			return badRequest("host is required")
@@ -228,6 +240,9 @@ func (s *Server) createServer(w http.ResponseWriter, r *http.Request) error {
 	if err := validateServer(&srv); err != nil {
 		return err
 	}
+	if err := s.checkClusterRegistry(r.Context(), srv); err != nil {
+		return err
+	}
 	if srv.IsKubernetes() {
 		var n int
 		_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE kind = ? AND host = ? AND kube_namespace = ?",
@@ -269,6 +284,9 @@ func (s *Server) updateServer(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if err := validateServer(&srv); err != nil {
+		return err
+	}
+	if err := s.checkClusterRegistry(r.Context(), srv); err != nil {
 		return err
 	}
 	if srv.IsKubernetes() && (srv.KubeNamespace != orig.KubeNamespace || srv.Host != orig.Host) {

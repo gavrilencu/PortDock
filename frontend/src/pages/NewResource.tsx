@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Boxes, Container, Database as DatabaseIcon, ExternalLink, FileCode, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
-import type { DatabaseDetail, Engine, Project, ServiceDetail, ServiceTemplate } from "../lib/types";
+import type { DatabaseDetail, Engine, Project, Server, ServiceDetail, ServiceTemplate } from "../lib/types";
 import { Badge, Button, Card, Field, Input, Loading, PageHeader, PasswordInput, Select, Switch, Textarea } from "../components/ui";
 import { useUser } from "../components/Layout";
 import { useServers } from "../components/shared";
@@ -25,6 +25,25 @@ const kinds: { id: Kind; title: string; text: string; icon: ReactNode }[] = [
   { id: "service", title: tk("One-click service"), text: tk("Keycloak, Nextcloud, n8n, Gitea, Grafana and 30 more, plus the catalogs your administrators add."), icon: <Boxes /> },
 ];
 
+/**
+ * The server a new resource goes to unless one is chosen. Databases, services
+ * and Compose stacks need Docker. Applications prefer the servers that publish
+ * domains: on an instance set up by the Kubernetes installer the Docker server
+ * only builds (it has no proxy), so they go to a cluster, the one named like
+ * the environment ("prod" for "production", "test" for "test") when there is one.
+ */
+function defaultServer(servers: Server[], kind: Kind | null, environment: string): Server | undefined {
+  const docker = servers.filter((s) => s.kind !== "kubernetes");
+  if (kind === "database" || kind === "service" || kind === "compose") return docker[0] ?? servers[0];
+  const clusters = servers.filter((s) => s.kind === "kubernetes");
+  if (clusters.length && !docker.some((s) => s.proxy_enabled)) {
+    const env = environment.toLowerCase();
+    const named = (match: (name: string) => boolean) => (env ? clusters.find((s) => match(s.name.toLowerCase())) : undefined);
+    return named((n) => n === env) ?? named((n) => env.startsWith(n)) ?? named((n) => n.startsWith(env)) ?? clusters[0];
+  }
+  return servers[0];
+}
+
 export function NewResourcePage() {
   const { id } = useParams();
   const [params] = useSearchParams();
@@ -36,7 +55,8 @@ export function NewResourcePage() {
   const [catalogImage, setCatalogImage] = useState<CatalogImage | null>(null);
   const [engine, setEngine] = useState<string | undefined>();
   const [serverId, setServerId] = useState<number | null>(null);
-  const server = serverId ?? servers.data?.[0]?.id ?? 0;
+  const envName = project.data?.environments.find((e) => e.id === envId)?.name ?? "";
+  const server = serverId ?? defaultServer(servers.data ?? [], kind, envName)?.id ?? 0;
 
   if (project.isLoading || servers.isLoading) return <Loading />;
   const p = project.data!;

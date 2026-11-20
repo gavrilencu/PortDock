@@ -162,7 +162,11 @@ type Server struct {
 	KubeClusterIssuer string `db:"kube_cluster_issuer" json:"kube_cluster_issuer"`
 	KubeStorageClass  string `db:"kube_storage_class" json:"kube_storage_class"`
 	KubeVolumeSize    string `db:"kube_volume_size" json:"kube_volume_size"`
-	CreatedAt         string `db:"created_at" json:"created_at"`
+	// KubeRegistryID is the registry of the cluster: applications built from
+	// Git that have no registry of their own push their images there, and the
+	// cluster pulls them from it (0: each application must choose one).
+	KubeRegistryID int64  `db:"kube_registry_id" json:"kube_registry_id"`
+	CreatedAt      string `db:"created_at" json:"created_at"`
 
 	HasKubeconfig bool `db:"-" json:"has_kubeconfig"`
 }

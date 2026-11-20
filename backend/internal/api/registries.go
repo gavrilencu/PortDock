@@ -144,6 +144,8 @@ func (s *Server) deleteRegistry(w http.ResponseWriter, r *http.Request) error {
 	if err := store.Delete(r.Context(), s.db, "registries", reg.ID); err != nil {
 		return err
 	}
+	// Clusters that pushed to it go back to "each application chooses".
+	_, _ = s.db.ExecContext(r.Context(), "UPDATE servers SET kube_registry_id = 0 WHERE kube_registry_id = ?", reg.ID)
 	s.activity(r, "registry.delete", reg.Name)
 	return ok(w, map[string]bool{"ok": true})
 }

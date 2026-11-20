@@ -60,7 +60,15 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 **Then:** open the dashboard, create the owner account, and start the proxy from **Servers → localhost → Run setup**. Every [release](https://github.com/gavrilencu/PortDock/releases) lists the exact commands for that version.
 
-**Option 3 — in a Kubernetes cluster** (no Docker; the cluster is the server):
+**Option 3 — Kubernetes on a fresh server, all in one** (asks for the domain of the dashboard):
+
+```bash
+curl -fsSL https://github.com/gavrilencu/PortDock/releases/latest/download/install-kubernetes.sh | sudo bash
+```
+
+Point the domain's DNS record (A) to the server first. The installer sets up k3s, cert-manager with Let's Encrypt, Docker for the builds and a private registry, then PortDock on `https://<your domain>` with the servers **test** and **prod** ready to deploy to, and prints the link to create the owner account (see [Kubernetes clusters](#documentation)).
+
+**Option 4 — in an existing Kubernetes cluster** (no Docker; the cluster is the server):
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/gavrilencu/PortDock/main/deploy/kubernetes/portdock.yaml
@@ -235,7 +243,7 @@ The kubeconfig is stored encrypted and never shown again. It must hold its crede
 
 **What a deployment does**
 
-- **Image.** A prebuilt image is pulled by the cluster. An application from Git is built as usual on a Docker server (its build server, or the one PortDock runs on) and pushed to its registry (*Configuration → Registry*), where the cluster pulls it with a pull secret PortDock creates.
+- **Image.** A prebuilt image is pulled by the cluster. An application from Git is built as usual on a Docker server (its build server, or the one PortDock runs on) and pushed to its registry (*Configuration → Registry*), where the cluster pulls it with a pull secret PortDock creates. A cluster can have a **registry of its own** (*Registry of the cluster* in its server settings): applications built from Git that have no registry use it.
 - **No downtime.** New pods must answer the health check (the health path over HTTP, or the port) before old ones stop. A version that does not start is rolled back, and one that cannot start at all (an image that cannot be pulled, a crash loop) fails within seconds, with the pod's events and logs in the deployment log.
 - **Variables** are a Secret of that deployment, so a version that is rolled back keeps the variables it started with.
 - **Domains** are an Ingress, with a port and a path prefix per domain. Changes apply at once, without a deployment.
@@ -250,7 +258,16 @@ The kubeconfig is stored encrypted and never shown again. It must hold its crede
 
 **Access protection** (single sign-on, password, allowed addresses, rate limit) is not enforced on Kubernetes yet. An application that has it is not published at all there, rather than published without it.
 
-**PortDock inside the cluster.** `deploy/kubernetes/portdock.yaml` (Quick start, option 3) runs PortDock as a StatefulSet with its data on a volume. The cluster is there as a server from the start, reached with the pod's service account, and applications go to the namespace `portdock-apps`. There is no Docker in a pod: applications from Git need a Docker server added in *Servers* and chosen as their build server. Update with `kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z`.
+**All in one on a fresh server.** `install-kubernetes.sh` (Quick start, option 3; attached to every release) asks for the domain of the dashboard and sets up, on one Linux server:
+
+- **k3s**, with Traefik on ports 80 and 443, local storage and metrics-server; **cert-manager** and the `ClusterIssuer` `letsencrypt`, so the dashboard and every application domain get a Let's Encrypt certificate;
+- **Docker**, registered in PortDock as the server **build** (no proxy: the ports belong to the cluster), where images of applications from Git are built;
+- a **private registry** on the same domain (`https://<domain>/v2/`, user `portdock`, a generated password), the registry of the clusters: builds are pushed there and the cluster pulls them;
+- **PortDock** on `https://<domain>`, with the servers **test** and **prod** (the namespaces `portdock-test` and `portdock-prod`). A new application goes to the server named like its environment (`production` → prod, `test` → test).
+
+The first-run page asks for the **setup token** the installer prints in its link (`https://<domain>/login#setup=…`), so nobody else can claim the dashboard before you; `kubectl -n portdock get secret portdock-setup -o jsonpath='{.data.token}' | base64 -d` shows it again. PortDock's data is in `/data/portdock` on the server. Run the installer again to update PortDock (`PORTDOCK_VERSION=vX.Y.Z` for a given version) or to repair the setup: passwords and data are kept. Unattended: `PORTDOCK_DOMAIN=panel.example.com` (and `PORTDOCK_EMAIL` for the Let's Encrypt account).
+
+**PortDock inside the cluster.** `deploy/kubernetes/portdock.yaml` (Quick start, option 4) runs PortDock as a StatefulSet with its data on a volume. The cluster is there as a server from the start, reached with the pod's service account, and applications go to the namespace `portdock-apps`. There is no Docker in a pod: applications from Git need a Docker server added in *Servers* and chosen as their build server. Update with `kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z`.
 
 </details>
 
@@ -815,6 +832,11 @@ docker exec portdock portdock -disable-2fa user@example.com       # turn off two
 | `PORTDOCK_NETWORK` | `portdock` | Docker network shared with Traefik |
 | `PORTDOCK_OPENROUTER_URL` | `https://openrouter.ai/api/v1` | API used by the AI assistant |
 | `PORTDOCK_TRUSTED_PROXIES` | private ranges | Proxies whose `X-Forwarded-For` is trusted for client addresses (sign-in limits, audit log): IPs or CIDR ranges, or `none` |
+| `PORTDOCK_SETUP_TOKEN` | – | Required to create the owner account (or restore a backup) on the first-run page; set by the Kubernetes installer |
+| `PORTDOCK_KUBE_SERVERS` | – | In a cluster: the servers registered with the owner account, `name=namespace` pairs (`test=portdock-test,prod=portdock-prod`) |
+| `PORTDOCK_KUBE_NAMESPACE` | `portdock-apps` | In a cluster, without `PORTDOCK_KUBE_SERVERS`: the namespace of the server `cluster` |
+| `PORTDOCK_KUBE_CLUSTER_ISSUER` | – | In a cluster: the cert-manager `ClusterIssuer` of those servers |
+| `PORTDOCK_REGISTRY_HOST`, `_USERNAME`, `_PASSWORD` | – | In a cluster: a registry registered with the owner account, as the registry of those servers |
 | `PORTDOCK_DEV` / `PORTDOCK_DEBUG` | – | CORS for development / debug logs |
 
 Behind Docker Hub rate limits, build through a mirror: `BASE_REGISTRY=mirror.gcr.io/library docker compose build`.

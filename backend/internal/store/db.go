@@ -219,6 +219,7 @@ var migrations = []string{
 	`ALTER TABLE servers ADD COLUMN kube_cluster_issuer TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE servers ADD COLUMN kube_storage_class TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE servers ADD COLUMN kube_volume_size TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE servers ADD COLUMN kube_registry_id INTEGER NOT NULL DEFAULT 0`,
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339) }

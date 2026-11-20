@@ -73,7 +73,11 @@ func (s *Server) appOut(ctx context.Context, a store.Application) appDTO {
 			dto.Servers = append(dto.Servers, serverRef{ID: x.ID, Name: x.Name, Host: x.Host, Status: x.Status})
 		}
 	}
-	if reg, err := s.engine.Registry(ctx, a.RegistryID); err == nil && reg != nil {
+	regID := a.RegistryID
+	if regID == 0 {
+		regID = deploy.ClusterRegistry(a, srv)
+	}
+	if reg, err := s.engine.Registry(ctx, regID); err == nil && reg != nil {
 		dto.RegistryName = reg.Name
 		dto.RegistryRepo = registry.Repository(*reg, a.RegistryImage, a.Name)
 	}

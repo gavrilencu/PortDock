@@ -3,18 +3,23 @@ package api
 import (
 	"cmp"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"net/mail"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/portdock/portdock/internal/auth"
 	"github.com/portdock/portdock/internal/config"
+	"github.com/portdock/portdock/internal/deploy"
 	"github.com/portdock/portdock/internal/kube"
 	"github.com/portdock/portdock/internal/notify"
+	"github.com/portdock/portdock/internal/registry"
 	"github.com/portdock/portdock/internal/store"
 )
 
@@ -26,7 +31,11 @@ func (s *Server) userCount(r *http.Request) int {
 
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) error {
 	// repo is the GitHub repository of this build (shown on the About page).
-	res := map[string]any{"setup_required": s.userCount(r) == 0, "version": Version, "repo": s.updateRepo(r.Context())}
+	setup := s.userCount(r) == 0
+	res := map[string]any{"setup_required": setup, "version": Version, "repo": s.updateRepo(r.Context())}
+	if setup && setupToken() != "" {
+		res["setup_token_required"] = true
+	}
 	if u, sess, err := s.auth.AuthenticateSession(r); err == nil {
 		res["user"] = toUserOut(u)
 		res["mfa_setup_required"] = s.needsMFASetup(r.Context(), u, sess)
@@ -38,6 +47,26 @@ type credentials struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
+	// SetupToken is required to create the owner account when
+	// PORTDOCK_SETUP_TOKEN is set (see checkSetupToken).
+	SetupToken string `json:"setup_token"`
+}
+
+// setupToken is PORTDOCK_SETUP_TOKEN, set by the Kubernetes installer: a
+// fresh instance on a public domain is then claimed only by whoever has the
+// link the installer printed, not by its first visitor.
+func setupToken() string { return strings.TrimSpace(config.Env("SETUP_TOKEN", "")) }
+
+// checkSetupToken refuses got unless it is the setup token (or none is set).
+func checkSetupToken(got string) error {
+	want := setupToken()
+	if want == "" {
+		return nil
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), []byte(want)) != 1 {
+		return errStatus(403, "this instance is protected by a setup token: open the link the installer printed, or enter the token it shows")
+	}
+	return nil
 }
 
 func validateCredentials(c *credentials) error {
@@ -58,6 +87,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	}
 	var c credentials
 	if err := readJSON(r, &c); err != nil {
+		return err
+	}
+	if err := checkSetupToken(c.SetupToken); err != nil {
 		return err
 	}
 	if err := validateCredentials(&c); err != nil {
@@ -92,15 +124,17 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, toUserOut(u))
 }
 
-// ensureLocalServer registers the machine running PortDock as the default server.
+// ensureLocalServer registers the machine running PortDock as the default
+// server. In a Kubernetes cluster it registers the cluster instead, with the
+// registry and build server the installer prepared (bootstrapCluster).
 func (s *Server) ensureLocalServer(r *http.Request) error {
+	if kube.InCluster() {
+		return s.bootstrapCluster(r.Context())
+	}
 	var n int
 	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE is_local = 1").Scan(&n)
 	if n > 0 {
 		return nil
-	}
-	if kube.InCluster() {
-		return s.ensureClusterServer(r)
 	}
 	srv := store.Server{Name: "localhost", Description: "The server running PortDock", Host: "localhost", Port: 22,
 		User: "root", IsLocal: true, Kind: "docker", Status: "unknown", ProxyEnabled: true, ProxyStatus: "unknown", CreatedAt: store.Now()}
@@ -111,24 +145,123 @@ func (s *Server) ensureLocalServer(r *http.Request) error {
 	return nil
 }
 
-// ensureClusterServer registers the cluster PortDock runs in as the default
-// server, reached with the pod's service account. There is no Docker in a pod,
-// so there is no local server. Applications go to PORTDOCK_KUBE_NAMESPACE.
-func (s *Server) ensureClusterServer(r *http.Request) error {
+// clusterNamespace is a server to register in the cluster PortDock runs in.
+type clusterNamespace struct{ name, namespace string }
+
+// clusterNamespaces reads PORTDOCK_KUBE_SERVERS, "name=namespace" pairs
+// separated by commas ("test=portdock-test,prod=portdock-prod"): one server
+// per namespace. Without it, the server "cluster" deploys to
+// PORTDOCK_KUBE_NAMESPACE. Entries that are not name=namespace are skipped.
+func clusterNamespaces() []clusterNamespace {
+	var out []clusterNamespace
+	for _, part := range strings.Split(config.Env("KUBE_SERVERS", ""), ",") {
+		if part = strings.TrimSpace(part); part == "" {
+			continue
+		}
+		name, ns, ok := strings.Cut(part, "=")
+		name, ns = strings.TrimSpace(name), strings.TrimSpace(ns)
+		if !ok || name == "" || ns == "" {
+			log.Printf("PORTDOCK_KUBE_SERVERS: %q is not name=namespace, skipped", part)
+			continue
+		}
+		out = append(out, clusterNamespace{name, ns})
+	}
+	if len(out) == 0 {
+		out = []clusterNamespace{{"cluster", config.Env("KUBE_NAMESPACE", "portdock-apps")}}
+	}
+	return out
+}
+
+// bootstrapCluster runs when the owner account is created on a PortDock that
+// runs in a pod. It registers, once each:
+//   - the registry of PORTDOCK_REGISTRY_HOST, where images are pushed;
+//   - a server per namespace of the cluster (clusterNamespaces), reached with
+//     the pod's service account, with that registry and the cert-manager
+//     ClusterIssuer of PORTDOCK_KUBE_CLUSTER_ISSUER;
+//   - the server "build", when the node's Docker socket is mounted in the pod.
+//
+// A setting it cannot use is logged and skipped: the owner account exists by
+// then, and what is missing can be added in the interface.
+func (s *Server) bootstrapCluster(ctx context.Context) error {
+	regID, err := s.bootstrapRegistry(ctx)
+	if err != nil {
+		return err
+	}
 	var n int
-	_ = s.db.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM servers WHERE kind = ?", store.KindKubernetes).Scan(&n)
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM servers WHERE kind = ?", store.KindKubernetes).Scan(&n)
+	if n == 0 {
+		list := clusterNamespaces()
+		for _, c := range list {
+			desc := "The Kubernetes cluster running PortDock"
+			if len(list) > 1 {
+				desc = "The namespace " + c.namespace + " of the Kubernetes cluster running PortDock"
+			}
+			srv := store.Server{Name: c.name, Description: desc, Host: "in-cluster", Kind: store.KindKubernetes, KubeNamespace: c.namespace,
+				KubeClusterIssuer: config.Env("KUBE_CLUSTER_ISSUER", ""), KubeRegistryID: regID, Status: "unknown", ProxyStatus: "disabled", CreatedAt: store.Now()}
+			if err := validateServer(&srv); err != nil {
+				log.Printf("cluster server %q: %v, skipped", c.name, err)
+				continue
+			}
+			if _, err := store.Insert(ctx, s.db, "servers", &srv); err != nil {
+				return err
+			}
+			go func() { _, _ = s.engine.ValidateServer(context.Background(), srv) }()
+		}
+	}
+	return s.bootstrapBuildServer(ctx)
+}
+
+// bootstrapRegistry registers the registry of PORTDOCK_REGISTRY_HOST, with
+// PORTDOCK_REGISTRY_USERNAME and PORTDOCK_REGISTRY_PASSWORD, unless one with
+// that host exists. It returns its id: 0 without PORTDOCK_REGISTRY_HOST.
+func (s *Server) bootstrapRegistry(ctx context.Context) (int64, error) {
+	raw := config.Env("REGISTRY_HOST", "")
+	if raw == "" {
+		return 0, nil
+	}
+	host, err := registry.NormalizeHost(raw)
+	if err != nil {
+		log.Printf("PORTDOCK_REGISTRY_HOST: %v, skipped", err)
+		return 0, nil
+	}
+	var id int64
+	if err := s.db.QueryRowContext(ctx, "SELECT id FROM registries WHERE host = ? ORDER BY id LIMIT 1", host).Scan(&id); err == nil {
+		return id, nil
+	}
+	reg := store.Registry{Name: config.Env("REGISTRY_NAME", "Registry of the cluster"), Kind: "generic", Host: host,
+		Username: config.Env("REGISTRY_USERNAME", ""), CreatedAt: store.Now()}
+	if pass := config.Env("REGISTRY_PASSWORD", ""); pass != "" {
+		reg.Password = s.box.Encrypt(pass)
+	}
+	return store.Insert(ctx, s.db, "registries", &reg)
+}
+
+// dockerSocket is where the node's Docker socket is mounted in the pod, and
+// setupBuildServer prepares the server "build" (tests replace both).
+var (
+	dockerSocket     = "/var/run/docker.sock"
+	setupBuildServer = func(e *deploy.Engine, srv store.Server) { _ = e.SetupServer(context.Background(), srv, false) }
+)
+
+// bootstrapBuildServer registers the Docker daemon of the node PortDock runs
+// on, when its socket is mounted in the pod, as the server "build": the
+// images of the clusters' applications are built there. It has no proxy, as
+// the ports 80 and 443 belong to the cluster's ingress controller.
+func (s *Server) bootstrapBuildServer(ctx context.Context) error {
+	if fi, err := os.Stat(dockerSocket); err != nil || fi.Mode()&os.ModeSocket == 0 {
+		return nil
+	}
+	var n int
+	_ = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM servers WHERE is_local = 1").Scan(&n)
 	if n > 0 {
 		return nil
 	}
-	srv := store.Server{Name: "cluster", Description: "The Kubernetes cluster running PortDock", Host: "in-cluster", Kind: store.KindKubernetes,
-		KubeNamespace: config.Env("KUBE_NAMESPACE", "portdock-apps"), Status: "unknown", ProxyStatus: "disabled", CreatedAt: store.Now()}
-	if err := validateServer(&srv); err != nil {
+	srv := store.Server{Name: "build", Description: "Docker on the node running PortDock: builds the images of the cluster's applications",
+		Host: "localhost", Port: 22, User: "root", IsLocal: true, Kind: "docker", Status: "unknown", ProxyEnabled: false, ProxyStatus: "disabled", CreatedAt: store.Now()}
+	if _, err := store.Insert(ctx, s.db, "servers", &srv); err != nil {
 		return err
 	}
-	if _, err := store.Insert(r.Context(), s.db, "servers", &srv); err != nil {
-		return err
-	}
-	go func() { _, _ = s.engine.ValidateServer(context.Background(), srv) }()
+	go setupBuildServer(s.engine, srv)
 	return nil
 }
 

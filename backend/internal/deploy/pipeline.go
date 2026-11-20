@@ -92,6 +92,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 	if err != nil {
 		return err
 	}
+	regID := app.RegistryID
 	switch {
 	case cluster != nil:
 		if d.PRNumber > 0 {
@@ -100,8 +101,11 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		if err := CheckKubeApp(app); err != nil {
 			return err
 		}
-		if app.SourceType != "image" && app.RegistryID == 0 {
-			return errors.New("an application built from Git needs a container registry on Kubernetes: its image is pushed there and pulled by the cluster (choose one in Configuration → Registry)")
+		if regID == 0 {
+			regID = ClusterRegistry(app, targets[0].srv)
+		}
+		if app.SourceType != "image" && regID == 0 {
+			return errors.New("an application built from Git needs a container registry on Kubernetes: its image is pushed there and pulled by the cluster (choose one in Configuration → Registry, or give the cluster a registry in its server settings)")
 		}
 		// A cluster builds nothing: the image is built (and scanned) on a Docker
 		// server. A prebuilt image or an earlier version needs neither.
@@ -126,7 +130,7 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		e.hub.Event("application", app.ID, "deploying")
 	}
 	j := &job{e: e, app: app, srv: build.srv, x: build.x, d: d, log: log, cluster: cluster}
-	if j.reg, err = e.Registry(ctx, app.RegistryID); err != nil {
+	if j.reg, err = e.Registry(ctx, regID); err != nil {
 		return err
 	}
 	if d.PRNumber > 0 {
@@ -170,7 +174,11 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		log.Printf("Building on dedicated build server %q", build.srv.Name)
 	}
 	if j.reg != nil {
-		log.Printf("Registry: %s (%s)", j.reg.Name, j.reg.Host)
+		if regID != app.RegistryID {
+			log.Printf("Registry: %s (%s), the registry of the cluster", j.reg.Name, j.reg.Host)
+		} else {
+			log.Printf("Registry: %s (%s)", j.reg.Name, j.reg.Host)
+		}
 	}
 	if d.PRNumber > 0 {
 		log.Printf("Preview deployment for pull request #%d (branch %s)", d.PRNumber, d.Branch)

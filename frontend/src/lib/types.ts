@@ -30,6 +30,8 @@ export type Maybe<T> = T | null | undefined;
 
 export interface AuthStatus {
   setup_required: boolean;
+  /** The owner account needs the setup token printed by the installer. */
+  setup_token_required?: boolean;
   version: string;
   /** GitHub repository (owner/name) of this build. */
   repo?: string;
@@ -132,6 +134,8 @@ export interface Server {
   kube_cluster_issuer: string;
   kube_storage_class: string;
   kube_volume_size: string;
+  /** Registry that applications built from Git push to on this cluster (0: none). */
+  kube_registry_id: number;
   has_kubeconfig: boolean;
 }
 

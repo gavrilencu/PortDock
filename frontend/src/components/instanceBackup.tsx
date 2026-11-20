@@ -317,13 +317,14 @@ function RestoreModal({ name, onClose, onRestarting }: { name: string | null; on
 }
 
 /** First-run page: rebuild an instance from a backup instead of creating an owner. */
-export function SetupRestore({ onCancel }: { onCancel: () => void }) {
+export function SetupRestore({ onCancel, setupToken = "" }: { onCancel: () => void; setupToken?: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [passphrase, setPassphrase] = useState("");
   const [restarting, setRestarting] = useState(false);
   const restore = useMutation({
     mutationFn: () => {
       const form = new FormData();
+      if (setupToken) form.append("setup_token", setupToken); // before the file, like the passphrase
       form.append("passphrase", passphrase); // before the file: the server streams it
       form.append("file", file!);
       return api.upload("/setup/restore", form);

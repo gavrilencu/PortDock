@@ -30,7 +30,15 @@ Keep the data directory mounted at the same path as on the host (`/data/portdock
 
 Then open the dashboard, create the owner account, and start the proxy from **Servers → localhost → Run setup**.
 
-**Option 3: in a Kubernetes cluster** (no Docker; the cluster is the server):
+**Option 3: Kubernetes on a fresh server, all in one** (asks for the domain of the dashboard):
+
+```bash
+curl -fsSL https://github.com/{{REPO}}/releases/download/{{VERSION}}/install-kubernetes.sh | sudo bash
+```
+
+It installs k3s, cert-manager, Docker for the builds and a private registry, then PortDock on `https://<your domain>` with the servers **test** and **prod** ready, and prints the link to create the owner account. Point the domain's DNS record to the server first. Unattended: `curl … | sudo PORTDOCK_DOMAIN=panel.example.com bash`.
+
+**Option 4: in an existing Kubernetes cluster** (no Docker; the cluster is the server):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/{{REPO}}/{{VERSION}}/deploy/kubernetes/portdock.yaml \

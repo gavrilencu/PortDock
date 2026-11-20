@@ -35,6 +35,7 @@ import { Terminal } from "../components/LazyTerminal";
 import { formatBytes, formatUptime, timeAgo } from "../lib/utils";
 import { MetricsPanel } from "../components/metrics";
 import { KubeFields } from "./Servers";
+import { useRegistries } from "../components/registries";
 import { t } from "../lib/i18n";
 
 type Tab = "overview" | "monitoring" | "containers" | "images" | "volumes" | "networks" | "terminal" | "settings";
@@ -129,6 +130,7 @@ export function ServerPage() {
 
 function Overview({ s }: { s: Server }) {
   const qc = useQueryClient();
+  const regs = useRegistries();
   const metrics = useQuery({ queryKey: ["metrics", s.id], queryFn: () => api.get<Metrics>(`/servers/${s.id}/metrics`), refetchInterval: 30_000, enabled: s.status === "reachable", retry: false });
   const [setupKey, setSetupKey] = useState(0);
   const [nixpacks, setNixpacks] = useState(false);
@@ -185,6 +187,7 @@ function Overview({ s }: { s: Server }) {
                 [t("Certificate issuer"), s.kube_cluster_issuer || t("none: the ingress controller's certificate")],
                 [t("Storage class"), s.kube_storage_class || t("the cluster's default")],
                 [t("Volume size"), s.kube_volume_size || "5Gi"],
+                [t("Registry of the cluster"), regs.data?.registries.find((r) => r.id === s.kube_registry_id)?.name ?? t("none: each application chooses one")],
                 [t("Wildcard domain"), s.wildcard_domain || "—"],
               ].map(([k, v], i) => (
                 <div key={i} className="flex justify-between gap-4">

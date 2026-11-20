@@ -11,6 +11,9 @@ import { LoginPage } from "./pages/Login";
 import { DashboardPage } from "./pages/Dashboard";
 import { ApiError } from "./lib/api";
 import { LocaleRoot, t } from "./lib/i18n";
+import { captureSetupToken } from "./lib/setup";
+
+captureSetupToken();
 
 // Every page except the login and the dashboard is its own chunk, loaded
 // when first visited: the sign-in screen no longer downloads the terminal,

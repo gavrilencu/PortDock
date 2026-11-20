@@ -10,6 +10,7 @@ import { Button, ErrorBox, Field, Input, PasswordInput } from "../components/ui"
 import { LanguageSelect } from "../components/LanguagePicker";
 import { Credits } from "../components/credits";
 import { SetupRestore } from "../components/instanceBackup";
+import { forgetSetupToken, storedSetupToken } from "../lib/setup";
 import { t, tk, tx } from "../lib/i18n";
 
 const highlights = [
@@ -24,6 +25,8 @@ export function LoginPage() {
   const qc = useQueryClient();
   const providers = useQuery({ queryKey: ["login-providers"], queryFn: () => api.get<LoginProviders>("/auth/providers"), staleTime: 60_000 });
   const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [fromLink] = useState(storedSetupToken);
+  const [setupToken, setSetupToken] = useState(fromLink);
   const [mfa, setMfa] = useState<{ token: string; code: string; recovery: boolean } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -38,6 +41,7 @@ export function LoginPage() {
   const next = /^\/(?!\/)[^\\\s\x00-\x1f\x7f]*$/.test(raw) ? raw : "/";
   if (data?.user) return <Navigate to={next} replace />;
   const setup = data?.setup_required;
+  const tokenRequired = !!(setup && data?.setup_token_required);
   const ssoList = setup ? [] : (providers.data?.providers ?? []);
   const ldapList = setup ? [] : (providers.data?.ldap ?? []);
   const passwordForm = setup || providers.data?.password_login !== false || showPassword || ssoList.length === 0 || ldapList.length > 0;
@@ -56,11 +60,12 @@ export function LoginPage() {
         await done();
         return;
       }
-      const res = await api.post<{ mfa_required?: boolean; mfa_token?: string }>(setup ? "/auth/register" : "/auth/login", form);
+      const res = await api.post<{ mfa_required?: boolean; mfa_token?: string }>(setup ? "/auth/register" : "/auth/login", setup ? { ...form, setup_token: setupToken } : form);
       if (res.mfa_required && res.mfa_token) {
         setMfa({ token: res.mfa_token, code: "", recovery: false });
         return;
       }
+      if (setup) forgetSetupToken();
       await done();
     } catch (err) {
       setError(err);
@@ -133,7 +138,7 @@ export function LoginPage() {
               </div>
             </form>
           ) : setup && restoring ? (
-            <SetupRestore onCancel={() => setRestoring(false)} />
+            <SetupRestore onCancel={() => setRestoring(false)} setupToken={tokenRequired ? setupToken : ""} />
           ) : (
             <form onSubmit={submit} className="w-full max-w-[360px]">
               <h1 className="text-2xl font-semibold tracking-[-0.025em]">{setup ? t("Set up your instance") : t("Sign in")}</h1>
@@ -161,6 +166,20 @@ export function LoginPage() {
               )}
               {passwordForm ? (
                 <div className={ssoList.length > 0 ? "space-y-4" : "mt-8 space-y-4"}>
+                  {tokenRequired && (
+                    <Field
+                      label={t("Setup token")}
+                      hint={
+                        fromLink && setupToken === fromLink
+                          ? t("Filled in from the link the installer printed.")
+                          : tx("Printed by the installer. On the server: {command}", {
+                              command: <code className="break-all rounded bg-surface-2 px-1 py-0.5 font-mono text-[11px]">kubectl -n portdock get secret portdock-setup -o jsonpath='{"{.data.token}"}' | base64 -d</code>,
+                            })
+                      }
+                    >
+                      <PasswordInput className="h-10 font-mono" value={setupToken} onChange={(e) => setSetupToken(e.target.value.trim())} required autoComplete="off" />
+                    </Field>
+                  )}
                   {setup && (
                     <Field label={t("Full name")}>
                       <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Cooper" autoFocus autoComplete="name" />
