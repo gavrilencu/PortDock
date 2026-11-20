@@ -87,6 +87,7 @@ To deploy to a cluster from a PortDock that runs on a server instead, connect it
 **🚀 Deployments**
 - From GitHub (GitHub App), Azure DevOps, GitLab, Gitea / Forgejo, Bitbucket or any Git URL; Docker images; Docker Compose
 - Build packs: Dockerfile, Nixpacks, Node.js, Bun, Python, Go, static sites, shell scripts — auto-detected
+- The port is taken from the image (`EXPOSE`) until the first successful deployment, then a mismatch is reported
 - Push-to-deploy, pull request previews with their own domain, deploy hooks for any CI
 - Deployment status on commits and pull requests (GitHub, Azure DevOps)
 - Zero-downtime rollouts: traffic moves only after the health check passes; optional canary deployments with automatic rollback

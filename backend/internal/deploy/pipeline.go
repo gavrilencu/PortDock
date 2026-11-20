@@ -233,6 +233,15 @@ func (e *Engine) runApplication(ctx context.Context, d *store.Deployment, log *l
 		return err
 	}
 	d.Image = image
+	// The port the image declares: read where the image was built, or for a
+	// prebuilt image from its registry, on a Docker server.
+	portsOn := build.x
+	if cluster != nil && !docker.IsDocker(portsOn) && d.RollbackOf == 0 {
+		if b, err := e.kubeBuildTarget(ctx, app); err == nil {
+			portsOn = b.x
+		}
+	}
+	j.adoptImagePort(ctx, image, portsOn)
 	if cluster != nil {
 		// The cluster pulls the image itself; it is scanned where it was built.
 		if app.ScanOnDeploy && d.RollbackOf == 0 {
@@ -398,22 +407,126 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 	return image, false, nil
 }
 
-// checkExposedPorts reads the ports the built image declares (EXPOSE) and
-// warns when the application's port is not one of them: its health check and
-// its domains would go to a port nothing listens on.
+// checkExposedPorts reads the ports the image just built declares (EXPOSE).
 func (j *job) checkExposedPorts(ctx context.Context, image string) {
 	if j.app.Port == 0 || j.app.BuildPack == "compose" {
 		return
 	}
-	out, err := j.output(ctx, "docker image inspect --format '{{json .Config.ExposedPorts}}' "+q(image))
+	if out, err := j.output(ctx, "docker image inspect --format '{{json .Config.ExposedPorts}}' "+q(image)); err == nil {
+		j.exposed = exposedPorts(out)
+	}
+}
+
+// remoteImagePorts reads the ports a prebuilt image declares from its
+// registry, without pulling it, on the Docker server x.
+func (j *job) remoteImagePorts(ctx context.Context, x executor.Executor, image string) []int {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if j.reg != nil {
+		_ = j.e.dockerLogin(ctx, x, *j.reg, nil) // a private image needs the credentials
+	}
+	out, err := executor.Output(ctx, x, "docker buildx imagetools inspect --format '{{json .Image}}' "+q(image))
 	if err != nil {
+		return nil
+	}
+	return configPorts(out)
+}
+
+// adoptImagePort makes the application's port the one its image declares
+// (EXPOSE) when they differ, as long as the application has never been
+// deployed successfully: a new application works without its author knowing
+// the port of the image. Once it has run, its port is left as it is and a
+// mismatch is only reported, and a PORT variable set by the user always wins.
+// x is a Docker server to read a prebuilt image's ports from (nil: none).
+func (j *job) adoptImagePort(ctx context.Context, image string, x executor.Executor) {
+	app, d := j.app, j.d
+	if app.Port == 0 || app.BuildPack == "compose" || d.RollbackOf != 0 || d.PRNumber > 0 {
 		return
 	}
-	j.exposed = exposedPorts(out)
-	if len(j.exposed) > 0 && !slices.Contains(j.exposed, j.app.Port) {
-		j.log.Printf("⚠ The image declares port %s (EXPOSE), but the application's port is %d: the health check and the domains go to port %d. If the application listens on %d, set its port in Configuration → Network.",
-			joinPorts(j.exposed), j.app.Port, j.app.Port, j.exposed[0])
+	if j.exposed == nil && (app.SourceType == "image" || app.BuildPack == "image") && x != nil && docker.IsDocker(x) {
+		j.exposed = j.remoteImagePorts(ctx, x, image)
 	}
+	if len(j.exposed) == 0 || slices.Contains(j.exposed, app.Port) {
+		return
+	}
+	var succeeded int
+	_ = j.e.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM deployments WHERE application_id = ? AND status = 'success' AND pr_number = 0", app.ID).Scan(&succeeded)
+	_, userPort := j.env.Runtime["PORT"]
+	port := pickPort(j.exposed)
+	if succeeded > 0 || userPort {
+		j.log.Printf("⚠ The image declares port %s (EXPOSE), but the application's port is %d: the health check and the domains go to port %d. If the application listens on %d, set its port in Configuration → Network.",
+			joinPorts(j.exposed), app.Port, app.Port, port)
+		return
+	}
+	if _, err := j.e.db.ExecContext(ctx, "UPDATE applications SET port = ? WHERE id = ?", port, app.ID); err != nil {
+		j.log.Printf("⚠ Could not save the port %d of the image: %v", port, err)
+		return
+	}
+	j.log.Printf("Port: the image listens on port %d (EXPOSE %s), so the application's port is now %d instead of %d.", port, joinPorts(j.exposed), port, app.Port)
+	j.app.Port = port
+	if routes, err := j.e.DomainRoutes(ctx, j.app); err == nil {
+		j.routes = routes
+	}
+}
+
+// pickPort chooses among the ports an image declares the one that serves it:
+// the only one, else the usual HTTP port among them, else the lowest.
+func pickPort(ports []int) int {
+	if len(ports) == 1 {
+		return ports[0]
+	}
+	for _, p := range []int{80, 8080, 3000, 8000, 5000, 4000, 8081, 8888, 9000} {
+		if slices.Contains(ports, p) {
+			return p
+		}
+	}
+	if len(ports) == 0 {
+		return 0
+	}
+	return slices.Min(ports)
+}
+
+// configPorts reads the TCP ports of the image configuration printed by
+// docker buildx imagetools inspect --format '{{json .Image}}': one
+// configuration, or one per platform (linux/amd64 preferred).
+func configPorts(s string) []int {
+	var top map[string]json.RawMessage
+	if json.Unmarshal([]byte(strings.TrimSpace(s)), &top) != nil {
+		return nil
+	}
+	of := func(raw json.RawMessage) []int {
+		var c struct {
+			Config struct {
+				ExposedPorts map[string]json.RawMessage `json:"ExposedPorts"`
+			} `json:"config"`
+		}
+		if json.Unmarshal(raw, &c) != nil || len(c.Config.ExposedPorts) == 0 {
+			return nil
+		}
+		b, _ := json.Marshal(c.Config.ExposedPorts)
+		return exposedPorts(string(b))
+	}
+	if _, single := top["config"]; single {
+		return of(json.RawMessage(strings.TrimSpace(s)))
+	}
+	for _, platform := range []string{"linux/amd64", "linux/arm64"} {
+		if raw, ok := top[platform]; ok {
+			if p := of(raw); p != nil {
+				return p
+			}
+		}
+	}
+	keys := make([]string, 0, len(top))
+	for k := range top {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if p := of(top[k]); p != nil {
+			return p
+		}
+	}
+	return nil
 }
 
 // exposedPorts parses the ExposedPorts of an image ({"80/tcp":{}}): its TCP ports, sorted.
