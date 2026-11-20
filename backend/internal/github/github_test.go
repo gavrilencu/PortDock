@@ -75,3 +75,32 @@ func TestManifestAndURLs(t *testing.T) {
 		t.Error("APIURLFor mismatch")
 	}
 }
+
+// The port of a Dockerfile is the one its final stage exposes.
+func TestDockerfilePort(t *testing.T) {
+	for name, c := range map[string]struct {
+		dockerfile string
+		want       int
+	}{
+		"nginx site":      {"FROM node:22 AS build\nRUN pnpm build\nFROM nginx:alpine\nCOPY out /usr/share/nginx/html\nEXPOSE 80\n", 80},
+		"protocol":        {"FROM alpine\nEXPOSE 8080/tcp 9090\n", 8080},
+		"udp first":       {"FROM alpine\nexpose 53/udp 5000\n", 5000},
+		"last wins":       {"FROM alpine\nEXPOSE 3000\nEXPOSE 4000\n", 4000},
+		"earlier stage":   {"FROM node AS build\nEXPOSE 3000\nFROM nginx\n", 0},
+		"variable":        {"FROM alpine\nEXPOSE $PORT\n", 0},
+		"none":            {"FROM alpine\nCMD [\"sh\"]\n", 0},
+		"windows endings": {"FROM alpine\r\nEXPOSE 8000\r\n", 8000},
+	} {
+		if got := DockerfilePort(c.dockerfile); got != c.want {
+			t.Errorf("%s: %d, want %d", name, got, c.want)
+		}
+	}
+	s := DetectFrom([]Entry{{Name: "Dockerfile", Type: "file"}}, func(string) (string, error) { return "FROM nginx\nEXPOSE 80\n", nil })
+	if s.BuildPack != "dockerfile" || s.Port != 80 || !strings.Contains(s.Reason, "EXPOSE 80") {
+		t.Fatalf("suggestion: %+v", s)
+	}
+	s = DetectFrom([]Entry{{Name: "Dockerfile", Type: "file"}}, func(string) (string, error) { return "FROM node\nCMD node app.js\n", nil })
+	if s.Port != 3000 {
+		t.Fatalf("without EXPOSE the port stays 3000: %+v", s)
+	}
+}

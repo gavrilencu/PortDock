@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,6 +63,18 @@ func kubeTarget(targets []target) (*kube.Cluster, error) {
 		return nil, errors.New("an application on a Kubernetes cluster runs on that cluster only: remove its additional servers (the cluster spreads the replicas over its nodes)")
 	}
 	return cluster, nil
+}
+
+// noAnswerHint explains a pod that never answered its health check on port
+// within seconds: most often the application listens on another port, which
+// the image may declare (exposed, from EXPOSE).
+func noAnswerHint(port, seconds int, exposed []int) string {
+	if len(exposed) > 0 && !slices.Contains(exposed, port) {
+		return fmt.Sprintf("Nothing answered on port %d within %d s, and the image declares port %s (EXPOSE): set the application's port to %d in Configuration → Network, then deploy again.",
+			port, seconds, joinPorts(exposed), exposed[0])
+	}
+	return fmt.Sprintf("Nothing answered on port %d within %d s: check that the application listens on that port, on all interfaces (0.0.0.0, not 127.0.0.1), or change its port in Configuration → Network. An application that starts slowly needs a longer health check timeout.",
+		port, seconds)
 }
 
 // ClusterRegistry is the registry an application built from Git, without a
@@ -428,6 +441,11 @@ func (j *job) kubeDeploy(ctx context.Context, c *kube.Cluster, srv store.Server,
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if errors.Is(err, kube.ErrNoAnswer) && len(w.Ports) > 0 {
+			hint := noAnswerHint(w.Ports[0], w.StartupSeconds, j.exposed)
+			log.Printf("⚠ %s", hint)
+			return fmt.Errorf("the new version did not become ready: %w. %s", err, hint)
 		}
 		return fmt.Errorf("the new version did not become ready: %w", err)
 	}

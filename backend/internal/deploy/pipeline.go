@@ -2,11 +2,13 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/portdock/portdock/internal/azuredevops"
 	"net/url"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,6 +66,8 @@ type job struct {
 	// the Docker server that builds its image, or the cluster itself when
 	// nothing has to be built.
 	cluster *kube.Cluster
+	// exposed are the ports the built image declares (EXPOSE), when known.
+	exposed []int
 }
 
 func (j *job) run(ctx context.Context, cmd string) error {
@@ -371,6 +375,7 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 	image = j.imageRepo() + ":" + short12(d.CommitSHA)
 	if !d.ForceRebuild && hasImage(ctx, j.x, image) {
 		j.log.Printf("Image %s already exists for this commit, skipping build (use force rebuild to override).", image)
+		j.checkExposedPorts(ctx, image)
 		if j.cluster != nil {
 			// The cluster only has the registry: an image built by a deployment
 			// that failed before its push would never get there.
@@ -384,12 +389,59 @@ func (j *job) resolveImage(ctx context.Context) (image string, pull bool, err er
 	if err := j.build(ctx, image); err != nil {
 		return "", false, err
 	}
+	j.checkExposedPorts(ctx, image)
 	if d.PRNumber == 0 {
 		if err := j.push(ctx, image); err != nil {
 			return "", false, err
 		}
 	}
 	return image, false, nil
+}
+
+// checkExposedPorts reads the ports the built image declares (EXPOSE) and
+// warns when the application's port is not one of them: its health check and
+// its domains would go to a port nothing listens on.
+func (j *job) checkExposedPorts(ctx context.Context, image string) {
+	if j.app.Port == 0 || j.app.BuildPack == "compose" {
+		return
+	}
+	out, err := j.output(ctx, "docker image inspect --format '{{json .Config.ExposedPorts}}' "+q(image))
+	if err != nil {
+		return
+	}
+	j.exposed = exposedPorts(out)
+	if len(j.exposed) > 0 && !slices.Contains(j.exposed, j.app.Port) {
+		j.log.Printf("⚠ The image declares port %s (EXPOSE), but the application's port is %d: the health check and the domains go to port %d. If the application listens on %d, set its port in Configuration → Network.",
+			joinPorts(j.exposed), j.app.Port, j.app.Port, j.exposed[0])
+	}
+}
+
+// exposedPorts parses the ExposedPorts of an image ({"80/tcp":{}}): its TCP ports, sorted.
+func exposedPorts(s string) []int {
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(strings.TrimSpace(s)), &m) != nil {
+		return nil
+	}
+	var ports []int
+	for k := range m {
+		num, proto, _ := strings.Cut(k, "/")
+		if proto != "" && proto != "tcp" {
+			continue
+		}
+		if n, err := strconv.Atoi(num); err == nil && n > 0 {
+			ports = append(ports, n)
+		}
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+func joinPorts(ports []int) string {
+	s := make([]string, len(ports))
+	for i, p := range ports {
+		s[i] = strconv.Itoa(p)
+	}
+	return strings.Join(s, ", ")
 }
 
 func short12(sha string) string {

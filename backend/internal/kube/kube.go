@@ -307,9 +307,49 @@ var fatalWaiting = map[string]bool{
 	"CreateContainerConfigError": true, "CreateContainerError": true, "RunContainerError": true,
 }
 
+// ErrNoAnswer marks a pod of the new version that was stopped, or stopped by
+// itself, before it ever answered its health check: most often because the
+// application listens on another port than the one probed.
+var ErrNoAnswer = errors.New("it never answered its health check")
+
+// startFailure tells why a pod of a new version will not become ready without
+// a change, or returns nil while it may still. A container restarted before
+// it was ever ready already had its whole startup time: the next runs end the
+// same way, so there is no point waiting through the back-off of each.
+func (p pod) startFailure() error {
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.Ready || cs.RestartCount == 0 {
+			continue
+		}
+		last := cs.LastState.Terminated
+		switch {
+		case last == nil:
+		case last.ExitCode == 0 || last.ExitCode == 137 || last.ExitCode == 143:
+			// Exit 0 or a signal: stopped by the kubelet after the startup probe
+			// failed (or the application exited by itself).
+			return fmt.Errorf("pod %s was restarted %d time(s): %w (last run ended with exit code %d)", p.Metadata.Name, cs.RestartCount, ErrNoAnswer, last.ExitCode)
+		default:
+			reason := last.Reason
+			if reason == "" {
+				reason = "Error"
+			}
+			return fmt.Errorf("pod %s cannot start: its container exits with code %d (%s), restarted %d time(s)", p.Metadata.Name, last.ExitCode, reason, cs.RestartCount)
+		}
+	}
+	if reason, msg := p.waiting(); fatalWaiting[reason] {
+		err := fmt.Errorf("pod %s cannot start: %s", p.Metadata.Name, reason)
+		if msg != "" {
+			err = fmt.Errorf("%w (%s)", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
 // Rollout waits for the rollout of a Deployment like RolloutStatus, and stops
 // early when a pod matching podSelector (the pods of the new version) cannot
-// start: an image that cannot be pulled or a container that keeps crashing.
+// start: an image that cannot be pulled, a container that keeps crashing, or
+// one restarted before it ever answered its health check (startFailure).
 func (c *Cluster) Rollout(ctx context.Context, name, podSelector string, timeout time.Duration, w io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -328,11 +368,7 @@ func (c *Cluster) Rollout(ctx context.Context, name, podSelector string, timeout
 				continue
 			}
 			for _, p := range pods {
-				if reason, msg := p.waiting(); fatalWaiting[reason] {
-					err := fmt.Errorf("pod %s cannot start: %s", p.Metadata.Name, reason)
-					if msg != "" {
-						err = fmt.Errorf("%w (%s)", err, msg)
-					}
+				if err := p.startFailure(); err != nil {
 					failed <- err
 					cancel()
 					return
@@ -596,6 +632,13 @@ type pod struct {
 					ExitCode int    `json:"exitCode"`
 				} `json:"terminated"`
 			} `json:"state"`
+			// LastState is how the previous run of a restarted container ended.
+			LastState struct {
+				Terminated *struct {
+					Reason   string `json:"reason"`
+					ExitCode int    `json:"exitCode"`
+				} `json:"terminated"`
+			} `json:"lastState"`
 		} `json:"containerStatuses"`
 	} `json:"status"`
 }

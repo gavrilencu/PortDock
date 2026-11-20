@@ -667,3 +667,39 @@ func TestCheckNamespace(t *testing.T) {
 		}
 	}
 }
+
+// A pod of a new version that will not become ready is recognized at once,
+// with what went wrong; one that may still is left alone.
+func TestStartFailure(t *testing.T) {
+	parse := func(status string) pod {
+		var p pod
+		if err := json.Unmarshal([]byte(`{"metadata":{"name":"web-1"},"status":`+status+`}`), &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	for name, c := range map[string]struct {
+		status   string
+		want     string // "" when the pod may still become ready
+		noAnswer bool
+	}{
+		"starting":      {`{"containerStatuses":[{"ready":false,"restartCount":0,"state":{"running":{}}}]}`, "", false},
+		"ready":         {`{"containerStatuses":[{"ready":true,"restartCount":2,"state":{"running":{}}}]}`, "", false},
+		"probe kill":    {`{"containerStatuses":[{"ready":false,"restartCount":1,"state":{"running":{}},"lastState":{"terminated":{"reason":"Completed","exitCode":0}}}]}`, "never answered its health check", true},
+		"sigkill":       {`{"containerStatuses":[{"ready":false,"restartCount":2,"state":{"waiting":{"reason":"CrashLoopBackOff"}},"lastState":{"terminated":{"reason":"Error","exitCode":137}}}]}`, "exit code 137", true},
+		"crash":         {`{"containerStatuses":[{"ready":false,"restartCount":1,"state":{"running":{}},"lastState":{"terminated":{"reason":"Error","exitCode":1}}}]}`, "exits with code 1 (Error)", false},
+		"crash loop":    {`{"containerStatuses":[{"ready":false,"restartCount":4,"state":{"waiting":{"reason":"CrashLoopBackOff","message":"back-off 40s"}}}]}`, "CrashLoopBackOff (back-off 40s)", false},
+		"image pull":    {`{"containerStatuses":[{"ready":false,"restartCount":0,"state":{"waiting":{"reason":"ImagePullBackOff"}}}]}`, "ImagePullBackOff", false},
+		"pulling image": {`{"containerStatuses":[{"ready":false,"restartCount":0,"state":{"waiting":{"reason":"ContainerCreating"}}}]}`, "", false},
+	} {
+		err := parse(c.status).startFailure()
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v, want none", name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		case c.want != "" && errors.Is(err, ErrNoAnswer) != c.noAnswer:
+			t.Errorf("%s: ErrNoAnswer is %v", name, errors.Is(err, ErrNoAnswer))
+		}
+	}
+}

@@ -3,7 +3,9 @@ package github
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/portdock/portdock/internal/composefile"
@@ -37,6 +39,34 @@ func (p pkgJSON) has(dep string) bool {
 	_, a := p.Dependencies[dep]
 	_, b := p.DevDependencies[dep]
 	return a || b
+}
+
+// DockerfilePort is the port the image of a Dockerfile declares: the first
+// port of the last EXPOSE instruction, the one of the final stage. 0 when
+// there is none, or when it comes from a variable (EXPOSE $PORT).
+func DockerfilePort(dockerfile string) int {
+	port := 0
+	for _, line := range strings.Split(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && strings.EqualFold(fields[0], "FROM") {
+			port = 0 // a new stage: what earlier stages expose is not in the image
+		}
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "EXPOSE") {
+			continue
+		}
+		port = 0
+		for _, f := range fields[1:] {
+			num, proto, _ := strings.Cut(f, "/")
+			if proto != "" && !strings.EqualFold(proto, "tcp") {
+				continue
+			}
+			if n, err := strconv.Atoi(num); err == nil && n > 0 && n < 65536 {
+				port = n
+				break
+			}
+		}
+	}
+	return port
 }
 
 // Detect inspects the repository (at ref, within baseDir) and suggests a build pack.
@@ -74,6 +104,11 @@ func DetectFrom(entries []Entry, read func(name string) (string, error)) Suggest
 	switch {
 	case file("Dockerfile") != "":
 		s.BuildPack, s.Port, s.Reason = "dockerfile", 3000, "Dockerfile found in the repository"
+		if raw, err := read("Dockerfile"); err == nil {
+			if p := DockerfilePort(raw); p > 0 {
+				s.Port, s.Reason = p, fmt.Sprintf("Dockerfile found in the repository (EXPOSE %d)", p)
+			}
+		}
 	case file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml") != "":
 		s.BuildPack, s.Reason = "compose", "Docker Compose file found"
 		s.ComposePath = file("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/portdock/portdock/internal/config"
 	"github.com/portdock/portdock/internal/docker"
@@ -31,6 +32,9 @@ type fakeKube struct {
 	objects     map[string]map[string]any // "Kind/name"
 	calls       []string
 	failRollout bool // new pods crash; the rollout never completes
+	// noAnswer: new pods run but never answer their startup probe, so the
+	// kubelet restarts them; the rollout waits until PortDock gives up.
+	noAnswer bool
 }
 
 var kubeKinds = map[string]string{
@@ -100,6 +104,11 @@ func (f *fakeKube) pods(sel string) []map[string]any {
 				status["containerStatuses"] = []any{map[string]any{"name": "app", "ready": false, "restartCount": 4,
 					"state": map[string]any{"waiting": map[string]any{"reason": "CrashLoopBackOff", "message": "back-off restarting failed container"}}}}
 			}
+			if f.noAnswer {
+				status["containerStatuses"] = []any{map[string]any{"name": "app", "ready": false, "restartCount": 1,
+					"state":     map[string]any{"running": map[string]any{}},
+					"lastState": map[string]any{"terminated": map[string]any{"reason": "Completed", "exitCode": 0}}}}
+			}
 			pods = append(pods, map[string]any{
 				"metadata": map[string]any{"name": fmt.Sprintf("%s-%d", name, i), "labels": tmpl["metadata"].(map[string]any)["labels"]},
 				"spec":     tspec, "status": status,
@@ -109,7 +118,7 @@ func (f *fakeKube) pods(sel string) []map[string]any {
 	return pods
 }
 
-func (f *fakeKube) run(_ context.Context, in io.Reader, out, errw io.Writer, args ...string) error {
+func (f *fakeKube) run(ctx context.Context, in io.Reader, out, errw io.Writer, args ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(args) >= 2 && args[0] == "--namespace" {
@@ -150,13 +159,21 @@ func (f *fakeKube) run(_ context.Context, in io.Reader, out, errw io.Writer, arg
 		}
 		return nil
 	case args[0] == "rollout" && args[1] == "status":
+		if f.noAnswer {
+			// Like kubectl: wait until the rollout is given up; the watcher
+			// reads the pods meanwhile.
+			f.mu.Unlock()
+			<-ctx.Done()
+			f.mu.Lock()
+			return ctx.Err()
+		}
 		if f.failRollout {
 			_, _ = io.WriteString(errw, "error: timed out waiting for the condition")
 			return errors.New("exit status 1")
 		}
 		return write("deployment successfully rolled out\n")
 	case args[0] == "rollout" && args[1] == "undo":
-		f.failRollout = false // the previous pods are back
+		f.failRollout, f.noAnswer = false, false // the previous pods are back
 		return nil
 	case args[0] == "scale":
 		name := strings.TrimPrefix(args[1], "deployment/")
@@ -735,6 +752,56 @@ func TestKubeRefusals(t *testing.T) {
 	}
 	if err := f.e.StartDatabase(ctx, db, true); err == nil || !strings.Contains(err.Error(), "Kubernetes") {
 		t.Fatalf("StartDatabase = %v", err)
+	}
+}
+
+// A pod restarted before it ever answered its health check fails the
+// deployment at once (not after the back-off of every restart), and the log
+// says why: nothing answers on the application's port.
+func TestKubeNoAnswerOnPort(t *testing.T) {
+	f := newKubeFixture(t)
+	f.k.mu.Lock()
+	f.k.noAnswer = true
+	f.k.mu.Unlock()
+	start := time.Now()
+	d := f.deploy(f.app(nginxApp()), Options{})
+	if d.Status != "failed" {
+		t.Fatalf("deployment %s:\n%s", d.Status, d.Logs)
+	}
+	if took := time.Since(start); took > 30*time.Second {
+		t.Fatalf("the failure took %s to be noticed", took)
+	}
+	for _, want := range []string{"never answered its health check", "Nothing answered on port 80 within 60 s", "0.0.0.0"} {
+		if !strings.Contains(d.Logs, want) {
+			t.Errorf("the log should mention %q:\n%s", want, d.Logs)
+		}
+	}
+}
+
+func TestNoAnswerHint(t *testing.T) {
+	if h := noAnswerHint(3000, 60, []int{80}); !strings.Contains(h, "declares port 80") || !strings.Contains(h, "set the application's port to 80") {
+		t.Fatalf("with another exposed port: %s", h)
+	}
+	if h := noAnswerHint(3000, 60, []int{3000}); strings.Contains(h, "declares") || !strings.Contains(h, "0.0.0.0") {
+		t.Fatalf("with the probed port exposed: %s", h)
+	}
+	if h := noAnswerHint(8080, 30, nil); !strings.Contains(h, "port 8080 within 30 s") {
+		t.Fatalf("without exposed ports: %s", h)
+	}
+}
+
+func TestExposedPorts(t *testing.T) {
+	for in, want := range map[string]string{
+		`{"80/tcp":{}}`:                "80",
+		`{"8080/tcp":{},"443/tcp":{}}`: "443, 8080",
+		`{"53/udp":{},"9000/tcp":{}}`:  "9000",
+		"null\n":                       "",
+		"":                             "",
+		`{"3000":{}}`:                  "3000",
+	} {
+		if got := joinPorts(exposedPorts(in)); got != want {
+			t.Errorf("exposedPorts(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
