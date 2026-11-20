@@ -53,6 +53,8 @@ To deploy to a cluster from a PortDock that runs on a server, run `curl -fsSL ht
 
 In PortDock, click **Update available** at the bottom of the sidebar, or go to **Settings → Updates**. A backup is taken first, and the previous version comes back automatically if the new one doesn't start. Your applications keep running during the update.
 
+In Kubernetes this works from the dashboard too, from v1.18.0 on. An installation from before gets the right to update itself by running the Kubernetes installer once more (`curl -fsSL https://github.com/{{REPO}}/releases/download/{{VERSION}}/install-kubernetes.sh | sudo bash`), which also installs this version.
+
 ## Verify the image
 
 The image is signed by this repository's release workflow (Sigstore keyless) and carries an SBOM and a provenance attestation; the SBOM is also attached to this release. PortDock checks the signature itself before updating. To check it by hand:

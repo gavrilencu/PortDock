@@ -332,6 +332,46 @@ subjects:
   name: portdock
   namespace: $NS
 EOF
+  # Self-update from the dashboard: a Job of PortDock's image points the
+  # StatefulSet at the new version and goes back when it does not start.
+  cat <<EOF
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: portdock-self-update
+  namespace: $NS
+rules:
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: ["apps"]
+  resources: ["controllerrevisions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: portdock-self-update
+  namespace: $NS
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: portdock-self-update
+subjects:
+- kind: ServiceAccount
+  name: portdock
+  namespace: $NS
+EOF
   # PortDock administers the namespaces of the environments, and nothing else.
   for n in $(printf '%s' "$ENVIRONMENTS" | tr ',' '\n' | cut -d= -f2); do
     cat <<EOF

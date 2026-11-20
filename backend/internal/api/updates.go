@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,6 +31,11 @@ type updateCache struct {
 	err       string
 	checkedAt time.Time
 	running   bool
+	// Whether PortDock can update itself in its cluster (kubeUpdateSupport).
+	kubeCheckedAt time.Time
+	kubeSelf      updater.KubeSelf
+	kubeOK        bool
+	kubeReason    string
 }
 
 func (s *Server) updateRepo(ctx context.Context) string {
@@ -114,7 +120,7 @@ func (s *Server) updateStatus(ctx context.Context, admin bool) map[string]any {
 	supported, reason := true, ""
 	d := updater.NewDocker()
 	if kube.InCluster() {
-		supported, reason = false, "PortDock runs in Kubernetes: update it with kubectl -n portdock set image statefulset/portdock portdock=<image>:<version>"
+		_, supported, reason = s.kubeUpdateSupport(ctx)
 	} else if !d.Available(dctx) {
 		supported, reason = false, "PortDock does not run in Docker with the Docker socket mounted."
 	} else if _, err := updater.SelfContainer(dctx, d); err != nil {
@@ -226,7 +232,15 @@ func (s *Server) verifyUpdateImage(ctx context.Context) func(context.Context, st
 		}
 	}
 	policy := updater.ReleasePolicy(s.updateRepo(ctx))
-	cosign := firstNonEmpty(s.db.Setting(ctx, "cosign_image"), updater.DefaultCosignImage)
+	cosign := s.db.Setting(ctx, "cosign_image")
+	if cosign == "" {
+		// The cosign of the image needs no Docker (PortDock in Kubernetes);
+		// older images run it in a container.
+		cosign = updater.DefaultCosignImage
+		if bin, err := exec.LookPath("cosign"); err == nil {
+			cosign = bin
+		}
+	}
 	run := func(ctx context.Context, cmd string) (string, error) {
 		return executor.Output(ctx, executor.Local{}, cmd)
 	}
@@ -298,14 +312,19 @@ func (s *Server) startUpdate(ctx context.Context, tag string, force bool, by str
 	go func() {
 		bg, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-		if _, err := updater.Launch(bg, updater.NewDocker(), plan); err != nil {
+		launch := func() error { _, err := updater.Launch(bg, updater.NewDocker(), plan); return err }
+		if kube.InCluster() {
+			launch = func() error { return s.launchKubeUpdate(bg, plan) }
+		}
+		if err := launch(); err != nil {
 			slog.Warn("update failed", "err", err)
 			s.notify.Send(notify.Event{Name: "update.failed", Title: "PortDock update to " + tag + " failed", Message: err.Error()})
 			c.mu.Lock()
 			c.running = false
 			c.mu.Unlock()
 		}
-		// On success this process is stopped by the updater container.
+		// On success this process is stopped by the updater container, or in
+		// Kubernetes by the update Job replacing its pod.
 	}()
 	return nil
 }
@@ -339,6 +358,9 @@ func (s *Server) runUpdate(w http.ResponseWriter, r *http.Request) error {
 // UpdateWatch checks for releases periodically and installs stable ones
 // automatically between 02:00 and 05:00 (instance time zone) when enabled.
 func (s *Server) UpdateWatch(ctx context.Context) {
+	if kube.InCluster() {
+		s.finishKubeUpdate(ctx) // the outcome of an update Job, now that PortDock restarted
+	}
 	// A finished update is reported once the new version is up.
 	if st := updater.LoadState(s.cfg.DataDir); st.Status == "success" && st.To == Version && s.db.Setting(ctx, "update_reported") != st.ID {
 		_ = s.db.SetSetting(ctx, "update_reported", st.ID)

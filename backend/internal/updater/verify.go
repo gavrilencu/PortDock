@@ -69,8 +69,12 @@ func VerifySignature(ctx context.Context, run Runner, cosignImage, image string,
 	if cosignImage == "" {
 		cosignImage = DefaultCosignImage
 	}
-	cmd := fmt.Sprintf("docker run --rm %s verify --certificate-identity-regexp %s --certificate-oidc-issuer %s --output json %s",
-		shellQuote(cosignImage), shellQuote(p.Identity), shellQuote(p.Issuer), shellQuote(image))
+	cosign := "docker run --rm " + shellQuote(cosignImage)
+	if strings.HasPrefix(cosignImage, "/") {
+		cosign = shellQuote(cosignImage) // the cosign binary of the image: no Docker needed
+	}
+	cmd := fmt.Sprintf("%s verify --certificate-identity-regexp %s --certificate-oidc-issuer %s --output json %s",
+		cosign, shellQuote(p.Identity), shellQuote(p.Issuer), shellQuote(image))
 	out, err := run(ctx, cmd)
 	if err != nil {
 		return Verified{}, fmt.Errorf("the signature of %s could not be verified: %w", image, err)

@@ -172,7 +172,7 @@ To deploy to a cluster from a PortDock that runs on a server instead, connect it
 <td valign="top">
 
 **✨ Platform**
-- One-click updates from GitHub releases, with a backup and automatic rollback
+- One-click updates from GitHub releases, with a signature check, a backup and automatic rollback — on Docker and in Kubernetes
 - AI assistant with any model on OpenRouter or a local server (Ollama, vLLM…): reads logs, containers and deployments with the user's permissions, proposes actions that run after confirmation, knows the documentation; per-user history, access control
 - MCP server: AI agents (Claude Code, VS Code, Cursor…) list, deploy, follow, roll back and read logs with an API token
 - Interface in English, Romanian and Russian; light and dark theme
@@ -266,9 +266,11 @@ The kubeconfig is stored encrypted and never shown again. It must hold its crede
 - a **private registry** on the same domain (`https://<domain>/v2/`, user `portdock`, a generated password), the registry of the clusters: builds are pushed there and the cluster pulls them;
 - **PortDock** on `https://<domain>`, with the servers **test** and **prod** (the namespaces `portdock-test` and `portdock-prod`). A new application goes to the server named like its environment (`production` → prod, `test` → test).
 
-The first-run page asks for the **setup token** the installer prints in its link (`https://<domain>/login#setup=…`), so nobody else can claim the dashboard before you; `kubectl -n portdock get secret portdock-setup -o jsonpath='{.data.token}' | base64 -d` shows it again. PortDock's data is in `/data/portdock` on the server. Run the installer again to update PortDock (`PORTDOCK_VERSION=vX.Y.Z` for a given version) or to repair the setup: passwords and data are kept. Unattended: `PORTDOCK_DOMAIN=panel.example.com` (and `PORTDOCK_EMAIL` for the Let's Encrypt account).
+The first-run page asks for the **setup token** the installer prints in its link (`https://<domain>/login#setup=…`), so nobody else can claim the dashboard before you; `kubectl -n portdock get secret portdock-setup -o jsonpath='{.data.token}' | base64 -d` shows it again. PortDock's data is in `/data/portdock` on the server. Update PortDock from the dashboard (**Update available**, or *Settings → Updates*), or run the installer again (`PORTDOCK_VERSION=vX.Y.Z` for a given version), which also repairs the setup: passwords and data are kept. Unattended: `PORTDOCK_DOMAIN=panel.example.com` (and `PORTDOCK_EMAIL` for the Let's Encrypt account).
 
-**PortDock inside the cluster.** `deploy/kubernetes/portdock.yaml` (Quick start, option 4) runs PortDock as a StatefulSet with its data on a volume. The cluster is there as a server from the start, reached with the pod's service account, and applications go to the namespace `portdock-apps`. There is no Docker in a pod: applications from Git need a Docker server added in *Servers* and chosen as their build server. Update with `kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z`.
+**PortDock inside the cluster.** `deploy/kubernetes/portdock.yaml` (Quick start, option 4) runs PortDock as a StatefulSet with its data on a volume. The cluster is there as a server from the start, reached with the pod's service account, and applications go to the namespace `portdock-apps`. There is no Docker in a pod: applications from Git need a Docker server added in *Servers* and chosen as their build server.
+
+**Updates in Kubernetes** work from the dashboard as on Docker. PortDock checks the signature of the new image, backs up its database and key, and starts a Job of its current image in its namespace: the Job points the StatefulSet at the new image (by digest), waits up to five minutes for its pod to be ready, and otherwise goes back to the previous version and replaces the broken pod. The version that starts afterwards shows how it went in *Settings → Updates*. The manifest and the installer grant this right in PortDock's own namespace only (Role `portdock-self-update`); an installation from before v1.18 gets it by running the installer, or applying `portdock.yaml`, once. `kubectl -n portdock set image statefulset/portdock portdock=ghcr.io/gavrilencu/portdock:vX.Y.Z` still works too.
 
 </details>
 

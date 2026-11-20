@@ -31,6 +31,7 @@ type State struct {
 	Steps      []Step `json:"steps"`
 	Error      string `json:"error,omitempty"`
 	Backup     string `json:"backup,omitempty"`
+	Job        string `json:"job,omitempty"` // the update Job of a PortDock running in Kubernetes
 	StartedAt  string `json:"started_at"`
 	FinishedAt string `json:"finished_at,omitempty"`
 }
