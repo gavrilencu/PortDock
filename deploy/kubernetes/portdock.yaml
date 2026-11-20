@@ -53,6 +53,38 @@ subjects:
   name: portdock
   namespace: portdock
 ---
+# Besides "admin" in the namespace of the applications: the Traefik middleware
+# that sends HTTP to HTTPS, and asking cert-manager to renew a certificate
+# (Domains tab), with the state of its ACME challenge.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: portdock-ingress
+rules:
+- apiGroups: ["traefik.io"]
+  resources: ["middlewares"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates", "certificates/status"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: ["acme.cert-manager.io"]
+  resources: ["challenges", "orders"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: portdock-ingress
+  namespace: portdock-apps
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: portdock-ingress
+subjects:
+- kind: ServiceAccount
+  name: portdock
+  namespace: portdock
+---
 # Self-update from the dashboard (Settings → Updates): a Job of PortDock's
 # image points this StatefulSet at the new version and goes back when it does
 # not start. Only in PortDock's own namespace.

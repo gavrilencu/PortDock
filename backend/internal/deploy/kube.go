@@ -191,7 +191,7 @@ var errKubeProtection = errors.New("access protection (single sign-on, password,
 	"the application is not published; remove the protection or deploy it on a Docker server")
 
 // kubeIngress renders the Ingress of an application (nil without domains).
-func (e *Engine) kubeIngress(ctx context.Context, srv store.Server, app store.Application, routes []proxy.DomainRoute, notef func(string, ...any)) (*kube.Object, error) {
+func (e *Engine) kubeIngress(ctx context.Context, c *kube.Cluster, srv store.Server, app store.Application, routes []proxy.DomainRoute, notef func(string, ...any)) (*kube.Object, error) {
 	if len(routes) == 0 {
 		return nil, nil
 	}
@@ -227,8 +227,41 @@ func (e *Engine) kubeIngress(ctx context.Context, srv store.Server, app store.Ap
 			}
 		}
 	}
-	ing := kube.Ingress(name, kubeAppLabels(app.UUID), rs, kube.IngressOptions{Class: srv.KubeIngressClass, Issuer: srv.KubeClusterIssuer})
+	ing := kube.Ingress(name, kubeAppLabels(app.UUID), rs, kube.IngressOptions{Class: srv.KubeIngressClass, Issuer: srv.KubeClusterIssuer,
+		Middlewares: e.kubeRedirect(ctx, c, srv, rs, notef)})
 	return &ing, nil
+}
+
+// kubeRedirect sends HTTP requests to the domains of an Ingress to HTTPS when
+// every one of them has HTTPS and the ingress controller is Traefik, with a
+// middleware of the namespace; it returns the middleware's reference, or ""
+// (ingress-nginx redirects to HTTPS by itself when an Ingress has TLS).
+func (e *Engine) kubeRedirect(ctx context.Context, c *kube.Cluster, srv store.Server, rs []kube.Route, notef func(string, ...any)) string {
+	if c == nil || len(rs) == 0 {
+		return ""
+	}
+	for _, r := range rs {
+		if !r.TLS {
+			return "" // a plain HTTP domain must keep answering on HTTP
+		}
+	}
+	class := srv.KubeIngressClass
+	if class == "" {
+		if classes := c.IngressClasses(ctx); len(classes) > 0 {
+			class = classes[0] // the cluster's default
+		}
+	}
+	if !strings.Contains(class, "traefik") {
+		return ""
+	}
+	ref, err := c.EnsureHTTPSRedirect(ctx)
+	if err != nil {
+		if notef != nil {
+			notef("⚠ HTTP is not redirected to HTTPS: %v", err)
+		}
+		return ""
+	}
+	return ref
 }
 
 // kubeApplyRoutes applies the domains of a deployed application without a
@@ -238,7 +271,7 @@ func (e *Engine) kubeApplyRoutes(ctx context.Context, c *kube.Cluster, srv store
 	if exists, err := c.DeploymentExists(ctx, name); err != nil || !exists {
 		return err // routes are applied by the first deployment
 	}
-	ing, err := e.kubeIngress(ctx, srv, app, routes, nil)
+	ing, err := e.kubeIngress(ctx, c, srv, app, routes, nil)
 	if err != nil || ing == nil {
 		// No domain left, or one that must not be served: nothing is published.
 		if derr := c.DeleteNamed(ctx, "ingress", name); derr != nil && err == nil {
@@ -454,7 +487,7 @@ func (j *job) kubeDeploy(ctx context.Context, c *kube.Cluster, srv store.Server,
 
 	// The new version serves: what follows finishes even if the deployment is cancelled.
 	ctx = context.WithoutCancel(ctx)
-	ing, err := e.kubeIngress(ctx, srv, app, j.routes, log.Printf)
+	ing, err := e.kubeIngress(ctx, c, srv, app, j.routes, log.Printf)
 	if err != nil {
 		return err
 	}

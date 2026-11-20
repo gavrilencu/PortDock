@@ -176,7 +176,9 @@ func TestBootstrapBuildServer(t *testing.T) {
 	}
 	defer l.Close()
 	set := make(chan store.Server, 1)
-	defer func(old string, oldSetup func(*deploy.Engine, store.Server)) { dockerSocket, setupBuildServer = old, oldSetup }(dockerSocket, setupBuildServer)
+	defer func(old string, oldSetup func(*deploy.Engine, store.Server)) {
+		dockerSocket, setupBuildServer = old, oldSetup
+	}(dockerSocket, setupBuildServer)
 	dockerSocket = sock
 	setupBuildServer = func(_ *deploy.Engine, srv store.Server) { set <- srv }
 
@@ -235,5 +237,23 @@ func TestClusterRegistry(t *testing.T) {
 	}
 	if srv, _ := store.ByID[store.Server](t.Context(), e.db, "servers", id); srv.KubeRegistryID != 0 {
 		t.Fatalf("the cluster still names a deleted registry: %d", srv.KubeRegistryID)
+	}
+}
+
+// The domains of the cluster PortDock runs in must point to this machine's
+// public address; of another cluster, the address is not known.
+func TestClusterServerIPs(t *testing.T) {
+	e := newTestEnv(t)
+	_ = e.db.SetSetting(t.Context(), "public_ipv4", "138.199.174.93")
+	inCluster := store.Server{Kind: store.KindKubernetes, Host: "in-cluster", KubeNamespace: "portdock-test"}
+	if ips := e.api.serverIPs(t.Context(), inCluster); len(ips) != 1 || ips[0].String() != "138.199.174.93" {
+		t.Fatalf("in-cluster: %v", ips)
+	}
+	remote := store.Server{Kind: store.KindKubernetes, Host: "https://10.0.0.1:6443", KubeNamespace: "apps"}
+	if ips := e.api.serverIPs(t.Context(), remote); ips != nil {
+		t.Fatalf("another cluster: %v", ips)
+	}
+	if status, _ := checkDNS(t.Context(), "localhost", e.api.serverIPs(t.Context(), inCluster)); status != "local" {
+		t.Fatalf("checkDNS still answers: %s", status)
 	}
 }

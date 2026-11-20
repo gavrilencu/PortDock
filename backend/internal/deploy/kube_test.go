@@ -873,3 +873,82 @@ func TestValidateCluster(t *testing.T) {
 		t.Fatalf("periodic check: %v, %d", err, f.k.called("auth can-i"))
 	}
 }
+
+// With Traefik as the ingress controller, HTTPS domains get a middleware that
+// sends HTTP to HTTPS; an application with a plain HTTP domain keeps HTTP.
+func TestKubeHTTPSRedirect(t *testing.T) {
+	ctx := context.Background()
+	f := newKubeFixture(t)
+	if _, err := f.e.db.ExecContext(ctx, "UPDATE servers SET kube_ingress_class = 'traefik' WHERE id = ?", f.srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	a := f.app(nginxApp(), "shop.example.com")
+	if d := f.deploy(a, Options{}); d.Status != "success" {
+		t.Fatalf("deployment %s:\n%s", d.Status, d.Logs)
+	}
+	mw := f.k.object("Middleware/" + kube.HTTPSRedirectName)
+	if mw == nil {
+		t.Fatal("the redirect middleware must be created")
+	}
+	ing := f.k.object("Ingress/" + kube.AppName(a.UUID))
+	if got := at(t, ing, "metadata", "annotations", "traefik.ingress.kubernetes.io/router.middlewares"); got != "apps-"+kube.HTTPSRedirectName+"@kubernetescrd" {
+		t.Fatalf("ingress middlewares: %v", got)
+	}
+
+	// A plain HTTP domain next to it: no redirect for the application.
+	plain := store.AppDomain{ApplicationID: a.ID, Host: "plain.example.com", HTTPS: false, WWWRedirect: "none", CertMode: "auto", CreatedAt: store.Now()}
+	if _, err := store.Insert(ctx, f.e.db, "app_domains", &plain); err != nil {
+		t.Fatal(err)
+	}
+	app, _ := store.ByID[store.Application](ctx, f.e.db, "applications", a.ID)
+	if d := f.deploy(app, Options{}); d.Status != "success" {
+		t.Fatalf("second deployment %s:\n%s", d.Status, d.Logs)
+	}
+	ing = f.k.object("Ingress/" + kube.AppName(a.UUID))
+	if ann, _ := ing["metadata"].(map[string]any)["annotations"].(map[string]any); ann["traefik.ingress.kubernetes.io/router.middlewares"] != nil {
+		t.Fatalf("a plain HTTP domain must not be redirected: %v", ann)
+	}
+}
+
+// On a cluster, the certificate status is the one visitors receive; without
+// one, the reason comes from cert-manager (here: no issuer on the cluster).
+func TestKubeCertStatus(t *testing.T) {
+	ctx := context.Background()
+	f := newKubeFixture(t)
+	defer func(old func(context.Context, string) (IssuedCert, error)) { probeTLS = old }(probeTLS)
+	now := time.Now()
+	probeTLS = func(_ context.Context, host string) (IssuedCert, error) {
+		if host == "shop.example.com" {
+			return IssuedCert{Resolver: "live", Main: host, SANs: []string{host}, Issuer: "YR1", NotBefore: now.Add(-time.Hour), NotAfter: now.Add(80 * 24 * time.Hour)}, nil
+		}
+		return IssuedCert{Resolver: "live", Main: "TRAEFIK DEFAULT CERT", Issuer: "TRAEFIK DEFAULT CERT", NotAfter: now.Add(365 * 24 * time.Hour)}, nil
+	}
+	a := f.app(nginxApp(), "shop.example.com", "new.example.com")
+	if _, err := f.e.db.ExecContext(ctx, "UPDATE app_domains SET created_at = ? WHERE application_id = ?", now.Add(-time.Hour).UTC().Format(time.RFC3339), a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.e.CheckCertificates(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	domains, _ := store.Select[store.AppDomain](ctx, f.e.db, "SELECT * FROM app_domains WHERE application_id = ? ORDER BY host", a.ID)
+	byHost := map[string]store.AppDomain{}
+	for _, d := range domains {
+		byHost[d.Host] = d
+	}
+	if d := byHost["shop.example.com"]; d.CertStatus != "valid" || d.CertIssuer != "YR1" {
+		t.Fatalf("issued: %+v", d)
+	}
+	if d := byHost["new.example.com"]; d.CertStatus != "missing" || !strings.Contains(d.CertError, "cert-manager") {
+		t.Fatalf("not issued yet: %+v", d)
+	}
+
+	// Without an issuer on the cluster, that is what the status says.
+	if _, err := f.e.db.ExecContext(ctx, "UPDATE servers SET kube_cluster_issuer = '' WHERE id = ?", f.srv.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.e.CheckCertificates(ctx, false)
+	d, _ := store.ByID[store.AppDomain](ctx, f.e.db, "app_domains", byHost["new.example.com"].ID)
+	if !strings.Contains(d.CertError, "No cert-manager issuer") {
+		t.Fatalf("no issuer: %+v", d)
+	}
+}

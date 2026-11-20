@@ -294,6 +294,9 @@ type IngressOptions struct {
 	// Issuer is the cert-manager ClusterIssuer that issues the certificates;
 	// without one, HTTPS hosts use the ingress controller's default certificate.
 	Issuer string
+	// Middlewares are the Traefik middlewares of the Ingress's routers
+	// ("<namespace>-<name>@kubernetescrd"), such as the HTTPS redirect.
+	Middlewares string
 }
 
 // TLSSecretName is the Secret cert-manager stores the certificate of host in.
@@ -351,6 +354,7 @@ func Ingress(name string, labels map[string]string, routes []Route, o IngressOpt
 		spec["ingressClassName"] = o.Class
 	}
 	m := meta(name, labels)
+	annotations := map[string]string{}
 	if len(tlsHosts) > 0 {
 		tls := make([]Object, len(tlsHosts))
 		for i, h := range tlsHosts {
@@ -361,8 +365,14 @@ func Ingress(name string, labels map[string]string, routes []Route, o IngressOpt
 		}
 		spec["tls"] = tls
 		if o.Issuer != "" {
-			m["annotations"] = map[string]string{"cert-manager.io/cluster-issuer": o.Issuer}
+			annotations["cert-manager.io/cluster-issuer"] = o.Issuer
 		}
+	}
+	if o.Middlewares != "" {
+		annotations["traefik.ingress.kubernetes.io/router.middlewares"] = o.Middlewares
+	}
+	if len(annotations) > 0 {
+		m["annotations"] = annotations
 	}
 	return Object{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress", "metadata": m, "spec": spec}
 }

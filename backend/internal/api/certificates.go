@@ -110,18 +110,28 @@ func (s *Server) renewDomainCertificate(w http.ResponseWriter, r *http.Request) 
 	}
 	_ = s.db.SetSetting(ctx, "cert_renew:"+d.Host, store.Now())
 	var errs []error
+	cluster := false
 	for _, sid := range s.engine.AppServerIDs(ctx, app) {
 		x, srv, err := s.pool.ForID(ctx, sid)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		if err := s.engine.ForceRenew(ctx, x, []string{d.Host}); err != nil {
+		cluster = cluster || srv.IsKubernetes()
+		if err := s.engine.RenewCertificate(ctx, x, d.Host); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", srv.Name, err))
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
 		return badRequest("%v", err)
+	}
+	if cluster {
+		// cert-manager issues within a minute or two: show the result then,
+		// not at the next check in six hours.
+		go func() {
+			time.Sleep(90 * time.Second)
+			_, _ = s.engine.CheckCertificates(context.Background(), false)
+		}()
 	}
 	_, _ = s.db.ExecContext(ctx, "UPDATE app_domains SET cert_status = 'pending', cert_error = 'Renewal requested.' WHERE id = ?", d.ID)
 	s.activity(r, "certificate.renew", d.Host)

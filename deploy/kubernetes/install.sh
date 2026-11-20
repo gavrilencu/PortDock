@@ -372,6 +372,26 @@ subjects:
   name: portdock
   namespace: $NS
 EOF
+  # In the namespaces of the applications, besides "admin": the Traefik
+  # middleware that sends HTTP to HTTPS, and asking cert-manager to renew a
+  # certificate (Domains tab), with the state of its ACME challenge.
+  cat <<EOF
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: portdock-ingress
+rules:
+- apiGroups: ["traefik.io"]
+  resources: ["middlewares"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates", "certificates/status"]
+  verbs: ["get", "list", "watch", "patch", "update"]
+- apiGroups: ["acme.cert-manager.io"]
+  resources: ["challenges", "orders"]
+  verbs: ["get", "list", "watch"]
+EOF
   # PortDock administers the namespaces of the environments, and nothing else.
   for n in $(printf '%s' "$ENVIRONMENTS" | tr ',' '\n' | cut -d= -f2); do
     cat <<EOF
@@ -385,6 +405,20 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admin
+subjects:
+- kind: ServiceAccount
+  name: portdock
+  namespace: $NS
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: portdock-ingress
+  namespace: $n
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: portdock-ingress
 subjects:
 - kind: ServiceAccount
   name: portdock

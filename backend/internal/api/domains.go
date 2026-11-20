@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/portdock/portdock/internal/proxy"
@@ -39,25 +40,58 @@ func isCloudflare(ip net.IP) bool {
 
 // serverIPs returns the public addresses a domain should point to for srv.
 func (s *Server) serverIPs(ctx context.Context, srv store.Server) []net.IP {
-	var out []net.IP
 	if srv.IsKubernetes() {
-		// Domains point to the cluster's ingress controller, whose address
-		// PortDock does not know: DNS is only checked to resolve.
+		// The cluster PortDock runs in is reached at this machine's public
+		// address (its ingress controller listens on the node). Of another
+		// cluster PortDock does not know the ingress controller's address.
+		if srv.Host == "in-cluster" {
+			return s.instanceIPs(ctx, true)
+		}
 		return nil
 	}
 	if srv.IsLocal || srv.Host == "" || srv.Host == "localhost" {
-		for _, k := range []string{"public_ipv4", "public_ipv6"} {
-			if ip := net.ParseIP(strings.TrimSpace(s.db.Setting(ctx, k))); ip != nil {
-				out = append(out, ip)
-			}
-		}
-		return out
+		return s.instanceIPs(ctx, false)
 	}
 	if ip := net.ParseIP(srv.Host); ip != nil {
 		return []net.IP{ip}
 	}
 	ips, _ := net.DefaultResolver.LookupIP(ctx, "ip", srv.Host)
 	return ips
+}
+
+// lastIPDetect limits instanceIPs to one lookup of the public address at a time.
+var (
+	lastIPDetectMu sync.Mutex
+	lastIPDetect   time.Time
+)
+
+// instanceIPs are the public addresses of the machine PortDock runs on (Settings
+// → Network). With detect, they are looked up and saved when none is set, at
+// most every ten minutes.
+func (s *Server) instanceIPs(ctx context.Context, detect bool) []net.IP {
+	var out []net.IP
+	read := func() {
+		for _, k := range []string{"public_ipv4", "public_ipv6"} {
+			if ip := net.ParseIP(strings.TrimSpace(s.db.Setting(ctx, k))); ip != nil {
+				out = append(out, ip)
+			}
+		}
+	}
+	if read(); len(out) > 0 || !detect {
+		return out
+	}
+	lastIPDetectMu.Lock()
+	if time.Since(lastIPDetect) < 10*time.Minute {
+		lastIPDetectMu.Unlock()
+		return nil
+	}
+	lastIPDetect = time.Now()
+	lastIPDetectMu.Unlock()
+	if v4 := detectIP(ctx, "https://api4.ipify.org"); net.ParseIP(v4) != nil {
+		_ = s.db.SetSetting(ctx, "public_ipv4", v4)
+	}
+	read()
+	return out
 }
 
 // checkDNS resolves host and compares it with the expected server addresses.

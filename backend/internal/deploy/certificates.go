@@ -327,6 +327,12 @@ func (e *Engine) CheckCertificates(ctx context.Context, autoRenew bool) (int, er
 			}
 		}
 		if status == "" {
+			// On a cluster, cert-manager issues and renews the certificate.
+			if srv, err := store.ByID[store.Server](ctx, e.db, "servers", app.ServerID); err == nil && srv.IsKubernetes() {
+				status, issuer, expires, detail = e.kubeCertStatus(ctx, srv, d.AppDomain, now, threshold)
+			}
+		}
+		if status == "" {
 			continue // no reachable server with a proxy
 		}
 		checked++
@@ -517,6 +523,47 @@ func (e *Engine) CertificateWatch(ctx context.Context, interval time.Duration) {
 		case <-time.After(interval):
 		}
 	}
+}
+
+// probeTLS reads the certificate visitors receive (tests replace it).
+var probeTLS = ProbeTLS
+
+// kubeCertStatus evaluates the certificate of a domain on the cluster srv:
+// the one visitors receive, which cert-manager issues and renews, and while
+// there is none, why cert-manager has not issued it.
+func (e *Engine) kubeCertStatus(ctx context.Context, srv store.Server, d store.AppDomain, now time.Time, threshold int) (status, issuer, expires, detail string) {
+	var certs []IssuedCert
+	if !isLocalHost(d.Host) && !strings.HasPrefix(d.Host, "*.") {
+		pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		if c, err := probeTLS(pctx, d.Host); err == nil {
+			certs = append(certs, c)
+		}
+		cancel()
+	}
+	status, issuer, expires, detail = certStatus(d, certs, now, threshold)
+	if status == "valid" || status == "expiring" || status == "local" {
+		return status, issuer, expires, detail
+	}
+	if srv.KubeClusterIssuer == "" {
+		return status, issuer, expires, "No cert-manager issuer is set for this cluster: set one in the server's settings (Certificate issuer), and the ingress controller's own certificate is replaced."
+	}
+	if x, err := e.pool.For(ctx, srv); err == nil {
+		if c, ok := clusterOf(x); ok {
+			if why := c.CertificateProblem(ctx, d.Host); why != "" {
+				detail = why
+			}
+		}
+	}
+	return status, issuer, expires, detail
+}
+
+// RenewCertificate has the certificate of host issued again on the server x:
+// by cert-manager on a cluster, by the Traefik proxy elsewhere (ForceRenew).
+func (e *Engine) RenewCertificate(ctx context.Context, x executor.Executor, host string) error {
+	if c, ok := clusterOf(x); ok {
+		return c.RenewCertificate(ctx, host)
+	}
+	return e.ForceRenew(ctx, x, []string{host})
 }
 
 // ProbeTLS connects to host:443 and returns the certificate visitors receive.
