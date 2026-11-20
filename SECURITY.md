@@ -17,7 +17,8 @@ Security fixes are made for the latest release. Update from **Update available**
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
 
-- **Maintainers** sign their commits and tags (`git config commit.gpgsign true`, or SSH signing) and protect `main` with required status checks (*ci*, *codeql*) and required signed commits in the repository settings.
+- **Protected history.** Nobody can force-push to `main` or delete it, and release tags (`v*`) cannot be moved or deleted once published, so a signed release always points to the code it was built from. Changes from contributors reach `main` through a pull request reviewed by the maintainer (`.github/CODEOWNERS`), with the CI checks passing. Workflows of first-time contributors run only after approval, with a read-only token.
+- **Secret scanning with push protection** blocks commits that contain credentials.
 
 ## Reporting a vulnerability
 

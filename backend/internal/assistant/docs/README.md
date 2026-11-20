@@ -7,14 +7,18 @@
 
 
 **Your own Heroku, on your own servers.**
-Deploy applications, databases and services from Git or Docker — with HTTPS, rollbacks, monitoring and an AI assistant — on any Linux server you control.
+Deploy applications, databases and services from Git or Docker — with HTTPS, rollbacks, monitoring and an AI assistant — on any Linux server or Kubernetes cluster you control.
 
 [![Release](https://img.shields.io/github/v/release/gavrilencu/PortDock?label=release)](https://github.com/gavrilencu/PortDock/releases)
+[![CI](https://github.com/gavrilencu/PortDock/actions/workflows/ci.yml/badge.svg)](https://github.com/gavrilencu/PortDock/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/gavrilencu/PortDock/actions/workflows/codeql.yml/badge.svg)](https://github.com/gavrilencu/PortDock/actions/workflows/codeql.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Image](https://img.shields.io/badge/image-ghcr.io%2Fgavrilencu%2Fportdock-2496ED?logo=docker&logoColor=white)](https://github.com/gavrilencu/PortDock/pkgs/container/portdock)
+[![Signed](https://img.shields.io/badge/releases-signed%20with%20Sigstore-6F42C1)](SECURITY.md#supply-chain)
+[![Website](https://img.shields.io/badge/website-portdock.md-0B1628)](https://portdock.md)
 [![Stars](https://img.shields.io/github/stars/gavrilencu/PortDock?style=social)](https://github.com/gavrilencu/PortDock/stargazers)
 
-[Quick start](#quick-start) · [Features](#features) · [Screenshots](#screenshots) · [Documentation](#documentation) · [Română](docs/README.ro.md)
+[Website](https://portdock.md) · [Quick start](#quick-start) · [Features](#features) · [Screenshots](#screenshots) · [Documentation](#documentation) · [Română](docs/README.ro.md)
 
 <img src="docs/images/versions.png" alt="PortDock — versions of an application with drag-and-drop rollback" width="100%" />
 

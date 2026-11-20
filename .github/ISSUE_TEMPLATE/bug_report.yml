@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in PortDock does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report it. Security problems don't go here: report them privately under **Security → Report a vulnerability**.
+  - type: input
+    id: version
+    attributes:
+      label: PortDock version
+      description: Settings → About, or the bottom of the sidebar.
+      placeholder: v1.18.1
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How PortDock runs
+      options:
+        - Installer (install.sh)
+        - Docker image (docker run / docker compose)
+        - Kubernetes installer (install-kubernetes.sh)
+        - Kubernetes manifest (portdock.yaml)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The deployment log, `docker logs portdock` (or `kubectl -n portdock logs statefulset/portdock`), or the browser console. Remove secrets first.
+      render: text
+  - type: input
+    id: environment
+    attributes:
+      label: Server and browser
+      placeholder: Ubuntu 24.04, Docker 29, k3s v1.33, Chrome 140

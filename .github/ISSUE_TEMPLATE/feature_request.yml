@@ -1,0 +1,23 @@
+name: Feature request
+description: An idea that would make PortDock better
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: "How it could work in PortDock: where in the interface, which settings."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: How you work around it now, or how other platforms do it.
